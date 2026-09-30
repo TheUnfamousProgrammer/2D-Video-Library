@@ -1,0 +1,31 @@
+# Hex stops interpolated in OKLab. 3 to 5 stops, saturated but not neon.
+sunset:
+  - "#FF6B3D"
+  - "#FFB347"
+  - "#FF4D6D"
+  - "#C44BD4"
+aurora:
+  - "#3DDCB0"
+  - "#4CC9F0"
+  - "#7B6CFF"
+  - "#B8F2C8"
+candy:
+  - "#FF5DA2"
+  - "#FF8FAB"
+  - "#E7A6FF"
+  - "#B8C0FF"
+ocean:
+  - "#48CAE4"
+  - "#0096C7"
+  - "#90E0EF"
+  - "#ADE8F4"
+gold-pink:
+  - "#FFD166"
+  - "#F4A261"
+  - "#FF6B9D"
+  - "#E5989B"
+mono-ice:
+  - "#E8F1F8"
+  - "#C5D8EA"
+  - "#8FB4D4"
+  - "#D6E4F0"

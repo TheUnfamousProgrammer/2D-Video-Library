@@ -1,0 +1,49 @@
+seed: 7
+canvas:
+  width: 1080
+  height: 1920
+fps: 60
+growth_seconds: 19.0
+hold_seconds: 0.5
+implode_seconds: 1.2
+beat_seconds: 0.3
+reset_seconds: 0.5
+ring:
+  center: [540, 880]
+  radius: 380
+  thickness: 6
+gravity: 900
+restitution: 1.0
+radius_base: 28
+radius_exp: -0.28
+radius_min: 8
+radius_max: 28
+cap: 1000
+spawn_cooldown: 0.15
+spawn_jitter_deg: 25
+# Log-linear in count. The last keyframe is before Tg so the ceiling
+# can actually reach the cap inside [0.97*Tg, Tg]. After 0.985*Tg, N_target stays at cap.
+throttle:
+  - [0.00, 1]
+  - [0.14, 8]
+  - [0.40, 60]
+  - [0.70, 300]
+  - [0.985, cap]
+min_bounce_speed: 450
+max_speed: 1600
+palette: sunset
+hook: "Every bounce adds a ball"
+show_wait_text: false
+wait_text: "Wait for it..."
+show_cta: false
+cta_text: "Subscribe"
+collisions: false
+sound_preset: mallet
+audio_offset_ms: 0
+bloom_strength: 0.6
+workers: 0
+tune:
+  max_attempts: 60
+  speed_range: [700, 1500]
+  gravity_range: [200, 1400]
+  seed_offset_range: [0, 59]
