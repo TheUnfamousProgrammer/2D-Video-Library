@@ -18,6 +18,7 @@ class ImageError(ValueError):
 
 
 def file_sha256(path: Path) -> str:
+    path = Path(path)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -103,5 +104,6 @@ def _crop(rgb: np.ndarray, cols: int, rows: int, fx: float, fy: float) -> np.nda
 
 def reject_identical(path_a: Path, path_b: Path) -> None:
     """Refuse a morph whose two files are the same bytes."""
+    path_a, path_b = Path(path_a), Path(path_b)
     if file_sha256(path_a) == file_sha256(path_b):
         raise ImageError("image A and image B are identical (same sha256)")

@@ -217,3 +217,67 @@ The kalimba notes and the reverb wrap inside one period of `N * 800` samples. Th
 The frame before a landing reuses that landing's glow and squash, so the loop point is not a cut through the brightest moment of the hit. The pad flash and the sparks still begin on the onset frame.
 
 The audio seam compares the first and last sample of each channel with the 99th percentile of consecutive sample steps. The picture seam compares the first and last frame with the 99th percentile of consecutive-frame changes. Note sync searches +/-40 ms around each onset. The audio onset is the peak of the positive first difference of a smoothed dB envelope (2 ms hop, about 10 ms of smoothing). The picture onset is the frame with the largest luma increase inside that note's pad. It passes when the absolute median offset is within 20 ms and the 90th percentile of the absolute offsets is within 34 ms. A failure prints every note's offset so the detector can be fixed before either threshold moves.
+
+## Pixel Morph
+
+A third generator shows image A as a grid of square particles. They fly on arcs to form image B, hold, then fly back so the last frame is A again. Bounce and Melody Hop are unchanged.
+
+```bash
+python tools/fetch_starter_images.py
+python make_morph.py --config configs/morph_default.yaml --a assets/images/mona_lisa.jpg --b assets/images/starry_night.jpg --out out/morph_preview.mp4 --preview --contact-sheet
+python make_morph.py --config configs/morph_default.yaml --a assets/images/mona_lisa.jpg --b assets/images/starry_night.jpg --out out/morph_mona.mp4
+python make_morph.py --config configs/morph_default.yaml --pairs configs/pairs.yaml --out out/morph_batch.mp4
+python -m fc_sat.verify out/morph_mona.mp4 --config configs/morph_default.yaml
+```
+
+`--preview` is 540x960 at 30 fps with no audio. It samples the same phase function at `t = i/30`, and the last preview frame is time T so it matches frame 0. A full render verifies unless it is a preview. `--contact-sheet` writes `{out}.contact.png`: two rows (A to B, then B to A) and five columns at 0, 25, 50, 75, and 100 percent of that leg, each cell 270x480.
+
+`--pairs` reads a YAML list. Each item is `a`, `b`, and optional `hook`, `focus_a`, `focus_b` (`[fx, fy]` in 0..1). Files are named `{stem_a}_{stem_b}_{hook_index}.mp4` in the directory of `--out`. A tuple is never repeated. One failure is logged and the batch continues; the process exits 1 if any pair failed.
+
+Each output gets `{out}.json` (config, image sha256, assignment error, render seconds) and `{out}.post.txt` (hook plus `#shorts`, tags `#shorts #satisfying #pixels #art #morph`, the pinned comment "What did the picture turn into?", and credits when `assets/images/credits.json` knows the file).
+
+### Morph config
+
+`configs/morph_default.yaml`. Lines live in `configs/morph_hooks.yaml`.
+
+| key | default | role |
+| --- | --- | --- |
+| `seed` | 7 | arc sign and tick choice |
+| `cols`, `rows`, `cell` | 68, 90, 12 | grid. The box is 816x1080 at (132, 400) |
+| `origin_x`, `origin_y` | 132, 400 | top-left of the image box. It must sit in x [130, 950], y [200, 1536] |
+| `timeline.*` | 0.4, 6.0, 2.2, 5.5, 0.4 | hold A, A to B, hold B, B to A, hold A. 14.5 s, 870 frames |
+| `delay_frac` | 0.30 | ripple. 0 is the center, 1 is the farthest cell |
+| `arc_amp` | 0.15 | sideways arc as a fraction of the flight length |
+| `lift` | 0.5 | in-flight squares grow by this times sin(pi E) |
+| `spatial_weight` | 0.3 | travel penalty in the assignment. Lower matches color better and flies farther |
+| `recolor_strength` | 1.0 | 0 keeps each particle's original color. 1 lands on the destination color |
+| `hook` | Watch the pixels move | starts at 96 px and shrinks until it fits above the box |
+| `max_particles` | 9000 | `cols * rows` above this asks for a smaller grid |
+| `workers` | 0 | 0 means CPU count minus one. 1 stays in-process |
+| `audio.whoosh_db` | -18 | whoosh peak under a nominal 0.5 tick, when every particle is flying |
+| `audio.tick_density` | 12 | most arrivals kept in any 100 ms window |
+| `audio_offset_ms` | 0 | shifts events before the master, from -500 to 500 |
+| `max_delta_e` | 0.06 | OKLab fidelity limit, enforced when recolor_strength is at least 0.99 |
+| `focus_a`, `focus_b` | [0.5, 0.5] | crop anchor. 0 pins to the left or top, 1 to the right or bottom |
+
+### Adding images
+
+You can point `--a` and `--b` at your own pictures. You are responsible for having the rights to them. The fetch script only keeps Wikimedia files whose `LicenseShortName` is public domain or CC0, writes `assets/images/credits.json`, and leaves the binaries untracked. Do not commit an image whose license you have not checked.
+
+The fetch script asks Wikimedia for each file's `LicenseShortName` (via the Wikipedia API when `commons.wikimedia.org` does not answer) and downloads it through `Special:FilePath`, falling back to the canonical upload URL. It requests a 2000 px rendition, which is plenty for a 68-cell grid. The license check is still the original file's metadata.
+
+Loading applies EXIF orientation. RGBA is composited onto `#07070B`. CMYK, palette, and grayscale become RGB. A picture smaller than the grid, an unreadable file, or A and B with the same sha256 is rejected. The same pixels after the crop are rejected too. The crop matches `cols:rows`, then resizes with area interpolation.
+
+### Assignment and motion
+
+Both grids are converted to OKLab. The cost is the squared OKLab distance plus `spatial_weight * (d / diag)^2`, where `d` is the distance between cell centers and `diag` is `hypot(cols, rows)`. The solver is `scipy.optimize.linear_sum_assignment` on a float64 matrix. If that matrix would pass about 1 GB (`n^2 * 8` bytes) the run stops before allocating it. The permutation is cached at `.cache/morph_{hash}.npz`. The hash covers the prepared pixels, the grid, and `spatial_weight`. Seed, hook, timing, and recolor do not bust it. The log prints the mean and 95th percentile OKLab error of the matched colors before recoloring, and the solve time.
+
+Delay is `delay_frac` times the rank of each start cell's distance from the center (`rank / (n - 1)`, mergesort for ties), so motion leaves the center first. Ease is the smootherstep `6u^5 - 15u^4 + 10u^3`. The arc is perpendicular to the flight, `(-dy, dx)`, scaled by `arc_amp * length * s_i`. `s_i` is in `[0.5, 1]` with a random sign from `numpy.random.default_rng([seed, i])`. A zero-length flight has no arc. Rest centers stay on the cell grid so a settled frame matches a nearest-neighbor upscale. In flight the center is clamped inside the box by `0.75 * cell`, and the square is clipped to the box. The flying square is `(cell + 1) * (1 + lift * sin(pi * E))`, drawn with antialiasing, furthest along on top.
+
+The outbound color blend is `recolor_strength * E`. The return blend goes all the way back to the original color so frame 0 and the last frame match. At `recolor_strength` 1 that is the same formula in both directions. Hooks and the pinned comment do not claim the pixels are unchanged while recoloring is on.
+
+### Morph audio and verification
+
+Ticks are the bounce mallet (middle velocity layer) on the 15-note C major pentatonic from C4. Pitch rises on the way to B and falls on the way back, plus a seeded step of -1, 0, or +1. Gain is 0.35 to 0.6, panned with equal power from the particle's x. The whoosh is band-passed noise (about 1.4x around a sweep from 300 Hz to 1800 Hz, and back) following the smoothed fraction of particles in flight. A C-E-G chime (decay 1.2 s) marks the B hold. A quieter 0.6 s chime marks the return home; the shared bounce master then zeros the last 300 ms, so most of that final chime is silence. The master is DC removal, a 12 kHz low-pass, 5 ms fades, the zero tail, then the loudness loop to -14 LUFS and -1 dBTP with the resample_poly true-peak meter. Audio length is `N * 800` samples.
+
+`python -m fc_sat.verify` stays on bounce unless you pass `--mode morph` or the config contains `recolor_strength` (a `song` field still selects hop). Morph checks the container (1080x1920, 60 fps, H.264 high, yuv420p, BT.709 TV tags, AAC 48 kHz stereo, duration `N/60`, A/V within 20 ms, under 100 MB), loudness within 1 LU of -14, true peak at or under -1 dBTP, no sample clipping, and the last 300 ms under -50 dBFS. The loop SSIM of the first and last frame must be at least 0.995. The middle frame of the B hold, and frame 0, are averaged per cell and compared in OKLab to the prepared grids. That comparison fails the file only when `recolor_strength >= 0.99` and the mean error is above `max_delta_e`. There must be no black frame, and no 1 second window may contain more than 3 frames whose mean luma jumps by more than 0.10. Outside the image box and the hook, pixels must stay within 8/255 mean absolute RGB and 0.06 p99 luma of the vignette. A failure prints the measured values and writes the worst frame; the thresholds are not loosened to force a pass. A sample of frames is also drawn before compositing to confirm no particle pixel leaves the image box.

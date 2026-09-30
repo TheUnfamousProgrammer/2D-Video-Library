@@ -13,6 +13,7 @@ of 1.0 the two readings are the same formula, and the loop always closes on A.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -114,6 +115,8 @@ def layout_failures(cfg: MorphConfig) -> list[str]:
 
 class MorphRenderer:
     def __init__(self, cfg: MorphConfig, path_a, path_b, *, preview: bool = False):
+        path_a = Path(path_a)
+        path_b = Path(path_b)
         self.cfg = cfg
         self.preview = preview
         self.scale = 0.5 if preview else 1.0

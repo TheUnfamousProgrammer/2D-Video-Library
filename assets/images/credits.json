@@ -1,0 +1,36 @@
+{
+  "images": [
+    {
+      "file": "mona_lisa.jpg",
+      "title": "Mona Lisa",
+      "artist": "Leonardo da Vinci",
+      "license": "Public domain",
+      "source": "https://commons.wikimedia.org/wiki/File%3AMona%20Lisa%2C%20by%20Leonardo%20da%20Vinci%2C%20from%20C2RMF%20retouched.jpg",
+      "sha256": "e9960d64175b05b3c9f96d8dba96f55b118ab6ed5bd85d0853361e2fcb6bc59e"
+    },
+    {
+      "file": "starry_night.jpg",
+      "title": "The Starry Night",
+      "artist": "Vincent van Gogh",
+      "license": "Public domain",
+      "source": "https://commons.wikimedia.org/wiki/File%3AVan%20Gogh%20-%20Starry%20Night%20-%20Google%20Art%20Project.jpg",
+      "sha256": "bbd4df2538ef9e7e34ea9f415ec4f60c4007a841cb757f7d1f94da42910e0103"
+    },
+    {
+      "file": "great_wave.jpg",
+      "title": "The Great Wave off Kanagawa",
+      "artist": "After Katsushika Hokusai",
+      "license": "Public domain",
+      "source": "https://commons.wikimedia.org/wiki/File%3AThe%20Great%20Wave%20off%20Kanagawa.jpg",
+      "sha256": "a8d851a6c049ef310e3c13ace55fff5233b87631270e63f8c03b4143d1d8aee8"
+    },
+    {
+      "file": "pearl_earring.jpg",
+      "title": "Girl with a Pearl Earring",
+      "artist": "Johannes Vermeer",
+      "license": "Public domain",
+      "source": "https://commons.wikimedia.org/wiki/File%3AMeisje%20met%20de%20parel.jpg",
+      "sha256": "85bd508da11b7a4895eabe2682b4971881de32149aaa87705aa0e2341c03fa7f"
+    }
+  ]
+}

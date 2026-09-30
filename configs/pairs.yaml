@@ -1,0 +1,17 @@
+# Three morphs. Hook index is the position in configs/morph_hooks.yaml.
+# focus is [fx, fy] in 0..1. Portraits sit a little above center.
+- a: assets/images/mona_lisa.jpg
+  b: assets/images/starry_night.jpg
+  hook: Watch the pixels move
+  focus_a: [0.5, 0.42]
+  focus_b: [0.5, 0.5]
+- a: assets/images/starry_night.jpg
+  b: assets/images/great_wave.jpg
+  hook: Guess what it becomes
+  focus_a: [0.5, 0.5]
+  focus_b: [0.5, 0.45]
+- a: assets/images/great_wave.jpg
+  b: assets/images/pearl_earring.jpg
+  hook: Stay until the end
+  focus_a: [0.5, 0.45]
+  focus_b: [0.5, 0.38]
