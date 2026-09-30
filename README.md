@@ -148,3 +148,72 @@ pytest
 ```
 
 Covers determinism, balls staying inside the ring, the throttle and cooldown, event order, audio length and the loudness loop, the preview loop seam, config errors, unique batch names, pacing failures (including a gap that only exists before the first hit), the cap hold at 0.985 Tg, and a solid-color encode/decode through the BT.709 filter.
+
+## Melody Hop
+
+A second generator plays a public-domain melody as a ball hopping between pads. The bounce pipeline is unchanged. Hop has its own config and CLI.
+
+```bash
+python make_hop.py --config configs/hop_default.yaml --song songs/ode_to_joy.yaml --out out/hop_ode.mp4
+python make_hop.py --config configs/hop_default.yaml --song songs/ode_to_joy.yaml --out out/hop_preview.mp4 --preview
+python make_hop.py --config configs/hop_default.yaml --song songs/ode_to_joy.yaml --out out/hop_batch.mp4 --batch 3 --vary palette,hook
+python -m fc_sat.verify out/hop_ode.mp4 --config configs/hop_default.yaml
+```
+
+`--preview` is 540x960 at 30 fps with no audio. A full render verifies unless it is a preview. `--verify` forces the check. Batch names are `out/{stem}_{song}_{palette}_{hookidx}.mp4`, plus `_octN` and `_bpmN` when those fields vary. A variant tuple is never repeated. One failure is logged and the batch continues; the process exits 1 if any variant failed.
+
+Each output gets `{out}.json` and `{out}.post.txt`. The post file is the hook plus `#shorts`, the tags `#shorts #guessthesong #satisfying #music #asmr`, and a pinned comment `Answer: {title} ({composer})`.
+
+### Hop config
+
+`configs/hop_default.yaml`, with palettes from `configs/palettes.yaml` and lines from `configs/hop_hooks.yaml`.
+
+| key | default | role |
+| --- | --- | --- |
+| `seed` | 1 | reverb noise and spark directions |
+| `song` | `songs/ode_to_joy.yaml` | melody file |
+| `octave_shift` | 1 | synthesis only. Pad layout stays on the written pitches |
+| `bpm` | null | overrides the song tempo. Null keeps the file's bpm |
+| `repeats` | 1 | 1 to 3 copies of the loop, tiled |
+| `palette` | sunset | pad colors, sampled across the palette |
+| `hook` | Guess the song | top line. Alpha is 1 until 2.6 s, out by 3.0 s, and back in over the last 0.6 s of every loop |
+| `show_note_names` | false | pitch names under the pads |
+| `workers` | 1 | 1 renders in-process. More than 1 uses a spawn pool |
+| `bloom_strength` | 0.6 | same bloom as the bounce film |
+| `audio_offset_ms` | 0 | circular shift of the finished loop. Positive delays the sound |
+| `layout.*` | span 700, pad width 112, top y 1180 | pad row. Pitches sit low to high, left to right |
+| `hop.h_ref`, `h_min`, `h_max`, `exponent` | 220, 60, 600, 1.2 | arc height from the flight duration |
+| `effects.trail_seconds` | 0.30 | analytic trail |
+| `effects.sparks` | 10 | sparks per landing |
+| `effects.ring` | true | shockwave |
+| `audio.reverb_wet`, `audio.rt60` | 0.22, 1.4 | circular reverb |
+
+### Adding a song
+
+Create `songs/your_song.yaml` with `title`, `composer`, `bpm`, `beats_per_bar`, and `notes`. Notes are `NAME:BEATS` tokens. `|` is spacing. `R:BEATS` is a rest. A leading rest is dropped. Any other rest lengthens the previous flight, and a rest at the end lengthens the flight that wraps onto the first note.
+
+```yaml
+title: Ode to Joy
+composer: Beethoven (public domain)
+bpm: 120
+beats_per_bar: 4
+notes: "E4:1 E4:1 F4:1 G4:1 | ..."
+```
+
+Only public-domain melodies belong here. Play the render and check it by ear before you publish; the parser will not catch a wrong rhythm. The file needs 2 to 10 distinct pitches, positive beat values, and a loop of 60 seconds or less. Errors name the token index.
+
+### Tempo snapping
+
+The musical length is `T0 = beats * 60 / bpm`. The frame count is `N = round(T0 * 60)`, and the video length is `T = N / 60`. Onsets use `spb = T / beats`, so every landing is an exact frame and an exact audio sample (`frame * 800` at 48 kHz). Ode to Joy at 120 bpm is already 16.0 seconds, so the snap does not move it. A song that is not an exact number of frames is sped or slowed by a fraction of a beat to land on the grid.
+
+### Circular audio
+
+The kalimba notes and the reverb wrap inside one period of `N * 800` samples. There is no fade and no silent tail. Convolution is an FFT around the circle, then the mean is removed. True peak uses a periodic 4x FFT resample. The same five-pass loudness loop then aims at -14 LUFS and -1 dBTP. `repeats` tiles that finished period.
+
+### Sync check
+
+`python -m fc_sat.verify` stays on the bounce film unless you pass `--mode hop` or the config contains a `song` field. Hop checks the container (1080x1920, 60 fps, H.264, yuv420p, AAC 48 kHz stereo, duration `N/60 * repeats`, under 100 MB), loudness within 1 LU of -14, FFT true peak at or under -1 dBTP, and the safe-zone pixels against the vignette.
+
+The frame before a landing reuses that landing's glow and squash, so the loop point is not a cut through the brightest moment of the hit. The pad flash and the sparks still begin on the onset frame.
+
+The audio seam compares the first and last sample of each channel with the 99th percentile of consecutive sample steps. The picture seam compares the first and last frame with the 99th percentile of consecutive-frame changes. Note sync searches +/-40 ms around each onset. The audio onset is the peak of the positive first difference of a smoothed dB envelope (2 ms hop, about 10 ms of smoothing). The picture onset is the frame with the largest luma increase inside that note's pad. It passes when the absolute median offset is within 20 ms and the 90th percentile of the absolute offsets is within 34 ms. A failure prints every note's offset so the detector can be fixed before either threshold moves.

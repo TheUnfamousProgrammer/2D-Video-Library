@@ -7,6 +7,10 @@ equal to the cached background.
 
 Hook alpha is 1 on [0, 2.6], falls to 0 by 3.0, stays 0 until T-0.6, then rises
 to 1 at T, and repeats with period T.
+
+The landing glow and squash are also drawn on the previous frame, so the loop
+seam does not cut through the brightest part of the hit. Sparks, the shockwave,
+and the pad flash stay on the onset frame. The analytic pose at age 0 is unchanged.
 """
 
 from __future__ import annotations
@@ -259,7 +263,18 @@ class HopRenderer:
             rows.append((angles.astype(np.float64), speeds.astype(np.float64)))
         return rows
 
+    def _landing_lead(self, t: float):
+        """Pose at ``t``, and the landing pose when ``t`` is the frame before a hit."""
+        pose = self.dance.pose(t)
+        remain = pose.duration * (1.0 - pose.u)
+        if 0.0 < remain <= (1.0 / self.fps) + 1e-8 and pose.u > 0.05:
+            return pose, self.dance.pose(t + remain)
+        return pose, None
+
     def _recent_color(self, t: float) -> tuple[np.ndarray, float]:
+        pose, landed = self._landing_lead(t)
+        if landed is not None:
+            t = t + pose.duration * (1.0 - pose.u)
         pose = self.dance.pose(t)
         current = self.colors[pose.src].astype(np.float32)
         previous_note = (self._flight(t) - 1) % len(self.dance.song.notes)
@@ -295,20 +310,19 @@ class HopRenderer:
             _blit_ellipse(signal, self._scaled(pose.x), self._scaled(pose.y_arc), radius, radius, tint)
 
     def _draw_ball(self, signal: np.ndarray, t: float) -> None:
-        pose = self.dance.pose(t)
-        color = self.colors[pose.src].astype(np.float32)
+        pose, landed = self._landing_lead(t)
+        if landed is None:
+            rx, ry, cy, src = pose.rx, pose.ry, pose.y, pose.src
+        else:
+            rx, ry = landed.rx, landed.ry
+            cy = pose.y_arc + (self.dance.layout.ball_r - landed.ry)
+            src = landed.src
+        color = self.colors[src].astype(np.float32)
         tint = tuple(int(channel) for channel in np.clip(color * 0.85, 0, 255))
         cx = self._scaled(pose.x)
-        cy = self._scaled(pose.y)
-        _blit_ellipse(
-            signal,
-            cx,
-            cy,
-            self._scaled(pose.rx) * 1.8,
-            self._scaled(pose.ry) * 1.8,
-            tint,
-        )
-        _blit_ellipse(signal, cx, cy, self._scaled(pose.rx), self._scaled(pose.ry), (245, 245, 250))
+        cy = self._scaled(cy)
+        _blit_ellipse(signal, cx, cy, self._scaled(rx) * 1.8, self._scaled(ry) * 1.8, tint)
+        _blit_ellipse(signal, cx, cy, self._scaled(rx), self._scaled(ry), (245, 245, 250))
 
     def _events(self, t: float):
         grid = self.dance.grid
