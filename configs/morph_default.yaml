@@ -1,0 +1,29 @@
+seed: 7
+cols: 68
+rows: 90
+cell: 12
+origin_x: 132
+origin_y: 400
+timeline:
+  hold_a_start: 0.4
+  morph_ab: 6.0
+  hold_b: 2.2
+  morph_ba: 5.5
+  hold_a_end: 0.4
+delay_frac: 0.30
+arc_amp: 0.15
+lift: 0.5
+spatial_weight: 0.3
+recolor_strength: 1.0
+hook: Watch the pixels move
+max_particles: 9000
+# 0 uses one less than the CPU count. 1 renders in this process.
+workers: 0
+audio_offset_ms: 0
+max_delta_e: 0.06
+focus_a: [0.5, 0.5]
+focus_b: [0.5, 0.5]
+audio:
+  # Whoosh peak, when every particle is in flight, sits this many dB under a nominal 0.5 tick.
+  whoosh_db: -18
+  tick_density: 12

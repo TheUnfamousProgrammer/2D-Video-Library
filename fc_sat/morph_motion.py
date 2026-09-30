@@ -29,6 +29,17 @@ def total_frames(plan: list[tuple[str, int]]) -> int:
     return int(sum(count for _, count in plan))
 
 
+def phase_bounds(seconds: dict[str, float]) -> dict[str, tuple[float, float]]:
+    """Map each phase name to ``(start_seconds, duration_seconds)``."""
+    cursor = 0.0
+    bounds: dict[str, tuple[float, float]] = {}
+    for name in PHASES:
+        duration = float(seconds[name])
+        bounds[name] = (cursor, duration)
+        cursor += duration
+    return bounds
+
+
 def phase_at(index: int, plan: list[tuple[str, int]]) -> tuple[str, int, float]:
     """Return ``(name, local_index, tau)`` with ``tau = i / (n - 1)``."""
     cursor = 0
