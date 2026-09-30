@@ -55,6 +55,19 @@ def _oklab_to_linear(lab: np.ndarray) -> np.ndarray:
     )
 
 
+def rgb_u8_to_oklab(rgb: np.ndarray) -> np.ndarray:
+    """sRGB uint8 ``(..., 3)`` to OKLab float64. Shared by palette and Pixel Morph."""
+    unit = np.asarray(rgb, dtype=np.float64) / 255.0
+    return _linear_to_oklab(_srgb_to_linear(unit))
+
+
+def oklab_to_rgb_u8(lab: np.ndarray) -> np.ndarray:
+    """OKLab float to sRGB uint8 ``(..., 3)``."""
+    linear = np.clip(_oklab_to_linear(np.asarray(lab, dtype=np.float64)), 0.0, 1.0)
+    srgb = np.clip(_linear_to_srgb(linear), 0.0, 1.0)
+    return (srgb * 255.0 + 0.5).astype(np.uint8)
+
+
 def palette_bgr(stops: tuple[str, ...], count: int) -> np.ndarray:
     """Return (count, 3) uint8 BGR colors, smoothly spaced across the stops."""
     rgb = np.stack([_srgb_to_linear(hex_to_rgb(stop)) for stop in stops], axis=0)

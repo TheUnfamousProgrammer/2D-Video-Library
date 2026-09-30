@@ -7,3 +7,5 @@ out/
 *.partial.mp4
 *.wav
 .DS_Store
+assets/images/*
+!assets/images/credits.json
