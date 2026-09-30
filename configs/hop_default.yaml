@@ -1,0 +1,33 @@
+seed: 1
+song: songs/ode_to_joy.yaml
+octave_shift: 1
+bpm: null
+repeats: 1
+palette: sunset
+hook: Guess the song
+show_note_names: false
+width: 1080
+height: 1920
+fps: 60
+workers: 1
+bloom_strength: 0.6
+audio_offset_ms: 0
+layout:
+  span: 700
+  pad_max_width: 112
+  pad_top_y: 1180
+  pad_thickness: 36
+  ball_radius: 34
+  corner: 14
+hop:
+  h_ref: 220
+  h_min: 60
+  h_max: 600
+  exponent: 1.2
+effects:
+  trail_seconds: 0.30
+  sparks: 10
+  ring: true
+audio:
+  reverb_wet: 0.22
+  rt60: 1.4
