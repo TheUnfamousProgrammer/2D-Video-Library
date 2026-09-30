@@ -396,6 +396,44 @@ class HopRenderer:
                 composite_rgba(frame, label, lx, ly)
 
 
+def layout_failures(cfg: HopConfig, dance: Choreography) -> list[str]:
+    """Pads, the ball, and the hook must sit inside x [130, 950] and y [200, 1536]."""
+    sx0, sx1, sy0, sy1 = 130.0, 950.0, 200.0, 1536.0
+    failures: list[str] = []
+
+    def check(name: str, box: tuple[float, float, float, float]) -> None:
+        if box[0] < sx0 - 1e-3 or box[2] > sx1 + 1e-3 or box[1] < sy0 - 1e-3 or box[3] > sy1 + 1e-3:
+            failures.append(
+                f"{name} box ({box[0]:.1f},{box[1]:.1f})-({box[2]:.1f},{box[3]:.1f}) "
+                f"outside safe ({sx0:.1f},{sy0:.1f})-({sx1:.1f},{sy1:.1f})"
+            )
+
+    for pad in dance.layout.pads:
+        check(
+            f"pad {pad.name}",
+            (pad.left, pad.top, pad.right, pad.top + pad.thickness),
+        )
+    for frame in range(dance.grid.n_frames):
+        pose = dance.pose(frame / 60.0)
+        check(
+            f"ball frame {frame}",
+            (pose.x - pose.rx, pose.y - pose.ry, pose.x + pose.rx, pose.y + pose.ry),
+        )
+        if failures:
+            break
+    image = raster_text(cfg.hook, find_font(), 96, int(sx1 - sx0 - 40), 2)
+    check(
+        "hook",
+        (
+            cfg.width / 2.0 - image.shape[1] / 2.0,
+            330.0 - image.shape[0] / 2.0,
+            cfg.width / 2.0 + image.shape[1] / 2.0,
+            330.0 + image.shape[0] / 2.0,
+        ),
+    )
+    return failures
+
+
 def _positive_mod(t: float, duration: float) -> float:
     local = math.fmod(t, duration)
     if local < 0:
