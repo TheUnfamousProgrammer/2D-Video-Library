@@ -598,19 +598,255 @@ def _config_has_song(path: Path) -> bool:
     return isinstance(data, dict) and bool(data.get("song"))
 
 
+def detect_mode(path: Path) -> str:
+    """Hop if the file names a song, morph if it sets recolor_strength, else bounce."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and data.get("song"):
+        return "hop"
+    if isinstance(data, dict) and "recolor_strength" in data:
+        return "morph"
+    return "bounce"
+
+
+def cell_oklab_error(
+    frame_bgr: np.ndarray,
+    grid_rgb: np.ndarray,
+    origin: tuple[int, int],
+    cell: int,
+    cols: int,
+    rows: int,
+) -> float:
+    """Mean OKLab distance between cell averages of a decoded box and the prepared grid."""
+    from fc_sat.color import rgb_u8_to_oklab
+
+    x0, y0 = origin
+    box = frame_bgr[y0 : y0 + rows * cell, x0 : x0 + cols * cell]
+    averaged = box.reshape(rows, cell, cols, cell, 3).astype(np.float64).mean(axis=(1, 3))
+    lab = rgb_u8_to_oklab(np.clip(averaged[..., ::-1], 0, 255))
+    target = rgb_u8_to_oklab(grid_rgb)
+    return float(np.mean(np.linalg.norm(lab - target, axis=-1)))
+
+
+def verify_morph_file(path: Path, cfg, *, image_a, image_b) -> list[Check]:
+    """Container, loudness, loop, fidelity, and safe-zone checks for Pixel Morph.
+
+    Fidelity is a pass/fail only when recolor_strength is at least 0.99.
+    Below that the measured OKLab error is reported and does not fail the file.
+    True peak uses the bounce resample_poly meter.
+    """
+    from fc_sat.morph_images import load_rgb, prepare_grid
+    from fc_sat.morph_motion import phase_frames, total_frames
+    from fc_sat.morph_render import MorphRenderer
+    from fc_sat.morph_render import layout_failures as morph_layout_failures
+
+    path = Path(path)
+    checks: list[Check] = []
+    ffmpeg = find_ffmpeg()
+    ffprobe = find_ffprobe(ffmpeg)
+    info = _probe(ffprobe, path)
+    video = _stream(info, "video")
+    audio = _stream(info, "audio")
+    if video is None:
+        _add(checks, "video stream", False, "missing")
+        return checks
+    width = int(video.get("width", 0))
+    height = int(video.get("height", 0))
+    _add(checks, "resolution", width == 1080 and height == 1920, f"{width}x{height}")
+    _add(checks, "fps", str(video.get("r_frame_rate")) == "60/1", str(video.get("r_frame_rate")))
+    _add(checks, "h264", video.get("codec_name") == "h264", str(video.get("codec_name")))
+    profile = str(video.get("profile", ""))
+    _add(checks, "profile high", profile.lower().startswith("high"), profile or "missing")
+    _add(checks, "yuv420p", video.get("pix_fmt") == "yuv420p", str(video.get("pix_fmt")))
+    _add(
+        checks,
+        "bt709 tags",
+        video.get("color_space") == "bt709"
+        and video.get("color_transfer") == "bt709"
+        and video.get("color_primaries") == "bt709"
+        and video.get("color_range") == "tv",
+        f"space={video.get('color_space')} trc={video.get('color_transfer')} "
+        f"primaries={video.get('color_primaries')} range={video.get('color_range')}",
+    )
+    if audio is None:
+        _add(checks, "audio stream", False, "missing")
+    else:
+        _add(checks, "aac", audio.get("codec_name") == "aac", str(audio.get("codec_name")))
+        _add(
+            checks,
+            "audio format",
+            str(audio.get("sample_rate")) == "48000" and int(audio.get("channels", 0)) == 2,
+            f"{audio.get('sample_rate')} Hz {audio.get('channels')} ch",
+        )
+    plan = phase_frames(cfg.timeline(), 60)
+    n_frames = total_frames(plan)
+    expected = n_frames / 60.0
+    vdur = _duration(video, info)
+    adur = _duration(audio, info) if audio else None
+    if vdur is None:
+        _add(checks, "duration", False, "video duration missing")
+    else:
+        _add(checks, "duration vs config", abs(vdur - expected) <= 0.020, f"{vdur:.4f}s vs {expected:.4f}s")
+        if adur is not None:
+            _add(checks, "av sync", abs(vdur - adur) <= 0.020, f"video {vdur:.4f}s audio {adur:.4f}s")
+        else:
+            _add(checks, "av sync", False, "audio duration missing")
+    size_mb = path.stat().st_size / (1024 * 1024)
+    _add(checks, "file size", size_mb < 100.0, f"{size_mb:.2f} MB")
+
+    cursor = 0
+    hold_index = 0
+    for name, count in plan:
+        if name == "hold_b":
+            hold_index = cursor + (count - 1) // 2
+            break
+        cursor += count
+    grid_a = prepare_grid(load_rgb(image_a), cfg.cols, cfg.rows, cfg.focus_a)
+    grid_b = prepare_grid(load_rgb(image_b), cfg.cols, cfg.rows, cfg.focus_b)
+    renderer = MorphRenderer(cfg, image_a, image_b, preview=False)
+    layout = morph_layout_failures(cfg)
+    _add(checks, "layout safe zone", not layout, "inside" if not layout else "; ".join(layout))
+
+    spilled = 0
+    sample_at = {0, n_frames - 1}
+    for phase in ("morph_ab", "morph_ba"):
+        for tau in (0.25, 0.5, 0.75):
+            sample_at.add(renderer.frame_index(phase, tau))
+    for index in sorted(sample_at):
+        layer = renderer.particle_layer(index)
+        mask = np.ones(layer.shape[:2], dtype=bool)
+        mask[renderer.y0 : renderer.y0 + renderer.box_h, renderer.x0 : renderer.x0 + renderer.box_w] = False
+        spilled = max(spilled, int(layer[mask].max()) if np.any(mask) else 0)
+    _add(checks, "particles inside box", spilled == 0, f"max outside pixel {spilled}")
+
+    luma = np.empty(0, dtype=np.float64)
+    worst_mean = 0.0
+    worst_p99 = -1.0
+    worst_index = 0
+    worst_frame = None
+    first = None
+    last = None
+    hold_frame = None
+    if width == 1080 and height == 1920:
+        vignette = vignette_bgr(width, height)
+        hx0, hy0, hx1, hy1 = renderer.hook_box
+        compare = np.ones((height, width), dtype=bool)
+        compare[cfg.origin_y : cfg.origin_y + cfg.rows * cfg.cell, cfg.origin_x : cfg.origin_x + cfg.cols * cfg.cell] = False
+        compare[max(0, hy0) : min(height, hy1), max(0, hx0) : min(width, hx1)] = False
+        vig_pix = vignette[compare].astype(np.float32)
+        vig_luma = _bgr_luma(vig_pix)
+        means = []
+        for index, frame in enumerate(_iter_decoded(ffmpeg, path, width, height)):
+            if first is None:
+                first = frame.copy()
+            if index == hold_index:
+                hold_frame = frame.copy()
+            last = frame
+            means.append(_luma_mean(frame))
+            pix = frame[compare].astype(np.float32)
+            mean_abs = float(np.mean(np.abs(pix - vig_pix)) / 255.0)
+            p99 = float(np.quantile(_bgr_luma(pix) - vig_luma, 0.99))
+            if mean_abs >= worst_mean or p99 >= worst_p99:
+                worst_frame = frame.copy()
+                worst_index = index
+            worst_mean = max(worst_mean, mean_abs)
+            worst_p99 = max(worst_p99, p99)
+        luma = np.array(means, dtype=np.float64)
+        if last is not None:
+            last = last.copy()
+    if first is not None and last is not None:
+        score = ssim_u8(first, last)
+        _add(checks, "loop ssim", score >= 0.995, f"{score:.6f}")
+    else:
+        _add(checks, "loop ssim", False, "could not decode frames")
+    if luma.size == 0:
+        _add(checks, "black frames", False, "no decoded frames")
+        _add(checks, "photosensitivity", False, "no luma")
+        _add(checks, "pixel safe zone", False, "frame size is not 1080x1920")
+        pixel_ok = False
+    else:
+        darkest = float(luma.min())
+        _add(checks, "black frames", darkest > BLACK_LUMA, f"min mean luma {darkest:.4f}")
+        hot = photosensitivity_hot_count(luma, 60)
+        _add(checks, "photosensitivity", hot <= 3, f"max jumps >0.10 in 1s: {hot}")
+        pixel_ok = worst_mean <= SAFE_MEAN_ABS + 1e-9 and worst_p99 <= SAFE_P99_LUMA + 1e-9
+        detail = (
+            f"mean abs RGB {worst_mean * 255:.2f}/255 (limit 8), "
+            f"p99 luma delta {worst_p99:.4f} (limit 0.06), worst frame {worst_index}"
+        )
+        _add(checks, "pixel safe zone", pixel_ok, detail)
+    if not pixel_ok and worst_frame is not None:
+        dump = path.with_name(path.stem + ".safezone.png")
+        import cv2
+
+        cv2.imwrite(str(dump), worst_frame)
+        print(f"saved safe-zone failure frame to {dump}", file=sys.stderr)
+        print(detail if luma.size else "pixel safe zone failed", file=sys.stderr)
+
+    enforce = float(cfg.recolor_strength) >= 0.99
+    if first is not None:
+        err_a = cell_oklab_error(first, grid_a, (cfg.origin_x, cfg.origin_y), cfg.cell, cfg.cols, cfg.rows)
+    else:
+        err_a = 1.0
+    if hold_frame is not None:
+        err_b = cell_oklab_error(hold_frame, grid_b, (cfg.origin_x, cfg.origin_y), cfg.cell, cfg.cols, cfg.rows)
+    else:
+        err_b = 1.0
+    limit = float(cfg.max_delta_e)
+    fidelity_ok = (err_a <= limit and err_b <= limit) if enforce else True
+    fidelity_detail = (
+        f"A {err_a:.4f}, B {err_b:.4f}, limit {limit:.3f}"
+        + ("" if enforce else " (report only, recolor_strength < 0.99)")
+    )
+    _add(checks, "fidelity", fidelity_ok, fidelity_detail)
+
+    if audio is not None:
+        samples = _decode_audio(ffmpeg, path)
+        meter = pyln.Meter(48000)
+        lufs = float(meter.integrated_loudness(samples))
+        peak = true_peak_db(samples)
+        sample_peak = float(np.max(np.abs(samples))) if samples.size else 1.0
+        _add(checks, "lufs", abs(lufs + 14.0) <= 1.0, f"{lufs:.2f} LUFS")
+        _add(checks, "true peak", peak <= -1.0 + 1e-3, f"{peak:.2f} dBTP")
+        _add(checks, "no clipping", sample_peak < 1.0, f"sample peak {sample_peak:.4f}")
+        tail_n = int(round(0.300 * 48000))
+        tail = samples[-tail_n:] if samples.shape[0] >= tail_n else samples
+        rms = float(np.sqrt(np.mean(tail ** 2))) if tail.size else 0.0
+        tail_db = 20.0 * math.log10(max(rms, 1e-12))
+        _add(checks, "tail silence", tail_db < -50.0, f"{tail_db:.1f} dBFS")
+    return checks
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify a rendered Short")
     parser.add_argument("mp4")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--mode", choices=("bounce", "hop"), default=None)
+    parser.add_argument("--mode", choices=("bounce", "hop", "morph"), default=None)
     parser.add_argument("--no-cache", action="store_true")
     args = parser.parse_args(argv)
     config_path = Path(args.config)
-    mode = args.mode
-    if mode is None:
-        mode = "hop" if _config_has_song(config_path) else "bounce"
+    mode = args.mode or detect_mode(config_path)
     if mode == "hop":
         checks = verify_hop_file(Path(args.mp4), load_hop_config(config_path))
+    elif mode == "morph":
+        from fc_sat.config import _load_hooks, _sibling
+        from fc_sat.morph_config import load_morph_config, morph_from_public
+
+        sidecar = Path(args.mp4).with_suffix(".json")
+        if not sidecar.is_file():
+            print(f"morph verify needs the sidecar {sidecar.name} with image paths", file=sys.stderr)
+            return 1
+        meta = json.loads(sidecar.read_text(encoding="utf-8"))
+        hooks = _load_hooks(_sibling(config_path, "morph_hooks.yaml"))
+        if isinstance(meta.get("config"), dict):
+            cfg = morph_from_public(meta["config"], hooks)
+        else:
+            cfg = load_morph_config(config_path)
+        image_a = meta.get("image_a")
+        image_b = meta.get("image_b")
+        if not image_a or not image_b:
+            print("morph sidecar is missing image_a or image_b", file=sys.stderr)
+            return 1
+        checks = verify_morph_file(Path(args.mp4), cfg, image_a=image_a, image_b=image_b)
     else:
         cfg = load_config(config_path)
         checks = verify_file(Path(args.mp4), cfg, use_cache=not args.no_cache)

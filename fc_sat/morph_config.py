@@ -198,6 +198,15 @@ def validate_morph(raw: dict[str, Any], hooks: tuple[str, ...]) -> MorphConfig:
     )
 
 
+def morph_from_public(payload: dict[str, Any], hooks: tuple[str, ...]) -> MorphConfig:
+    """Rebuild a config from the sidecar's public dict."""
+    raw = dict(payload)
+    raw.pop("hooks", None)
+    raw["timeline"] = {name: raw.pop(name) for name in _TIMELINE}
+    raw["audio"] = {"whoosh_db": raw.pop("whoosh_db"), "tick_density": raw.pop("tick_density")}
+    return validate_morph(raw, hooks)
+
+
 def load_morph_config(path: str | Path) -> MorphConfig:
     path = Path(path)
     raw = _load_mapping(path)
