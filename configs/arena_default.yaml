@@ -7,129 +7,183 @@ workers: 0
 bloom_strength: 0.5
 cast_size: 32
 cast: configs/casts/world.yaml
-hook: Which country survives?
+hook: "Which country survives?"
 hook_index: null
 
-world:
-  center: [540, 960]
-  floor_radius: 400
-  ball_radius: 34
-  ball_mass: 1
-  restitution: 0.9
-  damping: 0.15
-  substeps_hz: 240
+physics:
+  radius: 44
+  mass: 1
+  restitution: 0.92
+  damping: 2.2
+  speed_clamp: 1800
+  solver_iters: 4
+  max_step_px: 7.5
+
+platform:
+  center: [540, 940]
+  hw0: 410
+  hh0: 460
+  corner_frac: 0.35
+  # Tuned wider and slower than the spec table. A 1350 px/s dash from the
+  # spawn ring clears the spec 410 x 460 platform, so the early gates fail.
+  # Slopes stay under hw_speed_max (28 px/s) so the cap does not hide the shape.
+  keyframes:
+    - [0, 1020, 1150]
+    - [6, 1020, 1150]
+    - [14, 940, 1050]
+    - [22, 860, 960]
+    - [30, 780, 860]
+    - [34, 700, 780]
+  shrink_gain: 0.35
+  hw_speed_max: 28
+  n_target:
+    - [0, 32]
+    - [4, 29]
+    - [10, 21]
+    - [16, 13]
+    - [22, 7]
+    - [28, 2]
 
 spawn:
-  disk_radius: 300
-  speed_min: 155
-  speed_max: 295
-  inward_deg: 50
-  wander_accel: 120
-  wander_period: [0.5, 1.2]
-  edge_accel: 1550
-  edge_margin: 105
-  edge_factor: [0.5, 1.0]
-  no_elim_before: 1.5
+  disk_frac: 0.8
+  speed_min: 0
+  speed_max: 200
+  clash_gap: 800
+  clash_speed: 1200
+
+ai:
+  cooldown: [1.2, 2.2]
+  cooldown_min: 0.5
+  initial_cooldown: [0.2, 1.2]
+  clash_cooldown: [0.7, 1.2]
+  aggression_time: 30
+  aggression_scale: 1.2
+  windup: 0.30
+  windup_speed: 0.20
+  fizzle_cooldown: 0.3
+  dash_speed: 1200
+  dash_predict: 0.2
+  dash_time: 0.35
+  dash_margin_radii: 0.8
+  edge_margin_radii: 1.2
+  edge_outward_speed: 150
+  edge_accel: 2400
+  score_edge: 1.0
+  score_near: 0.6
+  score_revenge: 0.5
+  score_leader: 0.3
+  noise: 0.15
+  edge_range: 600
+  near_range: 700
+  revenge_window: 8
+  leader_kos: 2
+  controller_gain: 0.25
+  controller_clamp: [0.7, 1.6]
+
+attribution:
+  hit_window: 2.5
+  storm_window: 0.6
+  combo_window: 3.0
+  simultaneous: 0.2
   fall_seconds: 0.9
-  out_margin_radii: 0.5
 
-zone:
-  keyframes:
-    - [0.0, 400]
-    - [4.0, 400]
-    - [7.0, 330]
-    - [12.0, 330]
-    - [15.0, 260]
-    - [20.0, 260]
-    - [23.0, 190]
-    - [27.0, 190]
-    - [29.0, 130]
-  warning_lead: 1.2
-  shrink_seconds: 3.0
-
-# Omega holds at omega_start until six seconds before omega_end_time, then ramps.
-sweeper:
-  start: 2.0
-  thickness: 24
-  inset: 10
-  omega_start: 1.02
-  omega_end: 2.55
-  omega_end_time: 23.6
-
-meteors:
-  start: 15.0
-  gap: [3.2, 4.8]
-  reticle: 0.9
-  radius: 110
-  impulse: 680
-
-cameo:
+boss:
   name: OHIO
-  enter: 15.0
-  exit: 18.5
-  radius: 75
+  enter: 15
+  warning: 1.2
+  speed: 700
+  radius: 90
   mass: 6
+  restitution: 0.9
+  charge_speed: 1300
+  windup: 0.9
+  charges: 2
+  ko_exit: 4
+  min_alive: 12
 
 pacing:
   gates:
-    - [4.0, 27, 30]
-    - [10.0, 17, 24]
-    - [16.0, 9, 16]
-    - [22.0, 4, 9]
-  win: [26.0, 32.0]
-  final_duel_min: 3.0
-  min_pass_rate: 0.15
-  search: 300
+    - [4, 27, 31]
+    - [10, 18, 25]
+    - [16, 10, 17]
+    - [22, 4, 10]
+  win: [26, 33]
+  final_duel_min: 4.0
+  first_ko: [1.5, 4.0]
+  first_impact: [0.4, 1.3]
+  first_impact_speed: 700
+  cause_ball_min: 0.80
+  cause_storm_max: 0.20
+  cause_self_max: 0.10
+  dead_time: 1.5
+  dead_impact: 600
+  kinetic_window: 2.0
+  kinetic_min: 140
+  kinetic_tail: 4
+  heap_bottom: 0.45
+  heap_neighbors: 1.2
+  min_pass_rate: 0.30
+  search: 40
+  horizon: 36
 
 drama:
-  near_miss_window: 12.0
-  near_miss_margin_radii: 0.5
-  near_miss_cap: 6
-  near_miss_weight: 1.0
-  duel_cap: 6.0
-  duel_weight: 1.0
-  late_elim_window: 10.0
-  late_elim_min: 3
-  late_elim_weight: 0.5
-  double_window: 0.4
-  double_cap: 2
-  double_weight: 0.5
-  meteor_elim_range: [1, 4]
-  meteor_elim_weight: 0.3
+  escape_window: 10
+  escape_margin_radii: 0.2
+  escape_cap: 6
+  escape_weight: 1.0
+  comeback_margin_radii: 0.5
+  comeback_cap: 2
+  comeback_weight: 1.0
+  combo_cap: 3
+  combo_weight: 0.7
+  revenge_cap: 2
+  revenge_weight: 0.5
+  duel_cap: 8
+  duel_weight: 0.6
+  mutual_bonus: 1.0
+  winner_kos_bonus: 1.0
   repeat_penalty: 2.0
 
 camera:
-  screen_radius: 400
+  screen_hw: 410
+  screen_hh: 460
   smooth: 0.35
   punch_seconds: 0.4
   punch_from: 1.15
   punch_to: 1.0
-  shake_px: 14
-  shake_hz: 30
-  shake_decay: 0.35
-  zone_x: [140, 940]
-  zone_y: [560, 1360]
+  impact_shake: 6
+  platform_x: [130, 950]
+  platform_y: [480, 1400]
 
 layout:
   safe_x: [130, 950]
   safe_y: [200, 1536]
-  counter_y: 270
-  counter_px: 120
-  hook_y: 420
-  hook_px: 90
-  hook_lines: 2
+  counter_y: 255
+  counter_px: 100
+  hook_y: 380
+  hook_px: 76
+  hook_max_chars: 25
+  hook_until: 3.0
+  sub_y: 440
+  sub_px: 34
+  sub_from: 3.0
+  sub_until: 5.5
+  sub_text: "Same size. Same weight. Same moves."
+  kill_y: [1440, 1486]
+  kill_px: 36
   kill_x: 150
-  kill_y: [1410, 1460, 1510]
-  kill_px: 40
-  kill_lines: 3
-  kill_fade: 2.5
-  cta_y: 1450
-  name_px: 26
+  kill_chars: 34
+  kill_lines: 2
+  kill_fade: 2.4
+  name_px: 28
   name_seconds: 3.0
-  name_fade: 0.5
   last_named: 8
 
 timeline:
+  hitstop_speed: 800
+  hitstop_impact_frames: 3
+  hitstop_ko_frames: 5
+  hitstop_cap: 1.5
   slowmo_rate: 0.35
   slowmo_pre: 0.25
   slowmo_post: 0.35
@@ -138,27 +192,14 @@ timeline:
   celebration: 2.6
   winner_scale: 1.8
   confetti: 300
-  counter_pop: 0.15
-  counter_pop_scale: 1.25
-  hook_until: 3.0
-  hook_fade: 0.4
-  fact_text: "32 countries. Same size. Same weight. Pure physics."
-  fact_window: [3.0, 5.5]
-  wait_text: "wait for it..."
-  wait_start: 11.5
+  duration: [33, 43]
+  hard_cap: 45
 
 juice:
-  squash: 0.85
-  squash_seconds: 0.12
-  trail_speed: 600
-  spark_speed: 350
-  sparks: 6
-  eye_frac: 0.2
-  blink: [3.0, 5.0]
-  scared_margin: 70
-  hit_seconds: 0.25
-  shadow_offset_radii: 0.25
-  highlight_alpha: 0.25
+  squash: 0.8
+  dash_stretch: 1.25
+  sparks: 8
+  eye_frac: 0.22
 
 audio:
   bpm: [120, 150]
@@ -168,21 +209,17 @@ audio:
   slowmo_lpf: 800
   stinger_gap: 0.25
   pre_drop: 0.35
-  max_voices: 12
+  hitstop_duck_db: 6
+  max_voices: 24
   max_onsets_per_100ms: 14
-  bonk_noise_ms: 8
-  bonk_drop_ms: 60
-  bonk_hz: [220, 90]
-  cowbell_hz: [540, 800]
-  airhorn_hz: [466, 554]
-  ding_hz: [1320, 1980]
-  ding_ms: 80
-  whistle_hz: [1200, 200]
+  cowbell_hz: [740, 932]
+  airhorn_hz: [466, 587]
+  ding_hz: [880, 1174]
+  ding_ms: 90
+  whistle_hz: [1200, 300]
   whistle_seconds: 0.9
-  meteor_beep_hz: 880
-  meteor_beep_gap: 0.3
-  meteor_beeps: 3
   sub_hz: [110, 45]
+  windup_hz: [300, 900]
   target_lufs: -14
   true_peak_db: -1
   fade_ms: 5

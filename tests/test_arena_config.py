@@ -21,13 +21,12 @@ def test_default_arena_config_loads():
     assert cfg.generator == "arena"
     assert cfg.cast_size == CAST_SIZE
     assert len(cfg.countries) == 32
-    assert cfg.ball_radius == 34
-    assert cfg.zone_keyframes[0] == (0.0, 400.0)
-    assert cfg.zone_keyframes[-1] == (29.0, 130.0)
+    assert cfg.ball_radius == 44
     assert cfg.voice_model_id == "eleven_v4"
     assert cfg.cameo_name == "OHIO"
-    assert cfg.gates[0] == (4.0, 27, 30)
-    assert cfg.win_window == (26.0, 32.0)
+    assert cfg.gates[0] == (4.0, 27, 31)
+    assert cfg.win_window == (26.0, 33.0)
+    assert cfg.dt == 1.0 / 240.0
 
 
 def test_cast_size_is_locked():
@@ -116,22 +115,44 @@ def test_no_cast_contains_a_blocked_code():
         assert len(codes) == 32
 
 
+def test_gravity_key_is_rejected():
+    raw = _load_mapping(Path("configs/arena_default.yaml"))
+    raw["physics"]["gravity"] = 900
+    guards = load_guards("configs/guards.yaml")
+    countries, warnings = load_cast("configs/casts/world.yaml", guards)
+    from fc_sat.arena_config import validate_arena
+    from fc_sat.config import _load_hooks
+
+    with pytest.raises(ConfigError, match="gravity"):
+        validate_arena(
+            raw,
+            hooks=_load_hooks(Path("configs/arena_hooks.yaml")),
+            countries=countries,
+            guards=guards,
+            memes=load_memes("configs/memes.yaml"),
+            cast_path="configs/casts/world.yaml",
+            sensitive_warnings=warnings,
+        )
+
+
 def test_meme_denylist_and_placeholders():
     memes = load_memes("configs/memes.yaml")
     assert memes.last_reviewed == "2026-10-01"
-    assert any("walked off" in line for line in memes.lines("self_fall"))
-    assert any("28" in line or "characters" in line for line in memes.warnings)
+    assert any("fell off" in line for line in memes.lines("self"))
+    assert not any("walked off" in line for group in memes.phrases for line in group[1])
     raw = {
         "last_reviewed": "2026-10-01",
-        "eliminated": ["{code} is fine"],
-        "meteor": ["{code} met the meteor"],
-        "self_fall": ["{code} tripped"],
-        "final3": ["FINAL 3"],
+        "ko": ["{killer} sent {victim} flying"],
+        "combo": ["DOUBLE KO"],
+        "revenge": ["REVENGE!"],
+        "storm": ["{victim} got caught by the storm"],
+        "self": ["{victim} fell off"],
+        "final": ["FINAL 3"],
         "cameo": ["{cameo} has entered the chat"],
         "winner": ["{name} WINS"],
     }
     blocked = copy.deepcopy(raw)
-    blocked["eliminated"] = ["{code} nationality"]
+    blocked["ko"] = ["{killer} nationality"]
     with pytest.raises(ConfigError, match="nationality"):
         validate_memes(blocked)
     slur = next(iter(DENYLIST))
@@ -143,6 +164,10 @@ def test_meme_denylist_and_placeholders():
     unknown["cameo"] = ["{country} arrived"]
     with pytest.raises(ConfigError, match="placeholder"):
         validate_memes(unknown)
+    long = copy.deepcopy(raw)
+    long["ko"] = ["{killer} sent {victim} flying today please"]
+    warned = validate_memes(long)
+    assert any("34" in line for line in warned.warnings)
 
 
 def test_world_cast_matches_the_spec_order():

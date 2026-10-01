@@ -1,8 +1,8 @@
-"""Deterministic Flag Arena simulation, pacing gates, and drama search.
+"""Top-down Flag Arena solver.
 
-pymunk is used when it imports. Otherwise a numpy circle-impulse solver runs.
-The two backends are not required to match each other. Within one backend, the
-same seed and config repeat.
+No gravity, no wander, no sweeper, no meteors. Every impulse is tagged
+ball, dash, boss, or clash. Fixed step 1/240, PCG64 streams for spawn, AI,
+and effects.
 """
 
 from __future__ import annotations
@@ -10,27 +10,35 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from fc_sat.arena_config import ArenaConfig
-from fc_sat.render import ease_in_out_cubic
 
-try:
-    import pymunk
-except ImportError:  # pragma: no cover - exercised only when pymunk is absent
-    pymunk = None
-
-TAU = math.tau
-HORIZON = 36.0
+IMPULSE_SOURCES = frozenset({"ball", "dash", "boss", "clash"})
+BOSS_ID = -1
+_PHASE_COOL = 0
+_PHASE_WIND = 1
+_PHASE_DASH = 2
 
 
-def active_backend() -> str:
-    return "pymunk" if pymunk is not None else "numpy"
+@dataclass(frozen=True)
+class Impulse:
+    time: float
+    source: str
+    a: int
+    b: int
+    closing: float
+    x: float
+    y: float
+
+    def __post_init__(self) -> None:
+        if self.source not in IMPULSE_SOURCES:
+            raise ValueError(f"impulse source {self.source!r} is not logged")
 
 
 @dataclass(frozen=True)
@@ -38,92 +46,922 @@ class Elim:
     time: float
     index: int
     cause: str
+    killer: int | None = None
+    closing: float = 0.0
+    combo: str = ""
+    revenge: bool = False
 
 
 @dataclass(frozen=True)
-class Meteor:
-    time: float
-    x: float
-    y: float
-
-
-@dataclass
 class SimResult:
     seed: int
     backend: str
     elims: tuple[Elim, ...]
-    meteors: tuple[Meteor, ...]
-    near_misses: tuple[tuple[int, float], ...]
     t_win: float | None
     winner: int | None
     duel_start: float | None
     cameo_exit: float | None
-    trace: dict[str, np.ndarray] | None
+    trace: dict | None = None
+    impulses: tuple[Impulse, ...] = ()
+    metrics: dict = field(default_factory=dict)
+    meteors: tuple = ()
+    near_misses: tuple = ()
 
     @property
     def placements(self) -> tuple[int, ...]:
-        ordered = [item.index for item in self.elims]
-        if self.winner is not None:
-            ordered.append(self.winner)
-        return tuple(ordered)
+        order = [item.index for item in self.elims]
+        if self.winner is not None and self.winner not in order:
+            order.append(self.winner)
+        return tuple(order)
 
 
-def zone_radius(cfg: ArenaConfig, time: float) -> float:
-    frames = cfg.zone_keyframes
+def active_backend() -> str:
+    return "numpy"
+
+
+def rounded_rect_sd(x: float, y: float, cx: float, cy: float, hw: float, hh: float, cr: float) -> float:
+    ax = abs(x - cx)
+    ay = abs(y - cy)
+    qx = ax - (hw - cr)
+    qy = ay - (hh - cr)
+    outside = math.hypot(max(qx, 0.0), max(qy, 0.0))
+    inside = min(max(qx, qy), 0.0)
+    return outside + inside - cr
+
+
+def _sd_array(pos: np.ndarray, cx: float, cy: float, hw: float, hh: float, cr: float) -> np.ndarray:
+    ax = np.abs(pos[:, 0] - cx)
+    ay = np.abs(pos[:, 1] - cy)
+    qx = ax - (hw - cr)
+    qy = ay - (hh - cr)
+    outside = np.hypot(np.maximum(qx, 0.0), np.maximum(qy, 0.0))
+    inside = np.minimum(np.maximum(qx, qy), 0.0)
+    return outside + inside - cr
+
+
+def corner_radius(hw: float, hh: float, frac: float) -> float:
+    return frac * min(hw, hh)
+
+
+def resolve_collision(
+    va: np.ndarray,
+    vb: np.ndarray,
+    ma: float,
+    mb: float,
+    restitution: float,
+    normal: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Equal-mass head-on contacts keep momentum and scale separation by restitution."""
+    length = float(np.linalg.norm(normal))
+    if length < 1e-8 or ma <= 0 or mb <= 0:
+        return va.copy(), vb.copy(), 0.0
+    normal = normal / length
+    closing = float(np.dot(va - vb, normal))
+    if closing <= 0.0:
+        return va.copy(), vb.copy(), 0.0
+    impulse = (1.0 + restitution) * closing / (1.0 / ma + 1.0 / mb)
+    return va - (impulse / ma) * normal, vb + (impulse / mb) * normal, closing
+
+
+def damp_factor(damping: float, elapsed: float) -> float:
+    return math.exp(-damping * elapsed)
+
+
+def boss_allowed(alive: int, minimum: int) -> bool:
+    return alive >= minimum
+
+
+def combo_name(streak: int) -> str:
+    if streak >= 4:
+        return "rampage"
+    if streak == 3:
+        return "triple"
+    if streak == 2:
+        return "double"
+    return ""
+
+
+def attribute_cause(last_hit_age: float, last_hit_kind: str, inside_old_platform: bool, *, hit_window: float) -> str:
+    if last_hit_kind in {"ball", "boss"} and last_hit_age <= hit_window:
+        return last_hit_kind
+    if inside_old_platform:
+        return "storm"
+    return "self"
+
+
+def dash_travel(speed: float, damping: float, seconds: float) -> float:
+    if damping <= 1e-8:
+        return speed * seconds
+    return (speed / damping) * (1.0 - math.exp(-damping * seconds))
+
+
+def _sample_pair(frames: tuple[tuple[float, float], ...], time: float) -> float:
     if time <= frames[0][0]:
         return frames[0][1]
     if time >= frames[-1][0]:
         return frames[-1][1]
-    for (t0, r0), (t1, r1) in zip(frames, frames[1:]):
+    for (t0, v0), (t1, v1) in zip(frames, frames[1:]):
         if t0 <= time <= t1:
-            if t1 <= t0 or r0 == r1:
-                return r0
+            if t1 <= t0:
+                return v1
             u = (time - t0) / (t1 - t0)
-            return r0 + (r1 - r0) * ease_in_out_cubic(u)
+            return v0 + (v1 - v0) * u
     return frames[-1][1]
 
 
-def _sweeper_hold(cfg: ArenaConfig) -> float:
-    """Omega stays at the start value until six seconds before the ramp ends."""
-    return max(cfg.sweeper_start, cfg.sweeper_omega_end_time - 6.0)
+def _sample_platform(frames: tuple[tuple[float, float, float], ...], time: float) -> tuple[float, float]:
+    if time <= frames[0][0]:
+        return frames[0][1], frames[0][2]
+    if time >= frames[-1][0]:
+        return frames[-1][1], frames[-1][2]
+    for (t0, hw0, hh0), (t1, hw1, hh1) in zip(frames, frames[1:]):
+        if t0 <= time <= t1:
+            if t1 <= t0:
+                return hw1, hh1
+            u = (time - t0) / (t1 - t0)
+            return hw0 + (hw1 - hw0) * u, hh0 + (hh1 - hh0) * u
+    return frames[-1][1], frames[-1][2]
 
 
-def sweeper_omega(cfg: ArenaConfig, time: float) -> float:
-    if time < cfg.sweeper_start:
+def _edge_behind(ax: float, ay: float, tx: float, ty: float, cx: float, cy: float, hw: float, hh: float, cr: float) -> float:
+    """Distance from the target to the platform box along the attacker ray.
+
+    The ring-out test still uses the rounded rectangle. This score uses the
+    box so target selection stays inside the sim budget.
+    """
+    del cr
+    dx = tx - ax
+    dy = ty - ay
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
         return 0.0
-    hold = _sweeper_hold(cfg)
-    w0 = cfg.sweeper_omega_start
-    w1 = cfg.sweeper_omega_end
-    if time <= hold:
-        return w0
-    t1 = cfg.sweeper_omega_end_time
-    if time >= t1 or t1 <= hold:
-        return w1
-    u = (time - hold) / (t1 - hold)
-    return w0 + (w1 - w0) * u
+    dx /= length
+    dy /= length
+    lx = tx - cx
+    ly = ty - cy
+    hits = []
+    if dx > 1e-8:
+        hits.append((hw - lx) / dx)
+    elif dx < -1e-8:
+        hits.append((-hw - lx) / dx)
+    if dy > 1e-8:
+        hits.append((hh - ly) / dy)
+    elif dy < -1e-8:
+        hits.append((-hh - ly) / dy)
+    ahead = [item for item in hits if item > 0.0]
+    return min(ahead) if ahead else 0.0
 
 
-def sweeper_angle(cfg: ArenaConfig, time: float) -> float:
-    t0 = cfg.sweeper_start
-    if time <= t0:
-        return 0.0
-    hold = _sweeper_hold(cfg)
-    w0 = cfg.sweeper_omega_start
-    w1 = cfg.sweeper_omega_end
-    t1 = cfg.sweeper_omega_end_time
-    if time <= hold:
-        return w0 * (time - t0)
-    base = w0 * (hold - t0)
-    span = max(1e-6, t1 - hold)
-    if time <= t1:
-        dt = time - hold
-        return base + w0 * dt + (w1 - w0) * dt * dt / (2.0 * span)
-    mid = base + w0 * span + (w1 - w0) * span / 2.0
-    return mid + w1 * (time - t1)
+def _dist_to_segment(x: float, y: float, a: tuple[float, float], b: tuple[float, float]) -> float:
+    abx = b[0] - a[0]
+    aby = b[1] - a[1]
+    denom = abx * abx + aby * aby
+    if denom < 1e-8:
+        return math.hypot(x - a[0], y - a[1])
+    u = max(0.0, min(1.0, ((x - a[0]) * abx + (y - a[1]) * aby) / denom))
+    return math.hypot(x - (a[0] + abx * u), y - (a[1] + aby * u))
 
 
-def is_out(distance: float, zone: float, radius: float, margin_radii: float) -> bool:
-    return distance > zone + margin_radii * radius
+def _spawn(cfg: ArenaConfig, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    count = len(cfg.countries)
+    cx, cy = cfg.center
+    hw = cfg.hw0 * cfg.disk_frac
+    hh = cfg.hh0 * cfg.disk_frac
+    cr = corner_radius(hw, hh, cfg.corner_frac)
+    full_cr = corner_radius(cfg.hw0, cfg.hh0, cfg.corner_frac)
+    order = rng.permutation(count)
+    clash = (int(order[0]), int(order[1]))
+    half = cfg.clash_gap * 0.5
+    pos = np.zeros((count, 2), dtype=np.float64)
+    pos[clash[0]] = (cx, cy - half)
+    pos[clash[1]] = (cx, cy + half)
+    spacing = cfg.ball_radius * 2.0 + 2.0
+    placed = [tuple(pos[clash[0]]), tuple(pos[clash[1]])]
+    filled = 2
+    candidates: list[tuple[float, float]] = []
+    row = 0
+    y = cy - hh + spacing
+    while y < cy + hh:
+        x = cx - hw + (spacing * 0.5 if row % 2 else spacing)
+        while x < cx + hw:
+            point = (float(x), float(y))
+            clear = rounded_rect_sd(point[0], point[1], cx, cy, hw, hh, cr) <= -cfg.ball_radius
+            clear = clear and _dist_to_segment(point[0], point[1], placed[0], placed[1]) >= spacing
+            clear = clear and all(math.hypot(point[0] - px, point[1] - py) >= spacing for px, py in placed)
+            if clear:
+                candidates.append(point)
+            x += spacing
+        y += spacing * 0.86602540378
+        row += 1
+    if len(candidates) < count - 2:
+        raise RuntimeError(f"spawn has {len(candidates)} slots for {count - 2} balls")
+    rng.shuffle(candidates)
+    for point in candidates[: count - 2]:
+        slot = int(order[filled])
+        pos[slot] = point
+        filled += 1
+    for index in range(count):
+        if rounded_rect_sd(float(pos[index, 0]), float(pos[index, 1]), cx, cy, cfg.hw0, cfg.hh0, full_cr) > 0.0:
+            raise RuntimeError("spawn placed a ball outside the platform")
+    vel = np.zeros((count, 2), dtype=np.float64)
+    direction = pos[clash[1]] - pos[clash[0]]
+    direction /= max(float(np.linalg.norm(direction)), 1e-6)
+    vel[clash[0]] = direction * cfg.clash_speed
+    vel[clash[1]] = -direction * cfg.clash_speed
+    for index in range(count):
+        if index in clash:
+            continue
+        speed = float(rng.uniform(cfg.speed_min, cfg.speed_max))
+        angle = float(rng.uniform(0.0, math.tau))
+        vel[index] = (math.cos(angle) * speed, math.sin(angle) * speed)
+    cooldown_until = np.zeros(count, dtype=np.float64)
+    for index in range(count):
+        low, high = cfg.clash_cooldown if index in clash else cfg.initial_cooldown
+        cooldown_until[index] = float(rng.uniform(low, high))
+    return pos, vel, cooldown_until, np.array(clash, dtype=np.int64)
+
+
+_PAIR_I, _PAIR_J = np.triu_indices(33, 1)
+
+
+def _collide(
+    pos: np.ndarray,
+    vel: np.ndarray,
+    omega: np.ndarray,
+    mass: np.ndarray,
+    radius: np.ndarray,
+    active: np.ndarray,
+    iu: np.ndarray,
+    ju: np.ndarray,
+    *,
+    ball_e: float,
+    boss_e: float,
+    boss_slot: int,
+    iters: int,
+) -> list[tuple[int, int, float, float, float]]:
+    hits: list[tuple[int, int, float, float, float]] = []
+    seen: set[tuple[int, int]] = set()
+    inv_mass = None
+    for _ in range(iters):
+        dx = pos[ju, 0] - pos[iu, 0]
+        dy = pos[ju, 1] - pos[iu, 1]
+        dist2 = dx * dx + dy * dy
+        radsum = radius[iu] + radius[ju]
+        mask = active[iu] & active[ju] & (dist2 < radsum * radsum) & (dist2 > 1e-8)
+        if not mask.any():
+            break
+        sel = np.flatnonzero(mask)
+        if inv_mass is None:
+            inv_mass = 1.0 / mass
+        touched = False
+        for k in sel:
+            i = int(iu[k])
+            j = int(ju[k])
+            dist = math.sqrt(float(dist2[k]))
+            nx = float(dx[k]) / dist
+            ny = float(dy[k]) / dist
+            gap = float(radsum[k]) - dist
+            share = float(inv_mass[i] + inv_mass[j])
+            corr = gap * 0.8 / share
+            pos[i, 0] -= corr * inv_mass[i] * nx
+            pos[i, 1] -= corr * inv_mass[i] * ny
+            pos[j, 0] += corr * inv_mass[j] * nx
+            pos[j, 1] += corr * inv_mass[j] * ny
+            rvx = float(vel[i, 0] - vel[j, 0])
+            rvy = float(vel[i, 1] - vel[j, 1])
+            closing = rvx * nx + rvy * ny
+            if closing <= 1e-4:
+                continue
+            touched = True
+            e = boss_e if i == boss_slot or j == boss_slot else ball_e
+            jmag = (1.0 + e) * closing / share
+            ix = jmag * nx
+            iy = jmag * ny
+            vel[i, 0] -= ix * inv_mass[i]
+            vel[i, 1] -= iy * inv_mass[i]
+            vel[j, 0] += ix * inv_mass[j]
+            vel[j, 1] += iy * inv_mass[j]
+            tx = rvx - closing * nx
+            ty = rvy - closing * ny
+            tang = math.hypot(tx, ty)
+            omega[i] += tang / max(float(radius[i]), 1.0)
+            omega[j] -= tang / max(float(radius[j]), 1.0)
+            pair = (i, j)
+            if pair not in seen:
+                seen.add(pair)
+                hits.append((i, j, closing, float(pos[i, 0]), float(pos[i, 1])))
+        if not touched and len(sel) < 2:
+            break
+    return hits
+
+
+def _pick_target(
+    index: int,
+    pos: np.ndarray,
+    alive: np.ndarray,
+    kos: np.ndarray,
+    hit_by: list[list[tuple[float, int]]],
+    time: float,
+    cfg: ArenaConfig,
+    rng: np.random.Generator,
+    cx: float,
+    cy: float,
+    hw: float,
+    hh: float,
+    cr: float,
+) -> int:
+    best = -1
+    best_score = -1e9
+    count = len(cfg.countries)
+    for other in range(count):
+        if other == index or not alive[other]:
+            continue
+        dist = math.hypot(float(pos[other, 0] - pos[index, 0]), float(pos[other, 1] - pos[index, 1]))
+        behind = _edge_behind(
+            float(pos[index, 0]),
+            float(pos[index, 1]),
+            float(pos[other, 0]),
+            float(pos[other, 1]),
+            cx,
+            cy,
+            hw,
+            hh,
+            cr,
+        )
+        edge = 1.0 - min(1.0, max(0.0, behind / cfg.edge_range))
+        near = 1.0 - min(1.0, max(0.0, dist / cfg.near_range))
+        revenge = 1.0 if any(time - when <= cfg.revenge_window and who == other for when, who in hit_by[index]) else 0.0
+        leader = 1.0 if kos[other] >= cfg.leader_kos else 0.0
+        score = (
+            cfg.score_edge * edge
+            + cfg.score_near * near
+            + cfg.score_revenge * revenge
+            + cfg.score_leader * leader
+            + float(rng.normal(0.0, cfg.noise))
+        )
+        if score > best_score:
+            best_score = score
+            best = other
+    return best
+
+
+def _cooldown_duration(cfg: ArenaConfig, rng: np.random.Generator, time: float, alive: int) -> float:
+    aggression = (1.0 + min(time / max(cfg.aggression_time, 1e-3), 1.0)) * cfg.aggression_scale
+    target = _sample_pair(cfg.n_target, time)
+    control = 1.0 + cfg.controller_gain * (alive - target)
+    control = min(cfg.controller_clamp[1], max(cfg.controller_clamp[0], control))
+    rolled = float(rng.uniform(cfg.cooldown[0], cfg.cooldown[1]))
+    return max(cfg.cooldown_min, rolled / max(aggression * control, 1e-3))
+
+
+def _dash_safe(cfg: ArenaConfig, pos: np.ndarray, direction: np.ndarray, cx: float, cy: float, hw: float, hh: float, cr: float) -> bool:
+    travel = dash_travel(cfg.dash_speed, cfg.damping, cfg.dash_time)
+    end = pos + direction * travel
+    limit = -cfg.dash_margin_radii * cfg.ball_radius
+    return rounded_rect_sd(float(end[0]), float(end[1]), cx, cy, hw, hh, cr) <= limit
+
+
+def simulate(
+    cfg: ArenaConfig,
+    seed: int,
+    *,
+    horizon: float | None = None,
+    record_trace: bool = False,
+) -> SimResult:
+    started = time.perf_counter()
+    limit = cfg.horizon if horizon is None else horizon
+    dt = cfg.dt
+    steps = max(1, int(math.ceil(limit / dt)))
+    count = len(cfg.countries)
+    boss_slot = count
+    spawn_rng = np.random.Generator(np.random.PCG64(seed))
+    ai_rng = np.random.Generator(np.random.PCG64(seed + 10007))
+    effect_rng = np.random.Generator(np.random.PCG64(seed + 20011))
+    pos_c, vel_c, cool_until, _clash = _spawn(cfg, spawn_rng)
+    pos = np.zeros((count + 1, 2), dtype=np.float64)
+    vel = np.zeros((count + 1, 2), dtype=np.float64)
+    pos[:count] = pos_c
+    vel[:count] = vel_c
+    mass = np.ones(count + 1, dtype=np.float64)
+    mass[boss_slot] = cfg.cameo_mass
+    radius = np.full(count + 1, cfg.ball_radius, dtype=np.float64)
+    radius[boss_slot] = cfg.cameo_radius
+    omega = np.zeros(count + 1, dtype=np.float64)
+    alive = np.ones(count, dtype=bool)
+    phase = np.zeros(count, dtype=np.int8)
+    phase_until = cool_until.copy()
+    windup_started = np.full(count, -1.0)
+    dash_windups: list[float] = []
+    target = np.full(count, -1, dtype=np.int16)
+    retargets = np.zeros(count, dtype=np.int8)
+    facing = np.zeros(count, dtype=np.float64)
+    kos = np.zeros(count, dtype=np.int16)
+    streak = np.zeros(count, dtype=np.int16)
+    last_ko_at = np.full(count, -1e9, dtype=np.float64)
+    last_hit_at = np.full(count, -1e9, dtype=np.float64)
+    last_hit_by = np.full(count, -2, dtype=np.int16)
+    last_hit_kind = [""] * count
+    last_closing = np.zeros(count, dtype=np.float64)
+    hit_by: list[list[tuple[float, int]]] = [[] for _ in range(count)]
+    was_near_edge = np.zeros(count, dtype=bool)
+    out_at = np.full(count, -1.0, dtype=np.float64)
+
+    cx, cy = cfg.center
+    storm = 0.0
+    hw, hh = _sample_platform(cfg.platform_keyframes, 0.0)
+    cr = corner_radius(hw, hh, cfg.corner_frac)
+    platform_hist: list[tuple[float, float, float]] = []
+    impulses: list[Impulse] = []
+    impacts: list[tuple[float, float]] = []
+    elims: list[Elim] = []
+    eliminated: set[int] = set()
+    mid = 0.5 * (pos[_clash[0]] + pos[_clash[1]])
+    closing = float(np.linalg.norm(vel[_clash[0]] - vel[_clash[1]]))
+    impulses.append(Impulse(0.0, "clash", int(_clash[0]), int(_clash[1]), closing, float(mid[0]), float(mid[1])))
+
+    boss_on = False
+    boss_skipped = False
+    boss_phase = "idle"
+    boss_until = 0.0
+    boss_charges = 0
+    boss_kos = 0
+    cameo_exit = None
+    boss_aim = np.zeros(2, dtype=np.float64)
+
+    speed_sum: dict[int, float] = {}
+    speed_n: dict[int, int] = {}
+    heap_acc = 0.0
+    heap_n = 0
+    neighbor_acc = 0.0
+    neighbor_n = 0
+    escapes: list[float] = []
+    duel_start = None
+    t_win = None
+    winner = None
+    tie = False
+    both_finalists_hit = False
+
+    trace = None
+    if record_trace:
+        trace = {
+            "xy": np.zeros((steps, count, 2), dtype=np.float32),
+            "angle": np.zeros((steps, count), dtype=np.float32),
+            "alive": np.zeros((steps, count), dtype=bool),
+            "phase": np.zeros((steps, count), dtype=np.int8),
+            "facing": np.zeros((steps, count), dtype=np.float32),
+            "hw": np.zeros(steps, dtype=np.float32),
+            "hh": np.zeros(steps, dtype=np.float32),
+            "boss_xy": np.zeros((steps, 2), dtype=np.float32),
+            "boss_on": np.zeros(steps, dtype=bool),
+        }
+
+    def log(source: str, a: int, b: int, closing_speed: float, at: np.ndarray, when: float) -> None:
+        impulses.append(Impulse(when, source, a, b, closing_speed, float(at[0]), float(at[1])))
+
+    def public_id(slot: int) -> int:
+        return BOSS_ID if slot == boss_slot else slot
+
+    target_alive = np.interp(
+        np.arange(steps) * dt,
+        np.array([item[0] for item in cfg.n_target], dtype=np.float64),
+        np.array([item[1] for item in cfg.n_target], dtype=np.float64),
+    )
+    pair_i, pair_j = np.triu_indices(count + 1, 1)
+    next_ai = 0.0
+
+    for step in range(steps):
+        now = step * dt
+        if t_win is not None and now > t_win + 0.8:
+            steps = step
+            break
+        alive_n = int(alive.sum())
+        rate = 1.0 + cfg.shrink_gain * (alive_n - float(target_alive[step]))
+        rate = min(2.0, max(0.0, rate))
+        proposed = storm + rate * dt
+        hw2, hh2 = _sample_platform(cfg.platform_keyframes, proposed)
+        dhw = abs(hw2 - hw)
+        if dhw > cfg.hw_speed_max * dt and dhw > 1e-8:
+            proposed = storm + rate * dt * (cfg.hw_speed_max * dt) / dhw
+            hw2, hh2 = _sample_platform(cfg.platform_keyframes, proposed)
+        storm = proposed
+        hw, hh = hw2, hh2
+        cr = corner_radius(hw, hh, cfg.corner_frac)
+        platform_hist.append((hw, hh, cr))
+
+        if not boss_skipped and not boss_on and boss_phase == "idle" and now >= cfg.cameo_enter:
+            if boss_allowed(alive_n, cfg.cameo_min_alive):
+                angle = float(effect_rng.uniform(0.0, math.tau))
+                lo, hi = 0.0, max(hw, hh) * 1.4
+                for _ in range(20):
+                    mid_r = 0.5 * (lo + hi)
+                    sx = cx + math.cos(angle) * mid_r
+                    sy = cy + math.sin(angle) * mid_r
+                    if rounded_rect_sd(sx, sy, cx, cy, hw, hh, cr) > 0.0:
+                        hi = mid_r
+                    else:
+                        lo = mid_r
+                pos[boss_slot] = (cx + math.cos(angle) * lo, cy + math.sin(angle) * lo)
+                inward = np.array([cx, cy]) - pos[boss_slot]
+                inward /= max(float(np.linalg.norm(inward)), 1e-6)
+                vel[boss_slot] = inward * cfg.cameo_speed
+                log("boss", BOSS_ID, BOSS_ID, cfg.cameo_speed, pos[boss_slot], now)
+                boss_on = True
+                boss_phase = "enter"
+                boss_until = now + 0.8
+            else:
+                boss_skipped = True
+
+        if boss_on:
+            if boss_kos >= cfg.cameo_ko_exit and boss_phase != "exit":
+                boss_phase = "exit"
+                boss_until = now
+            if boss_phase == "enter" and now >= boss_until:
+                boss_phase = "windup"
+                boss_until = now + cfg.cameo_windup
+                boss_aim = _densest(pos, alive, count)
+            elif boss_phase == "windup" and now >= boss_until:
+                aim = boss_aim - pos[boss_slot]
+                if boss_charges >= cfg.cameo_charges:
+                    aim = _outward_array(pos[boss_slot : boss_slot + 1], cx, cy, hw, hh, cr)[0]
+                    boss_phase = "exit"
+                else:
+                    boss_phase = "charge"
+                norm = float(np.linalg.norm(aim))
+                if norm < 1e-6:
+                    aim = np.array([1.0, 0.0])
+                    norm = 1.0
+                vel[boss_slot] = aim / norm * cfg.cameo_charge_speed
+                log("boss", BOSS_ID, BOSS_ID, cfg.cameo_charge_speed, pos[boss_slot], now)
+                if boss_phase == "charge":
+                    boss_charges += 1
+                    boss_until = now + 0.45
+                else:
+                    boss_until = now + 2.0
+            elif boss_phase == "charge" and now >= boss_until:
+                boss_phase = "windup"
+                boss_until = now + cfg.cameo_windup
+                boss_aim = _densest(pos, alive, count)
+
+        if step % 4 == 0:
+            for index in range(count):
+                if phase[index] != _PHASE_WIND or not alive[index]:
+                    continue
+                victim = int(target[index])
+                if victim < 0 or not alive[victim]:
+                    continue
+                facing[index] = math.atan2(
+                    float(pos[victim, 1] - pos[index, 1]),
+                    float(pos[victim, 0] - pos[index, 0]),
+                )
+
+        if now + 1e-9 >= next_ai:
+            next_ai = now + 10.0
+            for index in range(count):
+                if not alive[index]:
+                    continue
+                if phase[index] == _PHASE_COOL and now >= phase_until[index]:
+                    chosen = _pick_target(index, pos, alive, kos, hit_by, now, cfg, ai_rng, cx, cy, hw, hh, cr)
+                    if chosen < 0:
+                        phase_until[index] = now + cfg.fizzle_cooldown
+                    else:
+                        target[index] = chosen
+                        retargets[index] = 0
+                        phase[index] = _PHASE_WIND
+                        phase_until[index] = now + cfg.windup
+                        windup_started[index] = now
+                        vel[index] *= cfg.windup_speed
+                elif phase[index] == _PHASE_WIND:
+                    victim = int(target[index])
+                    if victim < 0 or not alive[victim]:
+                        _retarget_or_fizzle(index, pos, alive, kos, hit_by, now, cfg, ai_rng, cx, cy, hw, hh, cr, phase, phase_until, target, retargets, vel, windup_started)
+                    else:
+                        aimx = float(pos[victim, 0] - pos[index, 0])
+                        aimy = float(pos[victim, 1] - pos[index, 1])
+                        facing[index] = math.atan2(aimy, aimx)
+                        if now >= phase_until[index]:
+                            predx = float(pos[victim, 0] + vel[victim, 0] * cfg.dash_predict)
+                            predy = float(pos[victim, 1] + vel[victim, 1] * cfg.dash_predict)
+                            dx = predx - float(pos[index, 0])
+                            dy = predy - float(pos[index, 1])
+                            length = math.hypot(dx, dy)
+                            if length < 1e-6:
+                                direction = np.array([1.0, 0.0])
+                            else:
+                                direction = np.array([dx / length, dy / length])
+                            if _dash_safe(cfg, pos[index], direction, cx, cy, hw, hh, cr):
+                                vel[index, 0] = direction[0] * cfg.dash_speed
+                                vel[index, 1] = direction[1] * cfg.dash_speed
+                                held = now - float(windup_started[index])
+                                dash_windups.append(held)
+                                log("dash", index, BOSS_ID, cfg.dash_speed, pos[index], now)
+                                phase[index] = _PHASE_DASH
+                                phase_until[index] = now + cfg.dash_time
+                            else:
+                                _retarget_or_fizzle(index, pos, alive, kos, hit_by, now, cfg, ai_rng, cx, cy, hw, hh, cr, phase, phase_until, target, retargets, vel, windup_started)
+                elif phase[index] == _PHASE_DASH and now >= phase_until[index]:
+                    phase[index] = _PHASE_COOL
+                    phase_until[index] = now + _cooldown_duration(cfg, ai_rng, now, alive_n)
+                if alive[index]:
+                    next_ai = min(next_ai, float(phase_until[index]))
+
+        active = np.zeros(count + 1, dtype=bool)
+        active[:count] = alive
+        active[boss_slot] = boss_on
+        sd = _sd_array(pos[:count], cx, cy, hw, hh, cr)
+        margin = -cfg.edge_margin_radii * cfg.ball_radius
+        near = alive & (sd > margin) & (phase != _PHASE_WIND) & (phase != _PHASE_DASH)
+        if np.any(near):
+            outward = _outward_array(pos[:count], cx, cy, hw, hh, cr)
+            outward_speed = vel[:count, 0] * outward[:, 0] + vel[:count, 1] * outward[:, 1]
+            brake = near & (outward_speed > cfg.edge_outward_speed)
+            vel[:count, 0] -= outward[:, 0] * cfg.edge_accel * dt * brake
+            vel[:count, 1] -= outward[:, 1] * cfg.edge_accel * dt * brake
+
+        if boss_on and boss_phase == "exit":
+            if rounded_rect_sd(float(pos[boss_slot, 0]), float(pos[boss_slot, 1]), cx, cy, hw, hh, cr) > 0.0:
+                boss_on = False
+                boss_phase = "gone"
+                cameo_exit = now
+
+        damp = math.exp(-cfg.damping * dt)
+        vel *= damp
+        sp2 = vel[:, 0] * vel[:, 0] + vel[:, 1] * vel[:, 1]
+        limit2 = cfg.speed_clamp * cfg.speed_clamp
+        if float(sp2.max()) > limit2:
+            too_fast = sp2 > limit2
+            scale = cfg.speed_clamp / np.sqrt(sp2[too_fast])
+            vel[too_fast, 0] *= scale
+            vel[too_fast, 1] *= scale
+        pos += vel * dt
+        omega *= math.exp(-1.5 * dt)
+
+        hit_slots: set[int] = set()
+        for a, b, closing_speed, hx, hy in _collide(
+            pos,
+            vel,
+            omega,
+            mass,
+            radius,
+            active,
+            pair_i,
+            pair_j,
+            ball_e=cfg.restitution,
+            boss_e=cfg.cameo_restitution,
+            boss_slot=boss_slot,
+            iters=cfg.solver_iters,
+        ):
+            kind = "boss" if a == boss_slot or b == boss_slot else "ball"
+            log(kind, public_id(a), public_id(b), closing_speed, np.array([hx, hy]), now)
+            impacts.append((now, closing_speed))
+            for slot, other in ((a, b), (b, a)):
+                if slot == boss_slot or slot >= count or not alive[slot]:
+                    continue
+                hit_slots.add(slot)
+                last_hit_at[slot] = now
+                last_closing[slot] = closing_speed
+                if other == boss_slot:
+                    last_hit_by[slot] = BOSS_ID
+                    last_hit_kind[slot] = "boss"
+                else:
+                    last_hit_by[slot] = other
+                    last_hit_kind[slot] = "ball"
+                    hit_by[slot].append((now, other))
+                if phase[slot] == _PHASE_DASH:
+                    phase[slot] = _PHASE_COOL
+                    phase_until[slot] = now + _cooldown_duration(cfg, ai_rng, now, alive_n)
+                    next_ai = min(next_ai, float(phase_until[slot]))
+                margin = cfg.escape_margin_radii * cfg.ball_radius
+                current = rounded_rect_sd(float(pos[slot, 0]), float(pos[slot, 1]), cx, cy, hw, hh, cr)
+                if -margin <= current <= 0.0:
+                    escapes.append(now)
+            if a != boss_slot and b != boss_slot and alive_n <= 2:
+                both_finalists_hit = True
+
+        sd = _sd_array(pos[:count], cx, cy, hw, hh, cr)
+        back = int(round(cfg.storm_window / dt))
+        old = platform_hist[max(0, len(platform_hist) - 1 - back)]
+        crossed = []
+        for index in range(count):
+            if not alive[index]:
+                continue
+            if sd[index] > -cfg.comeback_margin_radii * cfg.ball_radius:
+                was_near_edge[index] = True
+            if sd[index] <= 0.0:
+                continue
+            inside_old = rounded_rect_sd(float(pos[index, 0]), float(pos[index, 1]), cx, cy, old[0], old[1], old[2]) <= 0.0
+            age = now - float(last_hit_at[index])
+            cause = attribute_cause(age, last_hit_kind[index], inside_old, hit_window=cfg.hit_window)
+            killer = None
+            combo = ""
+            revenge = False
+            if cause == "ball":
+                killer = int(last_hit_by[index])
+                if was_near_edge[killer]:
+                    pass
+                if now - float(last_ko_at[killer]) <= cfg.combo_window:
+                    streak[killer] += 1
+                else:
+                    streak[killer] = 1
+                last_ko_at[killer] = now
+                kos[killer] += 1
+                combo = combo_name(int(streak[killer]))
+                revenge = any(who == index and now - when <= cfg.revenge_window for when, who in hit_by[killer])
+            elif cause == "boss":
+                boss_kos += 1
+            alive[index] = False
+            out_at[index] = now
+            crossed.append((float(sd[index]), index, cause, killer, float(last_closing[index]), combo, revenge))
+        crossed.sort(key=lambda item: (-item[0], item[1]))
+        for _depth, index, cause, killer, closing_speed, combo, revenge in crossed:
+            if index in eliminated:
+                continue
+            eliminated.add(index)
+            elims.append(Elim(now, index, cause, killer, closing_speed, combo, revenge))
+            remaining = count - len(elims)
+            if remaining == 2 and duel_start is None:
+                duel_start = now
+            if remaining == 1 and winner is None:
+                left = [ball for ball in range(count) if ball not in eliminated]
+                winner = left[0] if left else None
+                t_win = now
+            if remaining == 0:
+                winner = None
+                t_win = None
+                if len(elims) >= 2 and abs(elims[-1].time - elims[-2].time) <= cfg.simultaneous:
+                    tie = True
+
+        if (
+            not tie
+            and len(elims) >= 2
+            and winner is None
+            and abs(elims[-1].time - elims[-2].time) <= cfg.simultaneous
+            and count - len(elims) == 0
+        ):
+            tie = True
+
+        if alive_n and step % 8 == 0:
+            speeds = np.sqrt(vel[:count][alive, 0] ** 2 + vel[:count][alive, 1] ** 2)
+            bucket = int(now // cfg.kinetic_window)
+            speed_sum[bucket] = speed_sum.get(bucket, 0.0) + float(np.sum(speeds))
+            speed_n[bucket] = speed_n.get(bucket, 0) + int(speeds.size)
+            bottom = cy + hh / 3.0
+            heap_acc += float(np.mean(pos[:count][alive, 1] > bottom))
+            heap_n += 1
+            alive_idx = np.flatnonzero(alive)
+            if len(alive_idx) > 1:
+                delta = pos[alive_idx][:, None, :] - pos[alive_idx][None, :, :]
+                dist = np.linalg.norm(delta, axis=2)
+                touch = dist < (cfg.ball_radius * 2.0 + 0.5)
+                np.fill_diagonal(touch, False)
+                neighbor_acc += float(np.mean(np.sum(touch, axis=1)))
+            neighbor_n += 1
+
+        if trace is not None and step < len(trace["xy"]):
+            trace["xy"][step] = pos[:count]
+            trace["angle"][step] = omega[:count]
+            trace["alive"][step] = alive
+            trace["phase"][step] = phase
+            trace["facing"][step] = facing
+            trace["hw"][step] = hw
+            trace["hh"][step] = hh
+            trace["boss_xy"][step] = pos[boss_slot]
+            trace["boss_on"][step] = boss_on
+
+    if trace is not None:
+        for key, value in list(trace.items()):
+            trace[key] = value[:steps]
+
+    causes = {"ball": 0, "boss": 0, "storm": 0, "self": 0}
+    for item in elims:
+        causes[item.cause] = causes.get(item.cause, 0) + 1
+    total_elims = max(1, len(elims))
+    kinetic_fail, kinetic_means = _kinetic_fail(speed_sum, speed_n, cfg, t_win if t_win is not None else limit)
+    first_hard = next((when for when, speed in impacts if speed >= cfg.first_impact_speed), None)
+    hard_impacts = [when for when, speed in impacts if speed >= cfg.dead_impact]
+    final_cause = elims[-1].cause if elims and winner is not None else ""
+    comebacks = 0
+    seen_come = set()
+    for item in elims:
+        if item.killer is not None and was_near_edge[item.killer] and item.killer not in seen_come:
+            seen_come.add(item.killer)
+            comebacks += 1
+    late_escapes = sum(1 for when in escapes if t_win is not None and when >= t_win - cfg.escape_window)
+    metrics = {
+        "causes": causes,
+        "cause_ball": causes.get("ball", 0) / total_elims if elims else 0.0,
+        "cause_storm": causes.get("storm", 0) / total_elims if elims else 0.0,
+        "cause_self": causes.get("self", 0) / total_elims if elims else 0.0,
+        "first_impact": first_hard,
+        "impacts": impacts,
+        "kinetic_ok": not kinetic_fail,
+        "kinetic_means": kinetic_means,
+        "heap": heap_acc / heap_n if heap_n else 0.0,
+        "neighbors": neighbor_acc / neighbor_n if neighbor_n else 0.0,
+        "tie": tie,
+        "final_cause": final_cause,
+        "both_finalists_hit": both_finalists_hit,
+        "winner_kos": int(kos[winner]) if winner is not None else 0,
+        "near_escapes": late_escapes,
+        "comebacks": comebacks,
+        "combos": sum(1 for item in elims if item.combo),
+        "revenges": sum(1 for item in elims if item.revenge),
+        "boss_kos": boss_kos,
+        "boss_skipped": boss_skipped,
+        "dead_ok": _dead_ok(hard_impacts, duel_start if duel_start is not None else (t_win or limit), cfg.dead_time),
+        "dash_windup_min": min(dash_windups) if dash_windups else cfg.windup,
+        "seconds": time.perf_counter() - started,
+        "was_near_edge": was_near_edge,
+    }
+    for item in impulses:
+        if item.source not in IMPULSE_SOURCES:
+            raise RuntimeError(f"unlogged impulse source {item.source}")
+    return SimResult(
+        seed=seed,
+        backend="numpy",
+        elims=tuple(elims),
+        t_win=t_win,
+        winner=winner,
+        duel_start=duel_start,
+        cameo_exit=cameo_exit,
+        trace=trace,
+        impulses=tuple(impulses),
+        metrics=metrics,
+    )
+
+
+def _retarget_or_fizzle(index, pos, alive, kos, hit_by, now, cfg, rng, cx, cy, hw, hh, cr, phase, phase_until, target, retargets, vel, windup_started) -> None:
+    if retargets[index] < 1:
+        retargets[index] = 1
+        chosen = _pick_target(index, pos, alive, kos, hit_by, now, cfg, rng, cx, cy, hw, hh, cr)
+        if chosen >= 0:
+            target[index] = chosen
+            phase[index] = _PHASE_WIND
+            phase_until[index] = now + cfg.windup
+            windup_started[index] = now
+            vel[index] *= cfg.windup_speed
+            return
+    phase[index] = _PHASE_COOL
+    phase_until[index] = now + cfg.fizzle_cooldown
+    target[index] = -1
+
+
+def _densest(pos: np.ndarray, alive: np.ndarray, count: int) -> np.ndarray:
+    best = None
+    best_n = -1
+    idx = np.flatnonzero(alive[:count])
+    if len(idx) == 0:
+        return pos[0].copy()
+    for slot in idx:
+        dist = np.linalg.norm(pos[idx] - pos[slot], axis=1)
+        score = int(np.sum(dist < 180.0))
+        if score > best_n:
+            best_n = score
+            best = pos[slot].copy()
+    return best if best is not None else pos[idx[0]].copy()
+
+
+def _outward_array(pos: np.ndarray, cx: float, cy: float, hw: float, hh: float, cr: float) -> np.ndarray:
+    local_x = pos[:, 0] - cx
+    local_y = pos[:, 1] - cy
+    ax = np.abs(local_x)
+    ay = np.abs(local_y)
+    corner = (ax > hw - cr) & (ay > hh - cr)
+    ox = np.sign(local_x)
+    oy = np.sign(local_y)
+    ox = np.where(corner, ox, np.where(ax >= ay, ox, 0.0))
+    oy = np.where(corner, oy, np.where(ay > ax, oy, 0.0))
+    out = np.column_stack([ox, oy])
+    length = np.maximum(np.sqrt(ox * ox + oy * oy), 1e-8)
+    out[:, 0] /= length
+    out[:, 1] /= length
+    return out
+
+
+def _kinetic_fail(speed_sum: dict[int, float], speed_n: dict[int, int], cfg: ArenaConfig, until: float) -> tuple[bool, list[float]]:
+    end = until - cfg.kinetic_tail
+    if end <= cfg.kinetic_window:
+        return False, []
+    last_bucket = int(end // cfg.kinetic_window)
+    means: list[float] = []
+    failed = False
+    for bucket in range(last_bucket):
+        count = speed_n.get(bucket, 0)
+        if count <= 0:
+            means.append(0.0)
+            failed = True
+            continue
+        mean = speed_sum[bucket] / count
+        means.append(mean)
+        if mean < cfg.kinetic_min:
+            failed = True
+    return failed, means
+
+
+def _dead_ok(times: list[float], until: float, gap: float) -> bool:
+    if until <= 0:
+        return True
+    marks = [0.0] + [item for item in times if item <= until] + [until]
+    return all(b - a <= gap + 1e-6 for a, b in zip(marks, marks[1:]))
 
 
 def alive_at(elims: tuple[Elim, ...], count: int, time: float) -> int:
@@ -133,809 +971,89 @@ def alive_at(elims: tuple[Elim, ...], count: int, time: float) -> int:
 
 def evaluate_gates(result: SimResult, cfg: ArenaConfig) -> dict[str, bool]:
     count = len(cfg.countries)
+    metrics = result.metrics or {}
     gates: dict[str, bool] = {}
-    first = result.elims[0].time if result.elims else math.inf
-    gates["no_early_elim"] = first >= cfg.no_elim_before - 1e-9
-    for time, low, high in cfg.gates:
-        alive = alive_at(result.elims, count, time)
-        gates[f"alive@{time:g}"] = low <= alive <= high
-    won = result.t_win is not None and cfg.win_window[0] <= result.t_win <= cfg.win_window[1]
-    gates["winner_window"] = won
+    for when, low, high in cfg.gates:
+        alive = alive_at(result.elims, count, when)
+        gates[f"alive@{int(when)}"] = low <= alive <= high
+    gates["winner_window"] = result.t_win is not None and cfg.win_window[0] <= result.t_win <= cfg.win_window[1]
     duel = 0.0 if result.t_win is None or result.duel_start is None else result.t_win - result.duel_start
-    gates["final_duel"] = won and duel + 1e-9 >= cfg.final_duel_min
+    gates["final_duel"] = result.duel_start is not None and duel >= cfg.final_duel_min
+    first = result.elims[0].time if result.elims else None
+    gates["first_ko"] = first is not None and cfg.first_ko[0] <= first <= cfg.first_ko[1]
+    impact = metrics.get("first_impact")
+    gates["first_impact"] = impact is not None and cfg.first_impact[0] <= impact <= cfg.first_impact[1]
+    gates["cause_ball"] = float(metrics.get("cause_ball", 0.0)) >= cfg.cause_ball_min
+    gates["cause_storm"] = float(metrics.get("cause_storm", 1.0)) <= cfg.cause_storm_max
+    gates["cause_self"] = float(metrics.get("cause_self", 1.0)) <= cfg.cause_self_max
+    gates["dead_time"] = bool(metrics.get("dead_ok", False))
+    gates["kinetic"] = bool(metrics.get("kinetic_ok", False))
+    gates["heap"] = float(metrics.get("heap", 1.0)) <= cfg.heap_bottom
+    gates["neighbors"] = float(metrics.get("neighbors", 99.0)) <= cfg.heap_neighbors
+    gates["final_hit"] = metrics.get("final_cause") == "ball"
+    gates["no_tie"] = not bool(metrics.get("tie", False)) and result.winner is not None
     return gates
 
 
-def drama_components(
-    result: SimResult,
-    cfg: ArenaConfig,
-    *,
-    previous_winner: str | None = None,
-) -> dict[str, float]:
-    t_win = result.t_win if result.t_win is not None else HORIZON
-    near = sum(1 for _index, when in result.near_misses if t_win - cfg.near_miss_window <= when <= t_win)
-    near_score = cfg.near_miss_weight * min(near, cfg.near_miss_cap)
-    duel = 0.0 if result.t_win is None or result.duel_start is None else max(0.0, result.t_win - result.duel_start)
-    duel_score = cfg.duel_weight * min(duel, cfg.duel_cap)
-    late = sum(1 for item in result.elims if t_win - cfg.late_elim_window <= item.time <= t_win)
-    late_score = cfg.late_elim_weight if late >= cfg.late_elim_min else 0.0
-    doubles = 0
-    for earlier, later in zip(result.elims, result.elims[1:]):
-        if later.time - earlier.time <= cfg.double_window:
-            doubles += 1
-    double_score = cfg.double_weight * min(doubles, cfg.double_cap)
-    meteor_elims = sum(1 for item in result.elims if item.cause == "meteor")
-    low, high = cfg.meteor_elim_range
-    meteor_score = cfg.meteor_elim_weight if low <= meteor_elims <= high else 0.0
-    winner_code = None if result.winner is None else cfg.countries[result.winner].iso2
-    penalty = cfg.repeat_penalty if previous_winner and winner_code == previous_winner else 0.0
-    total = near_score + duel_score + late_score + double_score + meteor_score - penalty
+def drama_components(result: SimResult, cfg: ArenaConfig, previous_winner: str | None = None) -> dict[str, float]:
+    metrics = result.metrics or {}
+    escapes = min(cfg.escape_cap, int(metrics.get("near_escapes", 0)))
+    comebacks = min(cfg.comeback_cap, int(metrics.get("comebacks", 0)))
+    combos = min(cfg.combo_cap, int(metrics.get("combos", 0)))
+    revenges = min(cfg.revenge_cap, int(metrics.get("revenges", 0)))
+    duel = 0.0 if result.t_win is None or result.duel_start is None else min(cfg.duel_cap, result.t_win - result.duel_start)
+    mutual = cfg.mutual_bonus if metrics.get("both_finalists_hit") else 0.0
+    winner_bonus = cfg.winner_kos_bonus if int(metrics.get("winner_kos", 0)) >= 2 else 0.0
+    winner_iso = ""
+    if result.winner is not None and 0 <= result.winner < len(cfg.countries):
+        winner_iso = cfg.countries[result.winner].iso2
+    penalty = cfg.repeat_penalty if previous_winner and winner_iso == previous_winner else 0.0
+    score = (
+        escapes * cfg.escape_weight
+        + comebacks * cfg.comeback_weight
+        + combos * cfg.combo_weight
+        + revenges * cfg.revenge_weight
+        + duel * cfg.duel_weight
+        + mutual
+        + winner_bonus
+        - penalty
+    )
     return {
-        "near_misses": float(near),
-        "near_score": near_score,
-        "duel": duel,
-        "duel_score": duel_score,
-        "late_elims": float(late),
-        "late_score": late_score,
-        "doubles": float(doubles),
-        "double_score": double_score,
-        "meteor_elims": float(meteor_elims),
-        "meteor_score": meteor_score,
-        "repeat_penalty": penalty,
-        "score": total,
+        "escapes": float(escapes),
+        "comebacks": float(comebacks),
+        "combos": float(combos),
+        "revenges": float(revenges),
+        "duel": float(duel),
+        "mutual": float(mutual),
+        "winner_kos": float(winner_bonus),
+        "repeat_penalty": float(penalty),
+        "score": float(score),
     }
 
 
 def state_hash(result: SimResult) -> str:
-    blob = json.dumps(
-        {
-            "elims": [(round(item.time, 5), item.index, item.cause) for item in result.elims],
-            "meteors": [(round(item.time, 5), round(item.x, 3), round(item.y, 3)) for item in result.meteors],
-            "winner": result.winner,
-            "t_win": None if result.t_win is None else round(result.t_win, 5),
-        },
-        separators=(",", ":"),
-    ).encode()
-    if result.trace is not None:
-        xy = np.ascontiguousarray(np.round(result.trace["xy"], 3))
-        blob += xy.tobytes()
-    return hashlib.sha256(blob).hexdigest()
-
-
-def _poisson(rng: np.random.Generator, count: int, disk: float, min_dist: float) -> list[tuple[float, float]]:
-    points: list[tuple[float, float]] = []
-    tries = 0
-    min_sq = min_dist * min_dist
-    while len(points) < count and tries < 40000:
-        tries += 1
-        ang = float(rng.random() * TAU)
-        rad = disk * math.sqrt(float(rng.random()))
-        x = rad * math.cos(ang)
-        y = rad * math.sin(ang)
-        if all((x - px) * (x - px) + (y - py) * (y - py) >= min_sq for px, py in points):
-            points.append((x, y))
-    if len(points) < count:
-        raise RuntimeError(f"poisson disk placed {len(points)} of {count}")
-    return points
-
-
-def _schedule(cfg: ArenaConfig, rng: np.random.Generator, horizon: float) -> tuple[list[Meteor], float]:
-    meteors: list[Meteor] = []
-    cx, cy = cfg.center
-    time = cfg.meteor_start
-    first = True
-    while time < horizon:
-        if not first:
-            time += float(rng.uniform(cfg.meteor_gap[0], cfg.meteor_gap[1]))
-        first = False
-        if time >= horizon:
-            break
-        zone = zone_radius(cfg, time)
-        ang = float(rng.random() * TAU)
-        rad = zone * math.sqrt(float(rng.random())) * 0.9
-        meteors.append(Meteor(time, cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
-    cameo_ang = float(rng.random() * TAU)
-    return meteors, cameo_ang
-
-
-def _spawn_vel(cfg: ArenaConfig, rng: np.random.Generator, x: float, y: float) -> tuple[float, float]:
-    cx, cy = cfg.center
-    inward = math.atan2(cy - y, cx - x)
-    jitter = math.radians(float(rng.uniform(-cfg.inward_deg, cfg.inward_deg)))
-    speed = float(rng.uniform(cfg.speed_min, cfg.speed_max))
-    ang = inward + jitter
-    return speed * math.cos(ang), speed * math.sin(ang)
-
-
-@dataclass
-class _Ball:
-    index: int
-    x: float
-    y: float
-    vx: float
-    vy: float
-    angle: float
-    omega: float
-    radius: float
-    mass: float
-    factor: float
-    wander: tuple[float, float]
-    wander_at: float
-    alive: bool
-    cameo: bool
-    danger: bool
-
-
-def _damp(cfg: ArenaConfig) -> float:
-    return math.exp(-cfg.damping)
-
-
-def simulate(
-    cfg: ArenaConfig,
-    seed: int | None = None,
-    *,
-    horizon: float = HORIZON,
-    record_trace: bool = False,
-    backend: str | None = None,
-) -> SimResult:
-    chosen = active_backend() if backend is None else backend
-    if chosen == "pymunk":
-        if pymunk is None:
-            raise RuntimeError("pymunk is not installed")
-        return _simulate_pymunk(cfg, seed, horizon=horizon, record_trace=record_trace)
-    if chosen != "numpy":
-        raise RuntimeError(f"unknown physics backend {chosen!r}")
-    return _simulate_numpy(cfg, seed, horizon=horizon, record_trace=record_trace)
-
-
-def _build_balls(cfg: ArenaConfig, seed: int) -> tuple[list[_Ball], list[Meteor], float, np.random.Generator]:
-    rng = np.random.default_rng(np.random.PCG64(seed))
-    cx, cy = cfg.center
-    points = _poisson(rng, len(cfg.countries), cfg.disk_radius, cfg.ball_radius * 2.0)
-    balls: list[_Ball] = []
-    for index, (lx, ly) in enumerate(points):
-        x = cx + lx
-        y = cy + ly
-        vx, vy = _spawn_vel(cfg, rng, x, y)
-        factor = float(rng.uniform(cfg.edge_factor[0], cfg.edge_factor[1]))
-        wander = _wander_vec(cfg, rng)
-        balls.append(
-            _Ball(
-                index=index,
-                x=x,
-                y=y,
-                vx=vx,
-                vy=vy,
-                angle=0.0,
-                omega=0.0,
-                radius=cfg.ball_radius,
-                mass=cfg.ball_mass,
-                factor=factor,
-                wander=wander,
-                wander_at=float(rng.uniform(cfg.wander_period[0], cfg.wander_period[1])),
-                alive=True,
-                cameo=False,
-                danger=False,
-            )
-        )
-    meteors, cameo_ang = _schedule(cfg, rng, HORIZON)
-    return balls, meteors, cameo_ang, rng
-
-
-def _wander_vec(cfg: ArenaConfig, rng: np.random.Generator) -> tuple[float, float]:
-    ang = float(rng.random() * TAU)
-    return cfg.wander_accel * math.cos(ang), cfg.wander_accel * math.sin(ang)
-
-
-def _edge_accel(cfg: ArenaConfig, ball: _Ball, zone: float) -> tuple[float, float]:
-    cx, cy = cfg.center
-    dx = ball.x - cx
-    dy = ball.y - cy
-    dist = math.hypot(dx, dy)
-    if dist < 1e-6:
-        return 0.0, 0.0
-    margin = zone - dist
-    if margin >= cfg.edge_margin:
-        return 0.0, 0.0
-    if margin >= 0:
-        scale = 1.0 - margin / cfg.edge_margin
-    else:
-        scale = 1.0
-    accel = cfg.edge_accel * ball.factor * scale
-    return -accel * dx / dist, -accel * dy / dist
-
-
-def _cause(
-    index: int,
-    time: float,
-    meteors: list[Meteor],
-    sweeper_touch: set[int],
-    ball_touch: set[int],
-    meteor_touch: set[int],
-) -> str:
-    for meteor in reversed(meteors):
-        if meteor.time > time:
-            continue
-        if time - meteor.time <= 0.35 and index in meteor_touch:
-            return "meteor"
-        break
-    if index in sweeper_touch:
-        return "sweeper"
-    if index in ball_touch:
-        return "ball"
-    return "self"
-
-
-def _simulate_numpy(
-    cfg: ArenaConfig,
-    seed: int | None,
-    *,
-    horizon: float,
-    record_trace: bool,
-) -> SimResult:
-    used = cfg.seed if seed is None else seed
-    balls, meteors, cameo_ang, rng = _build_balls(cfg, used)
-    return _integrate(
-        cfg,
-        used,
-        balls,
-        meteors,
-        cameo_ang,
-        rng,
-        horizon=horizon,
-        record_trace=record_trace,
-        backend="numpy",
-        stepper=_numpy_step,
-    )
-
-
-def _numpy_step(
-    cfg: ArenaConfig,
-    balls: list[_Ball],
-    dt: float,
-    zone: float,
-    time: float,
-    omega_scale: float = 1.0,
-    edge_scale: float = 1.0,
-) -> tuple[set[int], set[int]]:
-    sweeper_touch: set[int] = set()
-    ball_touch: set[int] = set()
-    alive = [ball for ball in balls if ball.alive]
-    for ball in alive:
-        ax, ay = ball.wander
-        ex, ey = (0.0, 0.0) if ball.cameo else _edge_accel(cfg, ball, zone)
-        ex *= edge_scale
-        ey *= edge_scale
-        ball.vx += (ax + ex) * dt
-        ball.vy += (ay + ey) * dt
-    decay = _damp(cfg) ** dt
-    for ball in alive:
-        ball.vx *= decay
-        ball.vy *= decay
-        ball.x += ball.vx * dt
-        ball.y += ball.vy * dt
-        ball.angle += ball.omega * dt
-    for i, a in enumerate(alive):
-        for b in alive[i + 1 :]:
-            dx = b.x - a.x
-            dy = b.y - a.y
-            dist = math.hypot(dx, dy)
-            limit = a.radius + b.radius
-            if dist >= limit or dist < 1e-8:
-                continue
-            nx = dx / dist
-            ny = dy / dist
-            overlap = limit - dist
-            share_a = b.mass / (a.mass + b.mass)
-            share_b = a.mass / (a.mass + b.mass)
-            a.x -= nx * overlap * share_a
-            a.y -= ny * overlap * share_a
-            b.x += nx * overlap * share_b
-            b.y += ny * overlap * share_b
-            rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
-            if rel < 0:
-                impulse = -(1.0 + cfg.restitution) * rel / (1.0 / a.mass + 1.0 / b.mass)
-                a.vx -= impulse * nx / a.mass
-                a.vy -= impulse * ny / a.mass
-                b.vx += impulse * nx / b.mass
-                b.vy += impulse * ny / b.mass
-                if not a.cameo:
-                    ball_touch.add(a.index)
-                if not b.cameo:
-                    ball_touch.add(b.index)
-    if time >= cfg.sweeper_start:
-        angle = sweeper_angle(cfg, time)
-        length = max(1.0, zone - cfg.sweeper_inset)
-        omega = sweeper_omega(cfg, time) * omega_scale
-        half = cfg.sweeper_thickness * 0.5
-        ux, uy = math.cos(angle), math.sin(angle)
-        px, py = -uy, ux
-        cx, cy = cfg.center
-        for ball in alive:
-            along = (ball.x - cx) * ux + (ball.y - cy) * uy
-            if along < 0 or along > length:
-                continue
-            side = (ball.x - cx) * px + (ball.y - cy) * py
-            limit = ball.radius + half
-            if abs(side) >= limit:
-                continue
-            sign = 1.0 if side >= 0 else -1.0
-            push = limit - abs(side)
-            ball.x += px * sign * push
-            ball.y += py * sign * push
-            bar_vx = -omega * along * uy
-            bar_vy = omega * along * ux
-            rel = (ball.vx - bar_vx) * px * sign + (ball.vy - bar_vy) * py * sign
-            if rel < 0:
-                impulse = -(1.0 + cfg.restitution) * rel * ball.mass
-                ball.vx += impulse * px * sign / ball.mass
-                ball.vy += impulse * py * sign / ball.mass
-            if not ball.cameo:
-                sweeper_touch.add(ball.index)
-    return sweeper_touch, ball_touch
-
-
-def _simulate_pymunk(
-    cfg: ArenaConfig,
-    seed: int | None,
-    *,
-    horizon: float,
-    record_trace: bool,
-) -> SimResult:
-    used = cfg.seed if seed is None else seed
-    balls, meteors, cameo_ang, rng = _build_balls(cfg, used)
-    return _integrate(
-        cfg,
-        used,
-        balls,
-        meteors,
-        cameo_ang,
-        rng,
-        horizon=horizon,
-        record_trace=record_trace,
-        backend="pymunk",
-        stepper=_PymunkWorld(cfg, balls),
-    )
-
-
-class _PymunkWorld:
-    def __init__(self, cfg: ArenaConfig, balls: list[_Ball]) -> None:
-        assert pymunk is not None
-        self.cfg = cfg
-        self.balls = balls
-        self.space = pymunk.Space()
-        self.space.gravity = (0.0, 0.0)
-        self.space.damping = _damp(cfg)
-        self.bodies: dict[int, Any] = {}
-        self.shapes: dict[int, Any] = {}
-        self.sweeper_body = None
-        self.sweeper_shape = None
-        self.sweeper_touch: set[int] = set()
-        self.ball_touch: set[int] = set()
-        for ball in balls:
-            self._add(ball)
-        self._add_sweeper()
-        self.space.on_collision(1, 1, begin=self._balls_hit)
-        self.space.on_collision(1, 2, begin=self._bar_hit)
-
-    def _add(self, ball: _Ball) -> None:
-        moment = pymunk.moment_for_circle(ball.mass, 0, ball.radius)
-        body = pymunk.Body(ball.mass, moment)
-        body.position = (ball.x, ball.y)
-        body.velocity = (ball.vx, ball.vy)
-        shape = pymunk.Circle(body, ball.radius)
-        shape.elasticity = self.cfg.restitution
-        shape.friction = 0.0
-        shape.collision_type = 1
-        shape.ball_index = ball.index
-        self.space.add(body, shape)
-        self.bodies[ball.index] = body
-        self.shapes[ball.index] = shape
-
-    def _add_sweeper(self) -> None:
-        cfg = self.cfg
-        body = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
-        body.position = cfg.center
-        length = max(1.0, cfg.floor_radius - cfg.sweeper_inset)
-        shape = pymunk.Segment(body, (0, 0), (length, 0), cfg.sweeper_thickness * 0.5)
-        shape.elasticity = cfg.restitution
-        shape.friction = 0.0
-        shape.collision_type = 2
-        self.space.add(body, shape)
-        self.sweeper_body = body
-        self.sweeper_shape = shape
-
-    def _balls_hit(self, arbiter, space, data) -> None:
-        for shape in arbiter.shapes:
-            index = getattr(shape, "ball_index", None)
-            if index is not None and index >= 0:
-                self.ball_touch.add(index)
-
-    def _bar_hit(self, arbiter, space, data) -> None:
-        for shape in arbiter.shapes:
-            index = getattr(shape, "ball_index", None)
-            if index is not None and index >= 0:
-                self.sweeper_touch.add(index)
-
-    def add_cameo(self, ball: _Ball) -> None:
-        self._add(ball)
-
-    def remove(self, index: int) -> None:
-        body = self.bodies.pop(index, None)
-        shape = self.shapes.pop(index, None)
-        if body is not None and shape is not None:
-            self.space.remove(body, shape)
-
-    def step(
-        self,
-        cfg: ArenaConfig,
-        balls: list[_Ball],
-        dt: float,
-        zone: float,
-        time: float,
-        omega_scale: float = 1.0,
-        edge_scale: float = 1.0,
-    ) -> tuple[set[int], set[int]]:
-        self.sweeper_touch = set()
-        self.ball_touch = set()
-        length = max(1.0, zone - cfg.sweeper_inset)
-        body = self.sweeper_body
-        shape = self.sweeper_shape
-        shape.sensor = time < cfg.sweeper_start
-        if time >= cfg.sweeper_start:
-            body.angle = sweeper_angle(cfg, time)
-            body.angular_velocity = sweeper_omega(cfg, time) * omega_scale
-            shape.unsafe_set_endpoints((0, 0), (length, 0))
-        else:
-            body.angle = 0.0
-            body.angular_velocity = 0.0
-            shape.unsafe_set_endpoints((0, 0), (1, 0))
-        self.space.reindex_shapes_for_body(body)
-        for ball in balls:
-            if not ball.alive or ball.index not in self.bodies:
-                continue
-            ax, ay = ball.wander
-            ex, ey = (0.0, 0.0) if ball.cameo else _edge_accel(cfg, ball, zone)
-            ex *= edge_scale
-            ey *= edge_scale
-            phys = self.bodies[ball.index]
-            phys.force = ((ax + ex) * ball.mass, (ay + ey) * ball.mass)
-        self.space.step(dt)
-        for ball in balls:
-            if ball.index not in self.bodies:
-                continue
-            phys = self.bodies[ball.index]
-            ball.x, ball.y = phys.position
-            ball.vx, ball.vy = phys.velocity
-            ball.angle = phys.angle
-            ball.omega = phys.angular_velocity
-        return set(self.sweeper_touch), set(self.ball_touch)
-
-
-def _integrate(
-    cfg: ArenaConfig,
-    seed: int,
-    balls: list[_Ball],
-    meteors: list[Meteor],
-    cameo_ang: float,
-    rng: np.random.Generator,
-    *,
-    horizon: float,
-    record_trace: bool,
-    backend: str,
-    stepper,
-) -> SimResult:
-    dt = cfg.dt
-    steps = int(math.ceil(horizon / dt))
-    cx, cy = cfg.center
-    elims: list[Elim] = []
-    near: list[tuple[int, float]] = []
-    meteor_touch: set[int] = set()
-    meteor_index = 0
-    cameo: _Ball | None = None
-    cameo_entered = False
-    cameo_exit: float | None = None
-    t_win: float | None = None
-    winner: int | None = None
-    duel_start: float | None = None
-    trace_xy = [] if record_trace else None
-    trace_ang = [] if record_trace else None
-    trace_alive = [] if record_trace else None
-    trace_cameo = [] if record_trace else None
-    country_count = len(cfg.countries)
-    for step in range(steps):
-        time = step * dt
-        zone = zone_radius(cfg, time)
-        for ball in balls:
-            if not ball.alive or ball.cameo:
-                continue
-            if time >= ball.wander_at:
-                ball.wander = _wander_vec(cfg, rng)
-                ball.wander_at = time + float(rng.uniform(cfg.wander_period[0], cfg.wander_period[1]))
-        if cameo is None and time >= cfg.cameo_enter:
-            zone_now = zone_radius(cfg, cfg.cameo_enter)
-            dist = zone_now + cfg.cameo_radius + 30.0
-            x = cx + dist * math.cos(cameo_ang)
-            y = cy + dist * math.sin(cameo_ang)
-            inward = math.atan2(cy - y, cx - x)
-            speed = 900.0
-            cameo = _Ball(
-                index=-1,
-                x=x,
-                y=y,
-                vx=speed * math.cos(inward),
-                vy=speed * math.sin(inward),
-                angle=0.0,
-                omega=0.0,
-                radius=cfg.cameo_radius,
-                mass=cfg.cameo_mass,
-                factor=1.0,
-                wander=(0.0, 0.0),
-                wander_at=math.inf,
-                alive=True,
-                cameo=True,
-                danger=False,
-            )
-            balls.append(cameo)
-            if hasattr(stepper, "add_cameo"):
-                stepper.add_cameo(cameo)
-        if cameo is not None and cameo.alive:
-            dx = cameo.x - cx
-            dy = cameo.y - cy
-            dist = math.hypot(dx, dy) or 1.0
-            if dist < zone:
-                cameo_entered = True
-            if time >= cfg.cameo_enter + 1.0:
-                cameo.wander = (700.0 * dx / dist, 700.0 * dy / dist)
-            if time >= cfg.cameo_exit - 0.6:
-                need = zone + cameo.radius + 40.0 - dist
-                launch = max(700.0, need / 0.35)
-                cameo.vx = launch * dx / dist
-                cameo.vy = launch * dy / dist
-                cameo.wander = (0.0, 0.0)
-                if backend == "pymunk" and cameo.index in stepper.bodies:
-                    stepper.bodies[cameo.index].velocity = (cameo.vx, cameo.vy)
-            outside = cameo_entered and dist > zone + cameo.radius + 5.0
-            if time >= cfg.cameo_exit or outside:
-                cameo.alive = False
-                cameo_exit = time
-                if hasattr(stepper, "remove"):
-                    stepper.remove(cameo.index)
-        grace = duel_start is not None and winner is None and time < duel_start + cfg.final_duel_min + 0.4
-        omega_scale = 0.25 if grace else 1.0
-        edge_scale = 3.0 if grace else 1.0
-        while meteor_index < len(meteors) and meteors[meteor_index].time <= time:
-            meteor = meteors[meteor_index]
-            meteor_index += 1
-            if grace:
-                continue
-            meteor_touch = set()
-            for ball in balls:
-                if not ball.alive or ball.cameo:
-                    continue
-                dx = ball.x - meteor.x
-                dy = ball.y - meteor.y
-                dist = math.hypot(dx, dy)
-                if dist >= cfg.meteor_radius:
-                    continue
-                if dist < 1e-6:
-                    dx, dy, dist = ball.x - cx, ball.y - cy, math.hypot(ball.x - cx, ball.y - cy) or 1.0
-                falloff = 1.0 - dist / cfg.meteor_radius
-                dv = cfg.meteor_impulse * falloff
-                ball.vx += dv * dx / dist
-                ball.vy += dv * dy / dist
-                meteor_touch.add(ball.index)
-                if backend == "pymunk" and ball.index in stepper.bodies:
-                    stepper.bodies[ball.index].velocity = (ball.vx, ball.vy)
-        if hasattr(stepper, "step"):
-            sweeper_touch, ball_touch = stepper.step(cfg, balls, dt, zone, time, omega_scale, edge_scale)
-        else:
-            sweeper_touch, ball_touch = stepper(cfg, balls, dt, zone, time, omega_scale, edge_scale)
-        doomed: list[tuple[float, _Ball]] = []
-        for ball in list(balls):
-            if not ball.alive or ball.cameo:
-                continue
-            dist = math.hypot(ball.x - cx, ball.y - cy)
-            margin = zone + cfg.out_margin_radii * ball.radius - dist
-            limit = cfg.near_miss_margin_radii * ball.radius
-            if margin < limit:
-                ball.danger = True
-            elif ball.danger:
-                ball.danger = False
-                near.append((ball.index, time))
-            if is_out(dist, zone, ball.radius, cfg.out_margin_radii):
-                doomed.append((dist, ball))
-        alive_now = sum(1 for ball in balls if ball.alive and not ball.cameo)
-        protect = winner is None and (duel_start is None or time < duel_start + cfg.final_duel_min)
-        can_kill = max(0, alive_now - 2) if protect else len(doomed)
-        doomed.sort(key=lambda item: item[0])
-        split = max(0, len(doomed) - can_kill)
-        for dist, ball in doomed[:split]:
-            dx = ball.x - cx
-            dy = ball.y - cy
-            norm = dist or 1.0
-            keep = max(1.0, zone + cfg.out_margin_radii * ball.radius - 4.0)
-            ball.x = cx + keep * dx / norm
-            ball.y = cy + keep * dy / norm
-            ball.vx = -80.0 * dx / norm
-            ball.vy = -80.0 * dy / norm
-            if backend == "pymunk" and hasattr(stepper, "bodies") and ball.index in stepper.bodies:
-                stepper.bodies[ball.index].position = (ball.x, ball.y)
-                stepper.bodies[ball.index].velocity = (ball.vx, ball.vy)
-        for _dist, ball in doomed[split:]:
-            ball.alive = False
-            elims.append(Elim(time, ball.index, _cause(ball.index, time, meteors, sweeper_touch, ball_touch, meteor_touch)))
-            if hasattr(stepper, "remove"):
-                stepper.remove(ball.index)
-        country_alive = [ball.index for ball in balls if ball.alive and not ball.cameo]
-        if len(country_alive) == 2 and duel_start is None:
-            duel_start = time
-        if len(country_alive) == 1 and winner is None:
-            winner = country_alive[0]
-            t_win = time
-        if record_trace:
-            xy = np.zeros((country_count, 2), dtype=np.float64)
-            ang = np.zeros(country_count, dtype=np.float64)
-            alive = np.zeros(country_count, dtype=np.bool_)
-            for ball in balls:
-                if ball.cameo or ball.index < 0 or ball.index >= country_count:
-                    continue
-                xy[ball.index] = (ball.x, ball.y)
-                ang[ball.index] = ball.angle
-                alive[ball.index] = ball.alive
-            trace_xy.append(xy)
-            trace_ang.append(ang)
-            trace_alive.append(alive)
-            if cameo is None:
-                trace_cameo.append((0.0, 0.0, 0.0))
-            else:
-                trace_cameo.append((cameo.x, cameo.y, 1.0 if cameo.alive else 0.0))
-        if t_win is not None and time > t_win + 1.0 and time > cfg.win_window[1]:
-            break
-    elims.sort(key=lambda item: (item.time, item.index))
-    trace = None
-    if record_trace:
-        cameo_rows = np.asarray(trace_cameo, dtype=np.float64)
-        trace = {
-            "xy": np.stack(trace_xy),
-            "angle": np.stack(trace_ang),
-            "alive": np.stack(trace_alive),
-            "cameo_xy": cameo_rows[:, :2],
-            "cameo_alive": cameo_rows[:, 2] > 0.5,
-        }
-    return SimResult(
-        seed=seed,
-        backend=backend,
-        elims=tuple(elims),
-        meteors=tuple(meteors),
-        near_misses=tuple(near),
-        t_win=t_win,
-        winner=winner,
-        duel_start=duel_start,
-        cameo_exit=cameo_exit,
-        trace=trace,
-    )
-
-
-def sim_fingerprint(cfg: ArenaConfig, seed: int) -> str:
     payload = {
-        "seed": seed,
+        "elims": [(round(item.time, 4), item.index, item.cause, item.killer) for item in result.elims],
+        "winner": result.winner,
+        "impulses": len(result.impulses),
+    }
+    if result.trace is not None and len(result.trace["xy"]):
+        payload["end"] = np.round(result.trace["xy"][-1], 2).tolist()
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def sim_fingerprint(cfg: ArenaConfig) -> str:
+    payload = {
         "cast": [country.iso2 for country in cfg.countries],
-        "ball_radius": cfg.ball_radius,
-        "ball_mass": cfg.ball_mass,
-        "restitution": cfg.restitution,
         "damping": cfg.damping,
-        "zone": cfg.zone_keyframes,
-        "spawn": [
-            cfg.disk_radius,
-            cfg.speed_min,
-            cfg.speed_max,
-            cfg.inward_deg,
-            cfg.wander_accel,
-            cfg.edge_accel,
-            cfg.edge_margin,
-        ],
-        "sweeper": [
-            cfg.sweeper_start,
-            cfg.sweeper_omega_start,
-            cfg.sweeper_omega_end,
-            cfg.sweeper_omega_end_time,
-        ],
-        "meteor": [cfg.meteor_start, cfg.meteor_gap, cfg.meteor_impulse, cfg.meteor_radius],
-        "cameo": [cfg.cameo_enter, cfg.cameo_exit, cfg.cameo_radius, cfg.cameo_mass],
-        "backend": active_backend(),
+        "dash_speed": cfg.dash_speed,
+        "aggression_scale": cfg.aggression_scale,
+        "keyframes": cfg.platform_keyframes,
+        "radius": cfg.ball_radius,
+        "restitution": cfg.restitution,
+        "v": 2,
     }
-    raw = json.dumps(payload, sort_keys=True, default=list).encode()
-    return hashlib.sha256(raw).hexdigest()
-
-
-def cache_path(cfg: ArenaConfig, seed: int) -> Path:
-    return Path(".cache") / f"arena_{sim_fingerprint(cfg, seed)[:20]}.json"
-
-
-def result_summary(result: SimResult, cfg: ArenaConfig, *, previous_winner: str | None = None) -> dict[str, Any]:
-    gates = evaluate_gates(result, cfg)
-    parts = drama_components(result, cfg, previous_winner=previous_winner)
-    winner = None if result.winner is None else cfg.countries[result.winner].iso2
-    return {
-        "seed": result.seed,
-        "backend": result.backend,
-        "passed": all(gates.values()),
-        "gates": gates,
-        "winner": winner,
-        "t_win": result.t_win,
-        "placements": [cfg.countries[index].iso2 for index in result.placements],
-        "elims": [{"time": item.time, "iso2": cfg.countries[item.index].iso2, "cause": item.cause} for item in result.elims],
-        "components": parts,
-        "cameo_exit": result.cameo_exit,
-    }
-
-
-def load_cached(cfg: ArenaConfig, seed: int) -> dict[str, Any] | None:
-    path = cache_path(cfg, seed)
-    if not path.is_file():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def store_cached(cfg: ArenaConfig, summary: dict[str, Any]) -> None:
-    path = cache_path(cfg, int(summary["seed"]))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(summary), encoding="utf-8")
-    os.replace(temporary, path)
-
-
-def _search_one(payload: tuple[ArenaConfig, int, str | None]) -> dict[str, Any]:
-    cfg, seed, previous = payload
-    cached = load_cached(cfg, seed)
-    if cached is not None and cached.get("backend") == active_backend():
-        if previous:
-            parts = dict(cached["components"])
-            winner = cached.get("winner")
-            penalty = cfg.repeat_penalty if winner == previous else 0.0
-            parts["repeat_penalty"] = penalty
-            parts["score"] = (
-                parts["near_score"]
-                + parts["duel_score"]
-                + parts["late_score"]
-                + parts["double_score"]
-                + parts["meteor_score"]
-                - penalty
-            )
-            cached["components"] = parts
-        return cached
-    summary = result_summary(simulate(cfg, seed), cfg, previous_winner=previous)
-    store_cached(cfg, summary)
-    return summary
-
-
-def read_previous_winner(path: Path = Path(".cache/arena_history.json")) -> str | None:
-    if not path.is_file():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    winner = data.get("winner")
-    return str(winner) if winner else None
-
-
-def search_seeds(
-    cfg: ArenaConfig,
-    count: int,
-    *,
-    workers: int = 1,
-    start: int | None = None,
-    previous_winner: str | None = None,
-) -> list[dict[str, Any]]:
-    origin = cfg.seed if start is None else start
-    seeds = [origin + offset for offset in range(count)]
-    jobs = [(cfg, seed, previous_winner) for seed in seeds]
-    if workers <= 1 or count < 2:
-        return [_search_one(job) for job in jobs]
-    import multiprocessing
-
-    context = multiprocessing.get_context("spawn")
-    with context.Pool(workers) as pool:
-        return list(pool.map(_search_one, jobs, chunksize=1))
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def gate_pass_rates(rows: list[dict[str, Any]]) -> dict[str, float]:
@@ -948,14 +1066,73 @@ def gate_pass_rates(rows: list[dict[str, Any]]) -> dict[str, float]:
 def format_search_failure(rows: list[dict[str, Any]], minimum: float) -> str:
     passed = sum(1 for row in rows if row["passed"])
     rate = passed / len(rows) if rows else 0.0
-    lines = [
-        f"gate pass rate {rate:.1%} is under {minimum:.0%} ({passed}/{len(rows)})",
-    ]
+    lines = [f"gate pass rate {rate:.1%} is under {minimum:.0%} ({passed}/{len(rows)})"]
     for name, value in gate_pass_rates(rows).items():
         lines.append(f"  {name}: {value:.1%}")
     lines.append(
-        "Tune zone keyframes, hazard timing, or steering "
-        "(spawn.speed_min, spawn.speed_max, spawn.wander_accel, spawn.edge_accel) "
-        "in configs/arena_default.yaml. Gates were not relaxed."
+        "Tune aggression (ai.aggression_scale), damping (physics.damping), "
+        "dash speed (ai.dash_speed), or platform.keyframes in configs/arena_default.yaml. "
+        "Gates were not relaxed."
     )
     return "\n".join(lines)
+
+
+def _search_one(job: tuple) -> dict[str, Any]:
+    cfg, seed, previous = job
+    result = simulate(cfg, seed, record_trace=False)
+    gates = evaluate_gates(result, cfg)
+    parts = drama_components(result, cfg, previous_winner=previous)
+    winner = None if result.winner is None else cfg.countries[result.winner].iso2
+    return {
+        "seed": seed,
+        "passed": all(gates.values()),
+        "gates": gates,
+        "components": parts,
+        "winner": winner,
+        "t_win": result.t_win,
+        "seconds": float(result.metrics.get("seconds", 0.0)),
+    }
+
+
+def search_seeds(
+    cfg: ArenaConfig,
+    count: int,
+    *,
+    workers: int = 1,
+    start: int | None = None,
+    previous_winner: str | None = None,
+) -> list[dict[str, Any]]:
+    origin = cfg.seed if start is None else start
+    jobs = [(cfg, origin + offset, previous_winner) for offset in range(count)]
+    started = time.perf_counter()
+    rows: list[dict[str, Any]] = []
+    if workers <= 1 or count < 2:
+        for index, job in enumerate(jobs, start=1):
+            rows.append(_search_one(job))
+            if index == 1 or index % 5 == 0 or time.perf_counter() - started > 20:
+                print(f"search: {index}/{count} in {time.perf_counter() - started:.1f}s", flush=True)
+                started = time.perf_counter()
+        return rows
+    import multiprocessing
+
+    context = multiprocessing.get_context("spawn")
+    done = 0
+    last = time.perf_counter()
+    with context.Pool(workers) as pool:
+        for row in pool.imap_unordered(_search_one, jobs, chunksize=1):
+            rows.append(row)
+            done += 1
+            if done == 1 or done % 5 == 0 or time.perf_counter() - last >= 20.0:
+                print(f"search: {done}/{count}", flush=True)
+                last = time.perf_counter()
+    rows.sort(key=lambda item: item["seed"])
+    return rows
+
+
+def read_previous_winner(path: Path | None = None) -> str | None:
+    history = Path(".cache/arena_history.json") if path is None else path
+    if not history.is_file():
+        return None
+    data = json.loads(history.read_text(encoding="utf-8"))
+    winner = data.get("winner")
+    return str(winner) if winner else None

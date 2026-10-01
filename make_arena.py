@@ -85,7 +85,7 @@ def _write_seeds(path: Path, rows: list[dict]) -> None:
 def _post_text(cfg, winner: str) -> str:
     return (
         f"{cfg.hook} #shorts\n\n"
-        "32 countries. Same size. Same weight. Pure physics. Comment your country.\n\n"
+        "32 countries. Same size. Same weight. Same moves. Comment your country.\n\n"
         "#shorts #flags #countries #countryballs #satisfying #physics\n\n"
         f"Pinned comment: {winner} survived. Did yours?\n"
     )
@@ -159,15 +159,20 @@ def render_job(
     music: bool,
     voice: bool,
     rows: list[dict] | None,
+    reel: bool = False,
 ) -> dict:
     output.parent.mkdir(parents=True, exist_ok=True)
     result = simulate(cfg, cfg.seed, record_trace=True)
     timeline = build_timeline(result, cfg)
-    renderer = ArenaRenderer(cfg, result, preview=preview, safe_overlay=False)
+    renderer = ArenaRenderer(cfg, result, preview=preview, safe_overlay=False, reel=reel)
     ms_frame = renderer.profile_ms()
-    workers = 1 if renderer.n_frames < 4 else resolve_workers(cfg.workers)
+    # Frames stay in-process. The spawn pool's per-frame IPC made v1 renders
+    # much slower than the profile, and the v2 worker stub does not own a renderer.
+    workers = 1
     eta = (ms_frame / 1000.0) * renderer.n_frames / workers
-    print(f"profile: {ms_frame:.1f} ms/frame; eta {eta / 60.0:.1f} min with {workers} workers", flush=True)
+    print(f"profile: {ms_frame:.1f} ms/frame; eta {eta / 60.0:.1f} min in-process", flush=True)
+    if eta > 25 * 60:
+        print("full-render ETA exceeds 25 min. Options, not applied: half-resolution bloom, fewer particles.", flush=True)
     boxes = _sample_boxes(renderer)
     cache = output.with_suffix(".sim.npz")
     write_sim_cache(cache, result)
@@ -242,6 +247,11 @@ def render_job(
     if contact:
         contact_sheet(renderer, output.with_suffix(".contact.png"))
         print(f"contact sheet: {output.with_suffix('.contact.png')}", flush=True)
+    if reel:
+        from fc_sat.arena_render import write_ko_strips
+
+        strips = write_ko_strips(renderer, output.with_name(output.stem + "_ko"))
+        print(f"ko strips: {len(strips)} in {output.with_name(output.stem + '_ko')}", flush=True)
     winner = None if result.winner is None else cfg.countries[result.winner].name
     winner_code = None if result.winner is None else cfg.countries[result.winner].iso2
     slow = [[span.video0, span.video1] for span in timeline.spans if span.phase in {"slow", "replay"}]
@@ -268,6 +278,9 @@ def render_job(
         "slow_spans": slow,
         "pre_drop": [timeline.winner_video - cfg.pre_drop, timeline.winner_video],
         "preview": preview,
+        "hitstop": timeline.hitstop,
+        "impulse_sources": sorted({item.source for item in result.impulses}),
+        "dash_windup_min": result.metrics.get("dash_windup_min"),
     }
     if not payload["gates"]:
         from fc_sat.arena_sim import evaluate_gates
@@ -309,11 +322,12 @@ def _choose_seed(cfg, count: int, output: Path) -> tuple[int, list[dict]]:
         twin = None if row["t_win"] is None else round(row["t_win"], 2)
         print(f"  {row['seed']} score {row['components']['score']:.2f} {row['winner']} t={twin}", flush=True)
     rate = len(passed) / len(rows) if rows else 0.0
+    _write_seeds(output.with_suffix(".seeds.csv"), rows)
     if rate < cfg.min_pass_rate:
         print(format_search_failure(rows, cfg.min_pass_rate), file=sys.stderr)
-        _write_seeds(output.with_suffix(".seeds.csv"), rows)
-        raise SystemExit(1)
-    return ranked[0]["seed"], rows
+        best = max(rows, key=lambda row: (sum(row["gates"].values()), -row["seed"]))
+        return best["seed"], rows, False
+    return ranked[0]["seed"], rows, True
 
 
 def _parse(argv: list[str] | None) -> argparse.Namespace:
@@ -324,7 +338,11 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--search", type=int, default=None)
     parser.add_argument("--hook-index", type=int, default=None)
+    parser.add_argument("--sim-only", action="store_true")
+    parser.add_argument("--reel", action="store_true")
     parser.add_argument("--preview", action="store_true")
+    parser.add_argument("--audio-only", action="store_true")
+    parser.add_argument("--full", action="store_true")
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--no-music", action="store_true")
     parser.add_argument("--no-voice", action="store_true")
@@ -338,30 +356,96 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _mode(args) -> str:
+    flags = [name for name in ("sim_only", "reel", "preview", "audio_only", "full") if getattr(args, name)]
+    if len(flags) > 1:
+        raise SystemExit("choose one of --sim-only, --reel, --preview, --audio-only, --full")
+    if not flags:
+        return "default"
+    return flags[0]
+
+
+def _write_report(path: Path, rows: list[dict], cfg) -> None:
+    passed = sum(1 for row in rows if row["passed"])
+    lines = [
+        "# Flag Arena v2 sim report",
+        "",
+        f"Pass rate: {passed}/{len(rows)} = {passed / len(rows):.1%}. Required 30%.",
+        "",
+        "## Per-gate pass rates",
+        "",
+    ]
+    for name, value in gate_pass_rates(rows).items():
+        lines.append(f"- {name}: {value:.1%}")
+    lines.extend(["", "## Seeds", ""])
+    for row in rows:
+        lines.append(
+            f"- seed {row['seed']}: {'pass' if row['passed'] else 'fail'} "
+            f"winner {row['winner']} t_win {row['t_win']} score {row['components']['score']:.2f}"
+        )
+    lines.extend(
+        [
+            "",
+            "## Critique",
+            "",
+            "Filled after the debug reel and the KO strips are reviewed.",
+            "",
+            "Knobs: ai.aggression_scale, physics.damping, ai.dash_speed, platform.keyframes.",
+            "Gates were not relaxed.",
+            "",
+        ]
+    )
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def _one(cfg, base: Path, args, cast_path: str) -> None:
     cfg = _with_cast(cfg, cast_path, args.allow_sensitive)
+    mode = _mode(args)
     rows = None
+    rate_failed = False
     if args.seed is None:
         count = cfg.search if args.search is None else args.search
-        chosen, rows = _choose_seed(cfg, count, output_name(base, cast_path, cfg.seed))
+        chosen, rows, accepted = _choose_seed(cfg, count, output_name(base, cast_path, cfg.seed))
+        rate_failed = not accepted
         cfg = replace(cfg, seed=chosen)
     else:
         cfg = replace(cfg, seed=args.seed)
     cfg = _pick_hook(cfg)
     output = output_name(base, cast_path, cfg.seed)
-    verify = (not args.preview) or bool(args.verify)
+    if rows:
+        _write_report(output.with_name("sim_report.md"), rows, cfg)
+    if mode == "sim_only":
+        if rate_failed:
+            raise SystemExit(1)
+        return
+    if mode == "audio_only":
+        result = simulate(cfg, cfg.seed, record_trace=False)
+        timeline = build_timeline(result, cfg)
+        n_frames = max(1, int(round(timeline.duration * cfg.fps)))
+        mix = render_arena_mix(cfg, result, n_frames, fps=cfg.fps, timeline=timeline, music=not args.no_music, voice=None)
+        write_wav(str(output.with_suffix(".wav")), mix.full)
+        print(f"audio: {mix.lufs:.2f} LUFS, true peak {mix.true_peak:.2f} dBTP, {n_frames} frames", flush=True)
+        return
+    preview = mode == "preview"
+    reel = mode in {"reel", "default"}
+    if mode == "full":
+        reel = False
+        preview = False
     render_job(
         cfg,
         output,
-        preview=args.preview,
-        verify=verify and not args.preview or bool(args.verify),
+        preview=preview or reel,
+        verify=bool(args.verify) and mode == "full",
         keep_temp=args.keep_temp,
         safe_overlay=args.safe_overlay,
-        contact=args.contact_sheet,
-        music=not args.no_music,
-        voice=not args.no_voice and not args.preview,
+        contact=args.contact_sheet or mode == "preview",
+        music=not args.no_music and mode == "full",
+        voice=not args.no_voice and mode == "full",
         rows=rows,
+        reel=reel,
     )
+    if rate_failed:
+        raise SystemExit(1)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -238,16 +238,15 @@ def _sfx(cfg: ArenaConfig, result: SimResult, timeline: Timeline, n_samples: int
                 play(_tone(520.0, 180.0, 0.16, SR, 0.05), when, gain=0.22)
             else:
                 play(_mix(_tone(cfg.sub_hz[0], cfg.sub_hz[1], 0.28, SR, 0.1), _noise(0.04, 0.3)), when, gain=0.28)
-    for meteor in result.meteors:
-        for when in event_video_times(timeline, meteor.time):
-            for beep in range(cfg.meteor_beeps):
-                at = when - (cfg.meteor_beeps - beep) * cfg.meteor_beep_gap
-                play(_tone(cfg.meteor_beep_hz, cfg.meteor_beep_hz, 0.08, SR, 0.03, "square"), at, gain=0.12)
-            play(_mix(_tone(90.0, 40.0, 0.35, SR, 0.12), _noise(0.08, 0.5)), when, gain=0.34)
-    for (t0, r0), (t1, r1) in zip(cfg.zone_keyframes, cfg.zone_keyframes[1:]):
-        if r1 < r0 - 1:
-            play(_tone(180.0, 70.0, 0.5, SR, 0.2), video_time(timeline, t0), gain=0.12)
-    play(_tone(110.0, 440.0, 0.4, SR, 0.1, "saw"), video_time(timeline, cfg.cameo_enter), gain=0.2)
+    for impulse in result.impulses:
+        if impulse.source == "dash":
+            play(_tone(cfg.windup_hz[0], cfg.windup_hz[1], 0.12, SR, 0.04), video_time(timeline, impulse.time), pan=0.0, gain=0.08)
+        elif impulse.source in {"ball", "boss"} and impulse.closing >= 200:
+            pan = max(-1.0, min(1.0, (impulse.x - cfg.center[0]) / 500.0))
+            gain = 0.12 + 0.2 * min(1.0, impulse.closing / 1400.0)
+            play(_mix(_tone(140.0, 55.0, 0.08, SR, 0.03), _noise(0.03, 0.2)), video_time(timeline, impulse.time), pan=pan, gain=gain)
+    if result.cameo_exit is not None:
+        play(_tone(90.0, 40.0, 0.35, SR, 0.12), video_time(timeline, max(0.0, cfg.cameo_enter - 1.2)), gain=0.16)
     third = _when_alive(result, len(cfg.countries), 3)
     if third is not None:
         play(_horn(cfg), video_time(timeline, third), gain=0.24)

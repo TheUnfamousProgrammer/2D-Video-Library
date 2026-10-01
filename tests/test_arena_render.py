@@ -1,101 +1,78 @@
-import numpy as np
+"""Timeline, camera box, and layout for arena v2."""
 
 from fc_sat.arena_config import load_arena_config
 from fc_sat.arena_render import (
-    active_kill_lines,
+    PLATFORM_BOX,
     build_timeline,
     camera_view,
-    event_video_times,
+    hit_stops,
+    layout_boxes,
+    layout_clear,
+    sample_timeline,
     video_time,
 )
-from fc_sat.arena_sim import Elim, SimResult, simulate
+from fc_sat.arena_sim import Elim, SimResult
 
 
-def _result(cfg, elims, t_win, winner=1, duel_start=None) -> SimResult:
-    steps = 4
-    count = len(cfg.countries)
+def _result(cfg) -> SimResult:
+    times = [2.0, 4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 27.0]
+    elims = tuple(
+        Elim(when, index, "ball", killer=0, closing=900.0) for index, when in enumerate(times)
+    )
     return SimResult(
         seed=1,
         backend="test",
-        elims=tuple(elims),
-        meteors=(),
-        near_misses=(),
-        t_win=t_win,
-        winner=winner,
-        duel_start=duel_start,
+        elims=elims,
+        t_win=28.0,
+        winner=31,
+        duel_start=24.0,
         cameo_exit=None,
-        trace={
-            "xy": np.zeros((steps, count, 2)),
-            "angle": np.zeros((steps, count)),
-            "alive": np.ones((steps, count), dtype=bool),
-            "cameo_xy": np.zeros((steps, 2)),
-            "cameo_alive": np.zeros(steps, dtype=bool),
-        },
     )
 
 
-def test_remap_is_monotone_and_slows_the_final_eliminations():
+def test_remap_is_monotone_and_caps_hit_stops():
     cfg = load_arena_config("configs/arena_default.yaml")
-    elims = [Elim(1.6 + index * 0.4, index, "self") for index in range(28)]
-    elims.append(Elim(27.0, 28, "ball"))
-    elims.append(Elim(27.4, 29, "ball"))
-    elims.append(Elim(30.5, 30, "sweeper"))
-    result = _result(cfg, elims, 30.5, winner=31, duel_start=27.4)
+    result = _result(cfg)
     timeline = build_timeline(result, cfg)
-    samples = [0.0, 5.0, 10.0, 20.0, 27.0, 30.5]
-    mapped = [video_time(timeline, moment) for moment in samples]
-    assert mapped == sorted(mapped)
-    assert video_time(timeline, 27.4) - video_time(timeline, 27.0) > (27.4 - 27.0) / cfg.slowmo_rate - 0.05
-    assert timeline.winner_video == timeline.replay_video < timeline.celebration_video < timeline.duration
-    assert abs((timeline.duration - timeline.celebration_video) - cfg.celebration) < 1e-9
+    assert timeline.hitstop <= cfg.hitstop_cap + 1e-6
+    previous = -1.0
+    for step in range(0, 40):
+        moment = timeline.t_win * step / 39.0
+        current = video_time(timeline, moment)
+        assert current + 1e-6 >= previous
+        previous = current
+    sim_a, _phase = sample_timeline(timeline, 0.2)
+    sim_b, phase = sample_timeline(timeline, timeline.duration - 0.05)
+    assert phase == "celebration"
+    assert sim_b + 1e-6 >= sim_a
+    holds = hit_stops(result, cfg, ())
+    assert sum(item[2] for item in holds) <= cfg.hitstop_cap + 1e-6
 
 
-def test_audio_events_follow_the_same_remap():
+def test_platform_box_stays_inside_the_screen_slot():
     cfg = load_arena_config("configs/arena_default.yaml")
-    elims = [Elim(1.6 + index * 0.4, index, "self") for index in range(29)]
-    elims.append(Elim(26.2, 29, "ball"))
-    elims.append(Elim(29.4, 30, "ball"))
-    result = _result(cfg, elims, 29.4, winner=31, duel_start=26.2)
-    timeline = build_timeline(result, cfg)
-    when = 29.0
-    heard = event_video_times(timeline, when)
-    assert heard[0] == video_time(timeline, when)
-    assert len(heard) == 2
-    assert heard[1] > timeline.replay_video
+    for moment, hw, hh in ((2.0, 1020.0, 1150.0), (10.0, 900.0, 1010.0)):
+        view = camera_view(cfg, moment, hw, hh)
+        assert PLATFORM_BOX[0] - 1 <= view.left <= view.right <= PLATFORM_BOX[1] + 1
+        assert PLATFORM_BOX[2] - 1 <= view.top <= view.bottom <= PLATFORM_BOX[3] + 1
+        assert hw * view.zoom <= cfg.screen_hw + 1.0
+        assert hh * view.zoom <= cfg.screen_hh + 1.0
 
 
-def test_camera_holds_the_zone_at_400_without_shake():
+def test_layout_boxes_do_not_overlap_the_platform():
     cfg = load_arena_config("configs/arena_default.yaml")
-    for moment in (2.0, 10.0):
-        view = camera_view(cfg, moment, shake=0.0)
-        assert abs(view.screen_radius - cfg.screen_radius) <= 1.0
-        left, top, right, bottom = view.circle_bounds()
-        assert cfg.zone_x[0] <= left and right <= cfg.zone_x[1]
-        assert cfg.zone_y[0] <= top and bottom <= cfg.zone_y[1]
-        assert view.shake_x == 0.0 and view.shake_y == 0.0
+    for video_t in (0.5, 3.2, 4.0, 8.0):
+        boxes = layout_boxes(cfg, video_t, alive=20, phase="main")
+        assert layout_clear(boxes)
 
 
-def test_kill_feed_never_exceeds_three_lines():
-    cfg = load_arena_config("configs/arena_default.yaml")
-    elims = [Elim(10.0 + index * 0.05, index, "ball") for index in range(8)]
-    result = _result(cfg, elims, 20.0)
-    timeline = build_timeline(result, cfg)
-    shown = active_kill_lines(result.elims, timeline, video_time(timeline, 10.4), cfg.kill_fade, cfg.kill_lines)
-    assert len(shown) <= 3
-    assert len(shown) == 3
-
-
-def test_frame_zero_text_stays_in_the_safe_zone():
-    cfg = load_arena_config("configs/arena_default.yaml")
-    result = simulate(cfg, 1, horizon=2.0, record_trace=True)
+def test_rendered_glyphs_stay_clear_of_the_platform():
     from fc_sat.arena_render import ArenaRenderer
+    from fc_sat.arena_sim import simulate
 
-    renderer = ArenaRenderer(cfg, result)
-    frame = renderer.render(0)
-    assert frame.shape == (cfg.height, cfg.width, 3)
-    assert renderer.boxes
-    for left, top, right, bottom in renderer.boxes:
-        assert cfg.safe_x[0] <= left and right <= cfg.safe_x[1]
-        assert cfg.safe_y[0] <= top and bottom <= cfg.safe_y[1]
-    hook_band = frame[int(cfg.hook_y) : int(cfg.hook_y) + 140, 130:950]
-    assert int(hook_band.max()) > 180
+    cfg = load_arena_config("configs/arena_default.yaml")
+    result = simulate(cfg, 5, record_trace=True)
+    renderer = ArenaRenderer(cfg, result, preview=True, reel=True)
+    for video_t in (0.4, 3.2, 6.0):
+        renderer.render(renderer.frame_at(video_t))
+        assert layout_clear(renderer.hud_boxes)
