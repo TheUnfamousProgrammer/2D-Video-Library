@@ -599,8 +599,10 @@ def _config_has_song(path: Path) -> bool:
 
 
 def detect_mode(path: Path) -> str:
-    """Hop if the file names a song, morph if it sets recolor_strength, else bounce."""
+    """Arena if generator is arena, hop if the file names a song, morph if it sets recolor_strength, else bounce."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and data.get("generator") == "arena":
+        return "arena"
     if isinstance(data, dict) and data.get("song"):
         return "hop"
     if isinstance(data, dict) and "recolor_strength" in data:
@@ -816,16 +818,198 @@ def verify_morph_file(path: Path, cfg, *, image_a, image_b) -> list[Check]:
     return checks
 
 
+def _gray_series(ffmpeg: str, path: Path) -> tuple[np.ndarray, np.ndarray]:
+    width, height = 96, 170
+    proc = subprocess.Popen(
+        [ffmpeg, "-v", "error", "-i", str(path), "-vf", f"scale={width}:{height}", "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert proc.stdout is not None
+    needed = width * height
+    means: list[float] = []
+    diffs: list[float] = []
+    prev = None
+    try:
+        while True:
+            buf = proc.stdout.read(needed)
+            if len(buf) < needed:
+                break
+            frame = np.frombuffer(buf, dtype=np.uint8).astype(np.float64) / 255.0
+            means.append(float(frame.mean()))
+            if prev is not None:
+                diffs.append(float(np.mean(np.abs(frame - prev))))
+            prev = frame
+    finally:
+        if proc.stdout:
+            proc.stdout.close()
+        proc.wait()
+    return np.asarray(means, dtype=np.float64), np.asarray(diffs, dtype=np.float64)
+
+
+def verify_arena_file(path: Path, cfg, sidecar: dict | None = None) -> list[Check]:
+    """Container, loudness, pacing, layout, and photosensitivity checks for Flag Arena."""
+    import cv2
+
+    from fc_sat.arena_render import camera_view
+
+    path = Path(path)
+    checks: list[Check] = []
+    ffmpeg = find_ffmpeg()
+    ffprobe = find_ffprobe(ffmpeg)
+    info = _probe(ffprobe, path)
+    video = _stream(info, "video")
+    audio = _stream(info, "audio")
+    if video is None:
+        _add(checks, "video stream", False, "missing")
+        return checks
+    width = int(video.get("width", 0))
+    height = int(video.get("height", 0))
+    _add(checks, "resolution", width == 1080 and height == 1920, f"{width}x{height}")
+    _add(checks, "fps", str(video.get("r_frame_rate")) == "60/1", str(video.get("r_frame_rate")))
+    _add(checks, "h264", video.get("codec_name") == "h264", str(video.get("codec_name")))
+    profile = str(video.get("profile", ""))
+    _add(checks, "profile high", profile.lower().startswith("high"), profile or "missing")
+    _add(checks, "yuv420p", video.get("pix_fmt") == "yuv420p", str(video.get("pix_fmt")))
+    _add(
+        checks,
+        "bt709 tags",
+        video.get("color_space") == "bt709"
+        and video.get("color_transfer") == "bt709"
+        and video.get("color_primaries") == "bt709"
+        and video.get("color_range") == "tv",
+        f"space={video.get('color_space')} trc={video.get('color_transfer')} "
+        f"primaries={video.get('color_primaries')} range={video.get('color_range')}",
+    )
+    if audio is None:
+        _add(checks, "audio stream", False, "missing")
+    else:
+        _add(checks, "aac", audio.get("codec_name") == "aac", str(audio.get("codec_name")))
+        _add(
+            checks,
+            "audio format",
+            str(audio.get("sample_rate")) == "48000" and int(audio.get("channels", 0)) == 2,
+            f"{audio.get('sample_rate')} Hz {audio.get('channels')} ch",
+        )
+    vdur = _duration(video, info)
+    adur = _duration(audio, info) if audio else None
+    if vdur is None:
+        _add(checks, "duration", False, "video duration missing")
+    else:
+        _add(checks, "duration", 31.0 <= vdur <= 42.0, f"{vdur:.3f}s")
+        if adur is not None:
+            _add(checks, "av sync", abs(vdur - adur) <= 0.020, f"video {vdur:.4f}s audio {adur:.4f}s")
+    size_mb = path.stat().st_size / (1024 * 1024)
+    _add(checks, "file size", size_mb < 100.0, f"{size_mb:.2f} MB")
+    meta = sidecar if sidecar is not None else {}
+    side_path = path.with_suffix(".json")
+    if not meta and side_path.is_file():
+        meta = json.loads(side_path.read_text(encoding="utf-8"))
+    gates = meta.get("gates") or {}
+    gates_ok = bool(gates) and all(bool(value) for value in gates.values())
+    _add(checks, "pacing gates", gates_ok, ", ".join(f"{name}={value}" for name, value in gates.items()) or "missing sidecar")
+    first_elim = meta.get("first_elim")
+    _add(checks, "first elimination", first_elim is not None and float(first_elim) >= 1.5, f"{first_elim}s")
+    duration = float(meta.get("duration") or vdur or 0.0)
+    winner_video = meta.get("winner_video")
+    celebration = meta.get("celebration_video")
+    winner_ok = winner_video is not None and duration > 0 and float(winner_video) >= 0.70 * duration
+    _add(checks, "winner late", winner_ok, f"winner {winner_video}s of {duration:.2f}s")
+    cele_ok = celebration is not None and duration > 0 and float(celebration) >= 0.75 * duration
+    _add(checks, "celebration late", cele_ok, f"celebration {celebration}s")
+    boxes = meta.get("text_boxes") or []
+    box_fail = [
+        box
+        for box in boxes
+        if box[0] < cfg.safe_x[0] or box[2] > cfg.safe_x[1] or box[1] < cfg.safe_y[0] or box[3] > cfg.safe_y[1]
+    ]
+    _add(checks, "text safe zone", bool(boxes) and not box_fail, f"{len(boxes)} boxes, {len(box_fail)} outside")
+    zone_ok = True
+    for moment in (2.0, 10.0):
+        view = camera_view(cfg, moment, shake=0.0)
+        left, top, right, bottom = view.circle_bounds()
+        if abs(view.screen_radius - cfg.screen_radius) > 1.0 or left < cfg.zone_x[0] or right > cfg.zone_x[1] or top < cfg.zone_y[0] or bottom > cfg.zone_y[1]:
+            zone_ok = False
+    _add(checks, "zone camera", zone_ok, "400 px at t=2 and t=10 with shake 0")
+    cast = [str(code) for code in meta.get("cast") or [country.iso2 for country in cfg.countries]]
+    blocked = sorted(code for code in cast if code in cfg.guards.blocked)
+    _add(checks, "guards", not blocked, "blocked " + " ".join(blocked) if blocked else f"{len(cast)} codes")
+    missing = [code for code in cast if not (Path("assets/flags/png") / f"{code.lower()}.png").is_file()]
+    _add(checks, "flag files", not missing, "missing " + " ".join(missing) if missing else "present")
+    _add(checks, "memes", bool(cfg.memes.last_reviewed), cfg.memes.last_reviewed)
+    frame0 = _extract_frame(ffmpeg, path, 0, width, height) if width and height else None
+    if frame0 is not None:
+        hook = frame0[int(cfg.hook_y) : int(cfg.hook_y) + 160, int(cfg.safe_x[0]) : int(cfg.safe_x[1])]
+        _add(checks, "hook frame 0", int(hook.max()) > 180, f"max {int(hook.max())}")
+        counter = frame0[int(cfg.counter_y) : int(cfg.counter_y) + 140, 300:780]
+        _add(checks, "counter frame 0", int(counter.max()) > 180, f"max {int(counter.max())}")
+    means, diffs = _gray_series(ffmpeg, path)
+    hot = photosensitivity_hot_count(means, 60) if len(means) else 99
+    _add(checks, "photosensitivity", hot <= 3, f"max hot frames in 1s: {hot}")
+    slow = meta.get("slow_spans") or []
+    motion_fail = _quiet_motion(diffs, slow, fps=60, limit=0.004)
+    _add(checks, "retention motion", motion_fail is None, "moving" if motion_fail is None else f"quiet at {motion_fail:.2f}s")
+    if audio is not None:
+        samples = _decode_audio(ffmpeg, path)
+        meter = pyln.Meter(48000)
+        lufs = float(meter.integrated_loudness(samples))
+        peak = true_peak_db(samples)
+        sample_peak = float(np.max(np.abs(samples))) if samples.size else 1.0
+        _add(checks, "lufs", abs(lufs + 14.0) <= 1.0, f"{lufs:.2f} LUFS")
+        _add(checks, "true peak", peak <= -1.0 + 1e-3, f"{peak:.2f} dBTP")
+        _add(checks, "no clipping", sample_peak < 1.0, f"sample peak {sample_peak:.4f}")
+        drop = meta.get("pre_drop") or [0.0, 0.0]
+        quiet = _quiet_rms(samples, float(drop[0]), float(drop[1]))
+        _add(checks, "retention rms", quiet is None, "holds above -40 dBFS" if quiet is None else f"quiet at {quiet:.2f}s")
+    if any(not item.ok for item in checks) and frame0 is not None:
+        worst = path.with_name(path.stem + ".worst.png")
+        cv2.imwrite(str(worst), frame0)
+        print(f"wrote worst frame {worst}", file=sys.stderr)
+    return checks
+
+
+def _quiet_motion(diffs: np.ndarray, slow_spans: list, *, fps: int, limit: float) -> float | None:
+    if diffs.size < fps:
+        return None
+    window = fps
+    for start in range(0, len(diffs) - window + 1, max(1, fps // 2)):
+        moment = start / fps
+        if any(span[0] - 0.05 <= moment <= span[1] + 0.05 for span in slow_spans):
+            continue
+        if float(np.mean(diffs[start : start + window])) < limit:
+            return moment
+    return None
+
+
+def _quiet_rms(samples: np.ndarray, drop0: float, drop1: float, sr: int = 48000) -> float | None:
+    hop = sr // 2
+    win = sr // 2
+    for start in range(0, max(1, len(samples) - win), hop):
+        moment = start / sr
+        if drop0 - 0.05 <= moment <= drop1 + 0.05:
+            continue
+        chunk = samples[start : start + win]
+        rms = float(np.sqrt(np.mean(chunk ** 2)))
+        db = 20.0 * math.log10(max(rms, 1e-12))
+        if db < -40.0:
+            return moment
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify a rendered Short")
     parser.add_argument("mp4")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--mode", choices=("bounce", "hop", "morph"), default=None)
+    parser.add_argument("--mode", choices=("bounce", "hop", "morph", "arena"), default=None)
     parser.add_argument("--no-cache", action="store_true")
     args = parser.parse_args(argv)
     config_path = Path(args.config)
     mode = args.mode or detect_mode(config_path)
-    if mode == "hop":
+    if mode == "arena":
+        from fc_sat.arena_config import load_arena_config
+
+        checks = verify_arena_file(Path(args.mp4), load_arena_config(config_path))
+    elif mode == "hop":
         checks = verify_hop_file(Path(args.mp4), load_hop_config(config_path))
     elif mode == "morph":
         from fc_sat.config import _load_hooks, _sibling
