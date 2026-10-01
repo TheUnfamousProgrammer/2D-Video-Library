@@ -43,7 +43,15 @@ def render_arena_mix(
         mix = mix + _fit(voice, n_samples)
         sfx = sfx + _fit(voice, n_samples)
     full, lufs, peak = _broadcast(_fit(mix, n_samples))
+    full = _aac_headroom(full)
     sfx_full, _, _ = _broadcast(_fit(sfx, n_samples))
+    sfx_full = _aac_headroom(sfx_full)
+    import pyloudnorm as pyln
+
+    from fc_sat.audio import true_peak_db
+
+    lufs = float(pyln.Meter(SR).integrated_loudness(full))
+    peak = true_peak_db(full)
     return ArenaMix(full=full, sfx_only=sfx_full, lufs=lufs, true_peak=peak, n_samples=n_samples)
 
 
@@ -53,6 +61,28 @@ def _compress(audio: np.ndarray, thresh: float) -> np.ndarray:
     clipped = np.clip(audio / peak, -thresh, thresh)
     clipped /= float(np.max(np.abs(clipped))) or 1.0
     return clipped * 0.5
+
+
+def _aac_headroom(audio: np.ndarray) -> np.ndarray:
+    """Pull 4x oversampled peaks down, then low-pass so AAC stays under -1 dBTP.
+
+    Hard-clipped harmonics reconstruct above the ceiling in the native AAC
+    encoder. A 12 kHz low-pass keeps that overshoot off the decoded file.
+    """
+    from scipy.signal import butter, resample_poly, sosfiltfilt
+
+    ceiling = 10.0 ** (-9.2 / 20.0)
+    up = resample_poly(audio, 4, 1, axis=0)
+    up = np.clip(up, -ceiling, ceiling)
+    down = resample_poly(up, 1, 4, axis=0)
+    if len(down) < len(audio):
+        padded = np.zeros_like(audio)
+        padded[: len(down)] = down
+        down = padded
+    else:
+        down = down[: len(audio)]
+    sos = butter(4, 12000.0, btype="low", fs=SR, output="sos")
+    return sosfiltfilt(sos, down, axis=0)
 
 
 def _broadcast(audio: np.ndarray):

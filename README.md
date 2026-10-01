@@ -351,7 +351,7 @@ Hooks live in `configs/arena_hooks.yaml` so the bounce file `configs/hooks.yaml`
 
 ### Audio, voice, and a trending sound
 
-The mix is synthesized. `finish_broadcast` removes DC, fades 5 ms at each edge, and runs the shared loudness loop with the tail left intact. It does not call `master()`, which would silence the last 300 ms. The bed drops out for 0.35 s before the final knockout, then the hit and the celebration play.
+The mix is synthesized. `finish_broadcast` removes DC, fades 5 ms at each edge, and runs the shared loudness loop with the tail left intact. It does not call `master()`, which would silence the last 300 ms. After that, the delivery path clips 4x oversampled peaks and low-passes at 12 kHz so the native AAC encoder stays at or under -1 dBTP. The bed drops out for 0.35 s before the final knockout, then the hit and the celebration play.
 
 There is no API key in this repo. `{out}.announcer.txt` is always written for the last three outs and the winner. Its header says `target model: Eleven v4 (verify the model id in the ElevenLabs docs)`. Paste one bracketed line at a time into an energetic designed caster voice, with stability on Natural or Creative. The request model id is `voice.model_id` from the config, not a constant in the Python. Set `ELEVENLABS_API_KEY` and either `ELEVENLABS_VOICE_ID` or `voice.voice_id` when you want the clip fetched. If either is missing, the render logs one line and continues. If the API rejects the model, the error names `voice.model_id` and points you at the ElevenLabs model docs.
 

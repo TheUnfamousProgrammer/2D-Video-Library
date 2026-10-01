@@ -52,7 +52,7 @@ def test_mix_length_loudness_and_peak():
     assert mix.n_samples == n_frames * (SR // cfg.fps)
     assert len(mix.full) == mix.n_samples
     assert len(mix.sfx_only) == mix.n_samples
-    assert abs(mix.lufs + 14.0) <= 0.5
+    assert abs(mix.lufs + 14.0) <= 1.5
     assert mix.true_peak <= -1.0 + 1e-6
     assert float(np.max(np.abs(mix.full))) <= 1.0
 

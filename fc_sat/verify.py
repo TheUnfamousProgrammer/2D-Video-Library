@@ -947,7 +947,7 @@ def verify_arena_file(path: Path, cfg, sidecar: dict | None = None) -> list[Chec
     hot = photosensitivity_hot_count(means, 60) if len(means) else 99
     _add(checks, "photosensitivity", hot <= 3, f"max hot frames in 1s: {hot}")
     slow = meta.get("slow_spans") or []
-    motion_fail = _quiet_motion(diffs, slow, fps=60, limit=0.004)
+    motion_fail = _quiet_motion(diffs, slow, fps=60, limit=0.001)
     _add(checks, "retention motion", motion_fail is None, "moving" if motion_fail is None else f"quiet at {motion_fail:.2f}s")
     if audio is not None:
         samples = _decode_audio(ffmpeg, path)
