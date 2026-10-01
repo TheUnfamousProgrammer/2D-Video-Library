@@ -209,6 +209,35 @@ def _brightest_angle(frame: np.ndarray, x: float, y: float, radius: float) -> fl
     return float(angles[peak] + delta * (2.0 * math.pi / count))
 
 
+def spin_from_angles(
+    angles,
+    fps: float,
+    *,
+    expect_sign: float,
+    nominal_rev_s: float,
+) -> dict:
+    """Unwrap angles of the brightest ring sample. ``expect_sign`` is +1 clockwise."""
+    series = np.unwrap(np.asarray(angles, dtype=np.float64))
+    win = max(3, int(round(0.5 * fps)))
+    nominal = nominal_rev_s * 2.0 * math.pi
+    if len(series) <= win:
+        return {"sign_fraction": 0.0, "omega": 0.0, "nominal": nominal, "windows": 0}
+    signs = []
+    magnitudes = []
+    step = max(1, win // 2)
+    for start in range(0, len(series) - win, step):
+        vel = np.diff(series[start : start + win]) * fps
+        med = float(np.median(vel))
+        signs.append(math.copysign(1.0, med) == math.copysign(1.0, expect_sign) if abs(med) > 1e-6 else False)
+        magnitudes.append(abs(med))
+    return {
+        "sign_fraction": float(np.mean(signs)) if signs else 0.0,
+        "omega": float(np.median(magnitudes)) if magnitudes else 0.0,
+        "nominal": nominal,
+        "windows": len(signs),
+    }
+
+
 def measure_spin(
     frames: list[np.ndarray],
     points: list[tuple[float, float]],
@@ -219,25 +248,8 @@ def measure_spin(
     nominal_rev_s: float,
 ) -> dict:
     """Unwrap the brightest point on a 0.6 r ring. ``expect_sign`` is +1 clockwise."""
-    angles = np.unwrap([_brightest_angle(frame, x, y, radius) for frame, (x, y) in zip(frames, points)])
-    win = max(3, int(round(0.5 * fps)))
-    if len(angles) <= win:
-        return {"sign_fraction": 0.0, "omega": 0.0, "nominal": nominal_rev_s * 2.0 * math.pi, "windows": 0}
-    signs = []
-    magnitudes = []
-    step = max(1, win // 2)
-    for start in range(0, len(angles) - win, step):
-        vel = np.diff(angles[start : start + win]) * fps
-        med = float(np.median(vel))
-        signs.append(math.copysign(1.0, med) == math.copysign(1.0, expect_sign) if abs(med) > 1e-6 else False)
-        magnitudes.append(abs(med))
-    nominal = nominal_rev_s * 2.0 * math.pi
-    return {
-        "sign_fraction": float(np.mean(signs)) if signs else 0.0,
-        "omega": float(np.median(magnitudes)) if magnitudes else 0.0,
-        "nominal": nominal,
-        "windows": len(signs),
-    }
+    angles = [_brightest_angle(frame, x, y, radius) for frame, (x, y) in zip(frames, points)]
+    return spin_from_angles(angles, fps, expect_sign=expect_sign, nominal_rev_s=nominal_rev_s)
 
 
 def center_luma(frame: np.ndarray, x: float, y: float) -> float:
@@ -250,17 +262,23 @@ def center_luma(frame: np.ndarray, x: float, y: float) -> float:
     return float(luma.mean() / 255.0)
 
 
-def measure_pulse(frames: list[np.ndarray], points: list[tuple[float, float]], fps: float) -> float:
-    """Peak frequency of the item-center brightness, in Hz."""
-    series = np.array([center_luma(frame, x, y) for frame, (x, y) in zip(frames, points)], dtype=np.float64)
-    if len(series) < 8:
+def pulse_peak_hz(series, fps: float) -> float:
+    """Peak frequency of a brightness series, in Hz. The DC bin is ignored."""
+    values = np.asarray(series, dtype=np.float64)
+    if len(values) < 8:
         return 0.0
-    series = series - float(series.mean())
-    window = np.hanning(len(series))
-    spec = np.abs(np.fft.rfft(series * window))
-    freqs = np.fft.rfftfreq(len(series), d=1.0 / fps)
+    values = values - float(values.mean())
+    window = np.hanning(len(values))
+    spec = np.abs(np.fft.rfft(values * window))
+    freqs = np.fft.rfftfreq(len(values), d=1.0 / fps)
     spec[0] = 0.0
     return float(freqs[int(np.argmax(spec))])
+
+
+def measure_pulse(frames: list[np.ndarray], points: list[tuple[float, float]], fps: float) -> float:
+    """Peak frequency of the item-center brightness, in Hz."""
+    series = [center_luma(frame, x, y) for frame, (x, y) in zip(frames, points)]
+    return pulse_peak_hz(series, fps)
 
 
 def paint_synthetic(width: int, height: int, looks: list[dict], background: tuple[int, int, int]) -> np.ndarray:

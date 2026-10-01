@@ -599,10 +599,12 @@ def _config_has_song(path: Path) -> bool:
 
 
 def detect_mode(path: Path) -> str:
-    """Arena if generator is arena, hop if the file names a song, morph if it sets recolor_strength, else bounce."""
+    """Arena if generator is arena, odd if generator is odd, hop if the file names a song, morph if it sets recolor_strength, else bounce."""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if isinstance(data, dict) and data.get("generator") == "arena":
         return "arena"
+    if isinstance(data, dict) and data.get("generator") == "odd":
+        return "odd"
     if isinstance(data, dict) and data.get("song"):
         return "hop"
     if isinstance(data, dict) and "recolor_strength" in data:
@@ -1000,7 +1002,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify a rendered Short")
     parser.add_argument("mp4")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--mode", choices=("bounce", "hop", "morph", "arena"), default=None)
+    parser.add_argument("--mode", choices=("bounce", "hop", "morph", "arena", "odd"), default=None)
     parser.add_argument("--no-cache", action="store_true")
     args = parser.parse_args(argv)
     config_path = Path(args.config)
@@ -1009,6 +1011,11 @@ def main(argv: list[str] | None = None) -> int:
         from fc_sat.arena_config import load_arena_config
 
         checks = verify_arena_file(Path(args.mp4), load_arena_config(config_path))
+    elif mode == "odd":
+        from fc_sat.odd_config import load_odd_config
+        from fc_sat.odd_verify import verify_odd_file
+
+        checks = verify_odd_file(Path(args.mp4), load_odd_config(config_path))
     elif mode == "hop":
         checks = verify_hop_file(Path(args.mp4), load_hop_config(config_path))
     elif mode == "morph":

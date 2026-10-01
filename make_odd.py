@@ -20,7 +20,9 @@ from pathlib import Path
 from fc_sat.odd_config import load_odd_config
 from fc_sat.odd_render import OddRenderer, contact_sheet, init_odd_worker, render_odd_chunk, write_level_strips, write_pause_test
 from fc_sat.odd_report import write_answers, write_json, write_post, write_report
-from fc_sat.odd_sim import simulate_show
+from fc_sat.odd_audio import synthesize_odd
+from fc_sat.odd_sim import save_show, simulate_show
+from fc_sat.audio import write_wav
 from fc_sat.encode import iter_ordered_frames, pipe_raw_bgr, resolve_workers
 
 CRITIQUE = """
@@ -130,13 +132,24 @@ def render_preview(cfg, output: Path, show, *, safe_overlay: bool) -> float:
     return full_eta
 
 
-def generate(cfg, output: Path, *, critique: str, preview: bool = False, safe_overlay: bool = False) -> dict:
+def generate(
+    cfg,
+    output: Path,
+    *,
+    critique: str,
+    preview: bool = False,
+    safe_overlay: bool = False,
+    encode_full: bool = False,
+    verify: bool = False,
+) -> dict:
     started = time.perf_counter()
     timings: list[tuple[str, float]] = []
     mark = started
     show = simulate_show(cfg)
     timings.append(("sim", time.perf_counter() - mark))
     print(f"stage sim done in {timings[-1][1]:.2f}s", flush=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_show(output.with_suffix(".sim.npz"), show)
     mark = time.perf_counter()
     renderer = OddRenderer(cfg, show, preview=False)
     strips = write_level_strips(renderer, output)
@@ -149,14 +162,33 @@ def generate(cfg, output: Path, *, critique: str, preview: bool = False, safe_ov
         eta = render_preview(cfg, output, show, safe_overlay=safe_overlay)
         timings.append(("preview", time.perf_counter() - mark))
         print(f"stage preview done in {timings[-1][1]:.2f}s", flush=True)
-    output.parent.mkdir(parents=True, exist_ok=True)
+    loudness = None
+    if encode_full:
+        mark = time.perf_counter()
+        audio, lufs, true_peak = synthesize_odd(cfg)
+        wav = output.with_suffix(".wav")
+        write_wav(str(wav), audio)
+        print(f"audio: {lufs:.2f} LUFS, true peak {true_peak:.2f} dBTP -> {wav}", flush=True)
+        master = OddRenderer(cfg, show, preview=False)
+        _encode(master, output, audio_path=wav, preset="slow")
+        timings.append(("full", time.perf_counter() - mark))
+        print(f"stage full done in {timings[-1][1]:.2f}s", flush=True)
+        loudness = {"lufs": lufs, "true_peak": true_peak}
+        if verify:
+            from fc_sat.odd_verify import verify_odd_file
+            from fc_sat.verify import format_table
+
+            checks = verify_odd_file(output, cfg, show=show)
+            print(format_table(checks))
+            if not all(item.ok for item in checks):
+                raise SystemExit(1)
     write_report(output.with_suffix(".report.md"), cfg, show, timings=timings, critique=critique)
     write_answers(output.with_suffix(".answers.md"), cfg, show)
     write_post(output.with_suffix(".post.txt"), cfg, show)
     payload_timings = list(timings)
     if eta is not None:
         payload_timings.append(("full_eta_from_preview_frame", eta))
-    write_json(output.with_suffix(".json"), cfg, show, timings=payload_timings, loudness=None)
+    write_json(output.with_suffix(".json"), cfg, show, timings=payload_timings, loudness=loudness)
     elapsed = time.perf_counter() - started
     print(f"total {elapsed:.2f}s", flush=True)
     return {"show": show, "renderer": renderer, "strips": strips, "pause": pause, "timings": timings, "eta": eta}
@@ -185,11 +217,42 @@ def main(argv: list[str] | None = None) -> int:
             "--full is refused without --approved. "
             "Look at the strips, the pause test, and the preview, then re-run with --full --approved."
         )
-    if args.preview or args.audio_only or (args.full and args.approved):
-        if args.audio_only or (args.full and args.approved):
-            raise SystemExit("audio-only and full encode are later stages; this run builds strips and, with --preview, the half-res look")
+    if args.batch and args.full:
+        raise SystemExit("--full encodes one film. Drop --batch and pass --full --approved for that seed.")
     level_ids = _parse_levels(args.levels)
     output = Path(args.out)
+    if args.audio_only and not args.preview and args.batch is None and not args.full:
+        import json
+
+        from fc_sat.odd_config import build_timeline
+
+        cfg = load_odd_config(args.config, tier=args.tier, seed=args.seed, level_ids=level_ids)
+        started = time.perf_counter()
+        audio, lufs, true_peak = synthesize_odd(cfg)
+        wav = output.with_suffix(".wav")
+        wav.parent.mkdir(parents=True, exist_ok=True)
+        write_wav(str(wav), audio)
+        elapsed = time.perf_counter() - started
+        print(f"audio: {lufs:.2f} LUFS, true peak {true_peak:.2f} dBTP, {elapsed:.2f}s -> {wav}", flush=True)
+        payload = {
+            "seed": cfg.seed,
+            "config": cfg.to_public_dict(),
+            "timings": [{"stage": "audio", "seconds": elapsed}],
+            "loudness": {"lufs": lufs, "true_peak": true_peak},
+            "timeline": [
+                {
+                    "kind": segment.kind,
+                    "level": segment.level_id,
+                    "start": segment.start_s,
+                    "duration": segment.duration_s,
+                    "start_frame": segment.start_frame,
+                    "frames": segment.n_frames,
+                }
+                for segment in build_timeline(cfg)
+            ],
+        }
+        output.with_suffix(".json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return 0
     if args.batch:
         variants = unique_odd_variants(args.batch, args.seed if args.seed is not None else 7)
         failed = 0
@@ -215,7 +278,15 @@ def main(argv: list[str] | None = None) -> int:
         from dataclasses import replace
 
         cfg = replace(cfg, workers=args.workers)
-    generate(cfg, output, critique=CRITIQUE, preview=args.preview, safe_overlay=args.safe_overlay)
+    generate(
+        cfg,
+        output,
+        critique=CRITIQUE,
+        preview=args.preview,
+        safe_overlay=args.safe_overlay,
+        encode_full=args.full,
+        verify=args.verify,
+    )
     return 0
 
 

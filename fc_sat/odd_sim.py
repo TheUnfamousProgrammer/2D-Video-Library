@@ -406,5 +406,26 @@ def location_phrase(x: float, y: float, cfg: OddConfig) -> str:
     return f"{row} {col}"
 
 
+def save_show(path, show: Show) -> None:
+    """Positions and the odd index, so verify can measure the file that was rendered."""
+    payload = {"level_ids": np.array([level.id for level in show.cfg.levels], dtype=np.int32)}
+    for level_id, sim in show.levels.items():
+        key = str(level_id)
+        payload[f"pos_{key}"] = sim.positions
+        payload[f"odd_{key}"] = np.array([sim.odd_index], dtype=np.int32)
+        payload[f"radii_{key}"] = sim.radii
+        payload[f"t0_{key}"] = np.array([sim.t0], dtype=np.float64)
+        payload[f"fps_{key}"] = np.array([sim.fps], dtype=np.int32)
+        payload[f"clear_{key}"] = np.array([sim.min_clearance], dtype=np.float64)
+        payload[f"speed_{key}"] = np.array([sim.odd_speed, sim.speed_band[0], sim.speed_band[1]], dtype=np.float64)
+        payload[f"mean_{key}"] = np.asarray(sim.mean_pos, dtype=np.float64)
+        cvd = sim.diff_params.get("cvd") or {}
+        payload[f"cvd_{key}"] = np.array(
+            [float(cvd.get(kind, -1.0)) for kind in ("protan", "deutan", "tritan")],
+            dtype=np.float64,
+        )
+    np.savez_compressed(path, **payload)
+
+
 def reveal_position(sim: LevelSim, timer: float) -> np.ndarray:
     return sim.at(timer)[sim.odd_index]

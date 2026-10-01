@@ -364,3 +364,54 @@ Watch the master on a phone, not only on the desktop monitor.
 - Flags still read at arm's length, including the small kill-feed icons and the podium.
 - The bed and the impacts balance on the phone speaker. The pre-knockout drop should be obvious and the celebration should still be audible.
 - Hook, counter, kill feed, and the end-card text sit clear of the rounded corners and the platform UI. The guides in the safe-overlay file are the same rectangle the verifier checks.
+
+## Odd One Out
+
+A field of moving discs, one of them different. Four levels (EASY hue, MEDIUM size, HARD spin, BRUTAL pulse), a countdown on each, then a reveal. Frame 0 is already moving. Captions never claim a percentage.
+
+```bash
+python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4
+python make_odd.py --config configs/odd_default.yaml --out out/odd_preview.mp4 --preview
+python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4 --audio-only
+python -m fc_sat.verify out/odd.mp4 --config configs/odd_default.yaml
+python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4 --full --approved
+```
+
+The default command writes the sim, the level strips, the pause test, the report, the answers, and the post text. It does not encode video. `--preview` is 540x960 at 30 fps, no audio, coordinates halved, preset `veryfast`. `--full` is refused unless `--approved` is also passed. That command is the 1080x1920 60 fps master (H.264 high, yuv420p, crf 16, preset slow, AAC 192k, BT.709 tv, +faststart). Do not run it until the strips, the pause test, and the preview have been looked at.
+
+### Defaults that the layout forced
+
+The caption is centered in x `[150, 760]` so it cannot meet the seconds digits at x `[790, 930]`. The CTA is 36 px, not 40, and sits on the right of the pip row (`cta_x` `[560, 940]`, `cta_y` 1450). The outro question is centered at y 400, not 420, so a 48 px line stays above the field. Pulse and spin phases are drawn per item from the same stream. A single shared brightness would give the odd disc away in one still. The reveal gap is 0.15 s of silence: the time-up buzz starts `buzz_seconds` before the timer ends, and a heartbeat hit is dropped if its tail would cross the reveal.
+
+Speed before the clip is `Normal(mean, 0.20 * mean)`, then clipped to `[0.6, 1.4]` of the mean. Heading noise is a random walk with std `1.1 * sqrt(dt)` rad/s, clipped to ±2.2. Repulsion starts when centers are closer than `1.2 * (ri + rj)`. Clearance may sit 0.35 px under `ri + rj` from the integrator; the report logs the real minimum.
+
+Brutal asks for an OKLab hue distance of 0.08. The CVD floor stays 0.10, so the search returns the first candidate that clears the requested distance, the lightness gap, and every CVD simulation at ≥ 0.10. The realized distance can be larger than 0.08. Both numbers are logged. `cvd_min_distance` below 0.10 is a config error.
+
+### Tiers
+
+`normal` is the upload film: timers 5, 6, 7, 8 s, reveal 1.4, wipe 0.3, outro 2.4, 34.9 s. `brutal` tightens hue, size (1.10), and pulse (1.62 Hz against 1.50 Hz) and does not relax uniqueness, overlap, or CVD. `quick` is levels 1 and 3 only, timers 3 s and 4 s, 10.8 s total. The verifier's `[30, 42]` s window is for the normal film. A quick file fails that window on purpose.
+
+### Config keys
+
+`configs/odd_default.yaml` is the schema. Unknown keys and missing keys name the field. `hook` must be a line in `configs/odd_hooks.yaml`. Reveal lines live in `configs/odd_captions.yaml`. The caption validator rejects a digit run followed by `%`.
+
+Top level: `generator`, `seed`, `tier`, `width`, `height`, `fps` (locked to 1080, 1920, 60), `workers`, `bloom_strength`, `warmup_seconds`, `reveal_seconds`, `wipe_seconds`, `outro_seconds`, `hook`, `cta`, `background`. Then `levels` (`id`, `label`, `difference`, `count`, `timer`), `field`, `item`, `motion`, `layout`, `constraints`, `audio`, and `tiers`. A tier carries `hue_min_distance`, `hue_min_lightness`, `cvd_min_distance`, `size_ratio`, `size_ratio_range`, `spin_rev_s`, `pulse_normal_hz`, `pulse_odd_hz`, `pulse_amplitude`, `base_l`, `base_c`. `quick` also sets `levels`, `timers`, and the shorter timeline.
+
+### How detectability is checked
+
+`python -m fc_sat.verify` with mode `odd` (automatic when `generator: odd`) checks the container, the `[30, 42]` s window, size under 100 MB, loudness within 1 LU of -14, true peak at or under -1 dBTP, no clipped samples, hook pixels on frame 0, the photosensitivity jump count, a 1 s motion floor, layout math, rendered text boxes, reveal frames sitting on the timer boundary, and the label sequence.
+
+Pixel checks use the sim positions. They run on the master and again on `{stem}.harsh.mp4` (crf 30, preset veryfast, 720x1280):
+
+- hue: mean OKLab distance of a 5x5 center patch, 10 frames, versus 12 other items, at least 70% of the logged distance
+- size: segmented area of the odd disc over the median of the others, at least 1.2
+- spin: brightest sample on a 0.6 r ring; the sign of angular velocity is right for the odd item and for 10 others in at least 95% of 0.5 s windows, and the magnitude stays within 30% of 1.2 rev/s
+- pulse: FFT peak within 0.2 Hz of the tier's odd rate and the others' of the tier's normal rate, and the odd peak closer to its own rate than to the normal rate
+
+The sim sidecar `{out}.sim.npz` must match the re-simulation (one odd index, speed band, middle-80% position, clearance, CVD). A failure prints the measured value and writes `{stem}.L{n}.worst.png`. Thresholds are not loosened to force a pass. Brutal's 1.10 size ratio can miss the 1.2 area bar after compression; that is reported, not relaxed.
+
+### Phone checklist
+
+- L1 reads on a phone in the first second. L2 does not give itself away before the reveal. A paused frame of L3 or L4 does not mark the odd disc.
+- The whoosh, the ticks, and the reveal ding balance on a phone speaker. The 0.15 s gap before the ding should be obvious.
+- Level label, caption, timer, and CTA stay clear of each other and of the field. The reveal pill stays inside the field.
