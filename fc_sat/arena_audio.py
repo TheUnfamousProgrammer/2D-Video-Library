@@ -42,17 +42,29 @@ def render_arena_mix(
     if voice is not None and len(voice):
         mix = mix + _fit(voice, n_samples)
         sfx = sfx + _fit(voice, n_samples)
-    full, lufs, peak = finish_broadcast(_compress(_fit(mix, n_samples)), SR)
-    sfx_full, _, _ = finish_broadcast(_compress(_fit(sfx, n_samples)), SR)
+    full, lufs, peak = _broadcast(_fit(mix, n_samples))
+    sfx_full, _, _ = _broadcast(_fit(sfx, n_samples))
     return ArenaMix(full=full, sfx_only=sfx_full, lufs=lufs, true_peak=peak, n_samples=n_samples)
 
 
-def _compress(audio: np.ndarray) -> np.ndarray:
+def _compress(audio: np.ndarray, thresh: float) -> np.ndarray:
     """Clip transients so the shared loudness loop can reach -14 LUFS at -1 dBTP."""
     peak = float(np.max(np.abs(audio))) or 1.0
-    clipped = np.clip(audio / peak, -0.15, 0.15)
+    clipped = np.clip(audio / peak, -thresh, thresh)
     clipped /= float(np.max(np.abs(clipped))) or 1.0
     return clipped * 0.5
+
+
+def _broadcast(audio: np.ndarray):
+    error: RuntimeError | None = None
+    for thresh in (0.16, 0.12, 0.08, 0.05):
+        try:
+            return finish_broadcast(_compress(audio, thresh), SR)
+        except RuntimeError as exc:
+            error = exc
+    if error is not None:
+        raise error
+    raise RuntimeError("broadcast finish did not run")
 
 
 def _fit(audio: np.ndarray, n_samples: int) -> np.ndarray:
