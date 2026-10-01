@@ -18,9 +18,10 @@ import traceback
 from pathlib import Path
 
 from fc_sat.odd_config import load_odd_config
-from fc_sat.odd_render import OddRenderer, write_level_strips, write_pause_test
+from fc_sat.odd_render import OddRenderer, contact_sheet, init_odd_worker, render_odd_chunk, write_level_strips, write_pause_test
 from fc_sat.odd_report import write_answers, write_json, write_post, write_report
 from fc_sat.odd_sim import simulate_show
+from fc_sat.encode import iter_ordered_frames, pipe_raw_bgr, resolve_workers
 
 CRITIQUE = """
 L1 hue is findable in the first second: one lighter disc among 36, which is what the 0.15 lightness gap is for. Nothing else marks it. It is an easy scan, not a pre-lit answer.
@@ -32,6 +33,8 @@ L3 spin does not survive a pause. Every disc has a tick, the pause frame draws n
 L4 pulse is the same idea. Brightness already differs from disc to disc because each one has its own phase, so a brighter disc is not the tell. The different rate shows up only over time. "Last chance" stays left of the seconds.
 
 HUD text stays outside the field. The caption band ends before the seconds. The reveal pill is inside the field, clamped, and offset from the odd disc. No sampled frame had two text boxes touching.
+
+The contact sheet, read at the same size as a phone crop, matches that. L1 still reads as the light disc. L2 still does not give itself away before the reveal. L3 and L4 stills stay uniform. Half-resolution preview is 540x960 at 30 fps with no audio, and the full-frame profile says about 1.5 minutes with 7 workers.
 """.strip()
 
 
@@ -68,7 +71,66 @@ def _variant_path(output: Path, seed: int, tier: str) -> Path:
     return output.with_name(f"{output.stem}_s{seed}_{tier}{output.suffix}")
 
 
-def generate(cfg, output: Path, *, critique: str) -> dict:
+def _encode(renderer: OddRenderer, output: Path, *, audio_path: Path | None, preset: str) -> None:
+    workers = 1 if renderer.n_frames < 8 else resolve_workers(renderer.cfg.workers)
+    ms_frame = renderer.profile_ms()
+    eta = (ms_frame / 1000.0) * renderer.n_frames / workers
+    print(
+        f"profile: {ms_frame:.1f} ms/frame ({'preview' if renderer.preview else 'full'}); "
+        f"eta {eta / 60.0:.1f} min with {workers} workers",
+        flush=True,
+    )
+
+    def render_index(index: int):
+        return renderer.render(index)
+
+    pipe_raw_bgr(
+        iter_ordered_frames(
+            renderer.n_frames,
+            workers=workers,
+            render_one=render_index,
+            initializer=init_odd_worker,
+            initargs=(renderer.cfg, renderer.show, renderer.preview, renderer.safe_overlay),
+            render_chunk=render_odd_chunk,
+            chunk_size=4,
+        ),
+        output,
+        width=renderer.width,
+        height=renderer.height,
+        fps=renderer.fps,
+        audio_path=audio_path,
+        preset=preset,
+        n_frames=renderer.n_frames if workers <= 1 else None,
+    )
+    return eta
+
+
+def render_preview(cfg, output: Path, show, *, safe_overlay: bool) -> float:
+    from fc_sat.odd_config import timeline_frames
+
+    probe = OddRenderer(cfg, show, preview=False)
+    workers = 1 if timeline_frames(cfg) < 8 else resolve_workers(cfg.workers)
+    ms_full = probe.profile_ms()
+    full_eta = (ms_full / 1000.0) * timeline_frames(cfg) / workers
+    print(
+        f"full-render eta {full_eta / 60.0:.1f} min from {ms_full:.0f} ms/frame with {workers} workers",
+        flush=True,
+    )
+    contact_sheet(probe, output.with_suffix(".contact.png"))
+    preview = OddRenderer(cfg, show, preview=True, safe_overlay=False)
+    _encode(preview, output, audio_path=None, preset="veryfast")
+    if safe_overlay:
+        guides = OddRenderer(cfg, show, preview=True, safe_overlay=True)
+        _encode(
+            guides,
+            output.with_name(output.stem + ".safe.mp4"),
+            audio_path=None,
+            preset="veryfast",
+        )
+    return full_eta
+
+
+def generate(cfg, output: Path, *, critique: str, preview: bool = False, safe_overlay: bool = False) -> dict:
     started = time.perf_counter()
     timings: list[tuple[str, float]] = []
     mark = started
@@ -81,14 +143,23 @@ def generate(cfg, output: Path, *, critique: str) -> dict:
     pause = write_pause_test(renderer, output)
     timings.append(("strips", time.perf_counter() - mark))
     print(f"stage strips done in {timings[-1][1]:.2f}s", flush=True)
+    eta = None
+    if preview:
+        mark = time.perf_counter()
+        eta = render_preview(cfg, output, show, safe_overlay=safe_overlay)
+        timings.append(("preview", time.perf_counter() - mark))
+        print(f"stage preview done in {timings[-1][1]:.2f}s", flush=True)
     output.parent.mkdir(parents=True, exist_ok=True)
     write_report(output.with_suffix(".report.md"), cfg, show, timings=timings, critique=critique)
     write_answers(output.with_suffix(".answers.md"), cfg, show)
     write_post(output.with_suffix(".post.txt"), cfg, show)
-    write_json(output.with_suffix(".json"), cfg, show, timings=timings, loudness=None)
+    payload_timings = list(timings)
+    if eta is not None:
+        payload_timings.append(("full_eta_from_preview_frame", eta))
+    write_json(output.with_suffix(".json"), cfg, show, timings=payload_timings, loudness=None)
     elapsed = time.perf_counter() - started
     print(f"total {elapsed:.2f}s", flush=True)
-    return {"show": show, "renderer": renderer, "strips": strips, "pause": pause, "timings": timings}
+    return {"show": show, "renderer": renderer, "strips": strips, "pause": pause, "timings": timings, "eta": eta}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -115,7 +186,8 @@ def main(argv: list[str] | None = None) -> int:
             "Look at the strips, the pause test, and the preview, then re-run with --full --approved."
         )
     if args.preview or args.audio_only or (args.full and args.approved):
-        raise SystemExit("preview, audio-only, and full encode are later stages; this run only builds levels and strips")
+        if args.audio_only or (args.full and args.approved):
+            raise SystemExit("audio-only and full encode are later stages; this run builds strips and, with --preview, the half-res look")
     level_ids = _parse_levels(args.levels)
     output = Path(args.out)
     if args.batch:
@@ -130,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
                     from dataclasses import replace
 
                     cfg = replace(cfg, workers=args.workers)
-                generate(cfg, path, critique=CRITIQUE)
+                generate(cfg, path, critique=CRITIQUE, preview=args.preview, safe_overlay=args.safe_overlay)
             except Exception:
                 failed += 1
                 traceback.print_exc()
@@ -143,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
         from dataclasses import replace
 
         cfg = replace(cfg, workers=args.workers)
-    generate(cfg, output, critique=CRITIQUE)
+    generate(cfg, output, critique=CRITIQUE, preview=args.preview, safe_overlay=args.safe_overlay)
     return 0
 
 

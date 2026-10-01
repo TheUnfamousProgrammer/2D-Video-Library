@@ -546,3 +546,26 @@ def write_pause_test(renderer: OddRenderer, directory_stem) -> str | None:
     cv2.imwrite(str(path), np.hstack(cells))
     print(f"pause test: {path.name}", flush=True)
     return str(path)
+
+
+def contact_sheet(renderer: OddRenderer, path) -> None:
+    """One row per level: start, 40%, 80% of the timer, then the reveal."""
+    from pathlib import Path
+
+    cell = (270, 480)
+    rows = []
+    for level in renderer.cfg.levels:
+        play = next(segment for segment in renderer.timeline if segment.kind == "play" and segment.level_id == level.id)
+        reveal = next(segment for segment in renderer.timeline if segment.kind == "reveal" and segment.level_id == level.id)
+        times = [
+            play.start_s,
+            play.start_s + 0.40 * play.duration_s,
+            play.start_s + 0.80 * play.duration_s,
+            reveal.start_s + min(0.45, reveal.duration_s * 0.35),
+        ]
+        rows.append(np.hstack([_fit(renderer.render_time(t), *cell) for t in times]))
+        print(f"contact L{level.id}", flush=True)
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(dest), np.vstack(rows))
+    print(f"contact sheet: {dest}", flush=True)

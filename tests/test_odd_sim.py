@@ -60,6 +60,17 @@ def test_reseed_loop_logs_then_succeeds():
     assert len(notes) == 3
 
 
+def test_preview_frame_is_half_size():
+    from fc_sat.odd_render import OddRenderer
+
+    cfg = _small(level_ids=[1])
+    show = simulate_show(cfg)
+    renderer = OddRenderer(cfg, show, preview=True)
+    frame = renderer.render(0)
+    assert renderer.width == 540 and renderer.height == 960 and renderer.fps == 30
+    assert frame.shape == (960, 540, 3)
+
+
 def test_rendered_text_boxes_stay_apart():
     from fc_sat.odd_layout import field_box, layout_failures
     from fc_sat.odd_render import OddRenderer
