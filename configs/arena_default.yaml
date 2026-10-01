@@ -1,0 +1,192 @@
+generator: arena
+seed: 1
+width: 1080
+height: 1920
+fps: 60
+workers: 0
+bloom_strength: 0.5
+cast_size: 32
+cast: configs/casts/world.yaml
+hook: Which country survives?
+hook_index: null
+
+world:
+  center: [540, 960]
+  floor_radius: 400
+  ball_radius: 34
+  ball_mass: 1
+  restitution: 0.9
+  damping: 0.15
+  substeps_hz: 240
+
+spawn:
+  disk_radius: 300
+  speed_min: 250
+  speed_max: 450
+  inward_deg: 50
+  wander_accel: 120
+  wander_period: [0.5, 1.2]
+  edge_accel: 400
+  edge_margin: 60
+  edge_factor: [0.5, 1.0]
+  no_elim_before: 1.5
+  fall_seconds: 0.9
+  out_margin_radii: 0.5
+
+zone:
+  keyframes:
+    - [0.0, 400]
+    - [4.0, 400]
+    - [7.0, 330]
+    - [12.0, 330]
+    - [15.0, 260]
+    - [20.0, 260]
+    - [23.0, 190]
+    - [27.0, 190]
+    - [29.0, 130]
+  warning_lead: 1.2
+  shrink_seconds: 3.0
+
+sweeper:
+  start: 6.0
+  thickness: 24
+  inset: 10
+  omega_start: 0.8
+  omega_end: 2.2
+  omega_end_time: 24.0
+
+meteors:
+  start: 9.0
+  gap: [2.0, 3.5]
+  reticle: 0.9
+  radius: 110
+  impulse: 900
+
+cameo:
+  name: OHIO
+  enter: 15.0
+  exit: 18.5
+  radius: 75
+  mass: 6
+
+pacing:
+  gates:
+    - [4.0, 27, 30]
+    - [10.0, 17, 24]
+    - [16.0, 9, 16]
+    - [22.0, 4, 9]
+  win: [26.0, 32.0]
+  final_duel_min: 3.0
+  min_pass_rate: 0.15
+  search: 300
+
+drama:
+  near_miss_window: 12.0
+  near_miss_margin_radii: 0.5
+  near_miss_cap: 6
+  near_miss_weight: 1.0
+  duel_cap: 6.0
+  duel_weight: 1.0
+  late_elim_window: 10.0
+  late_elim_min: 3
+  late_elim_weight: 0.5
+  double_window: 0.4
+  double_cap: 2
+  double_weight: 0.5
+  meteor_elim_range: [1, 4]
+  meteor_elim_weight: 0.3
+  repeat_penalty: 2.0
+
+camera:
+  screen_radius: 400
+  smooth: 0.35
+  punch_seconds: 0.4
+  punch_from: 1.15
+  punch_to: 1.0
+  shake_px: 14
+  shake_hz: 30
+  shake_decay: 0.35
+  zone_x: [140, 940]
+  zone_y: [560, 1360]
+
+layout:
+  safe_x: [130, 950]
+  safe_y: [200, 1536]
+  counter_y: 270
+  counter_px: 120
+  hook_y: 420
+  hook_px: 90
+  hook_lines: 2
+  kill_x: 150
+  kill_y: [1410, 1460, 1510]
+  kill_px: 40
+  kill_lines: 3
+  kill_fade: 2.5
+  cta_y: 1450
+  name_px: 26
+  name_seconds: 3.0
+  name_fade: 0.5
+  last_named: 8
+
+timeline:
+  slowmo_rate: 0.35
+  slowmo_pre: 0.25
+  slowmo_post: 0.35
+  replay_sim: 0.9
+  replay_zoom: 1.5
+  celebration: 2.6
+  winner_scale: 1.8
+  confetti: 300
+  counter_pop: 0.15
+  counter_pop_scale: 1.25
+  hook_until: 3.0
+  hook_fade: 0.4
+  fact_text: "32 countries. Same size. Same weight. Pure physics."
+  fact_window: [3.0, 5.5]
+  wait_text: "wait for it..."
+  wait_start: 11.5
+
+juice:
+  squash: 0.85
+  squash_seconds: 0.12
+  trail_speed: 600
+  spark_speed: 350
+  sparks: 6
+  eye_frac: 0.2
+  blink: [3.0, 5.0]
+  scared_margin: 70
+  hit_seconds: 0.25
+  shadow_offset_radii: 0.25
+  highlight_alpha: 0.25
+
+audio:
+  bpm: [120, 150]
+  sidechain_db: 6
+  voice_duck_db: 8
+  slowmo_duck_db: 12
+  slowmo_lpf: 800
+  stinger_gap: 0.25
+  pre_drop: 0.35
+  max_voices: 12
+  max_onsets_per_100ms: 14
+  bonk_noise_ms: 8
+  bonk_drop_ms: 60
+  bonk_hz: [220, 90]
+  cowbell_hz: [540, 800]
+  airhorn_hz: [466, 554]
+  ding_hz: [1320, 1980]
+  ding_ms: 80
+  whistle_hz: [1200, 200]
+  whistle_seconds: 0.9
+  meteor_beep_hz: 880
+  meteor_beep_gap: 0.3
+  meteor_beeps: 3
+  sub_hz: [110, 45]
+  target_lufs: -14
+  true_peak_db: -1
+  fade_ms: 5
+  loudness_iters: 5
+
+voice:
+  model_id: eleven_v4
+  voice_id: ""

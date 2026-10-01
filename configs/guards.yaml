@@ -1,0 +1,7 @@
+# User-editable. Casts cannot include these codes unless --allow-sensitive is passed.
+# Religious inscriptions on the flag.
+religious_inscriptions: [SA, AF, IQ, IR, BN]
+# Contested or disputed status.
+contested: [TW, PS, XK, EH]
+# Active conflict at the time this list was written.
+active_conflict: [RU, UA, IL, SD, SS, MM]

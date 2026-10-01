@@ -1,0 +1,32 @@
+- {name: "Japan", iso2: "JP", iso3: "JPN"}
+- {name: "South Korea", iso2: "KR", iso3: "KOR"}
+- {name: "India", iso2: "IN", iso3: "IND"}
+- {name: "Pakistan", iso2: "PK", iso3: "PAK"}
+- {name: "Bangladesh", iso2: "BD", iso3: "BGD"}
+- {name: "Indonesia", iso2: "ID", iso3: "IDN"}
+- {name: "Turkey", iso2: "TR", iso3: "TUR"}
+- {name: "United Arab Emirates", iso2: "AE", iso3: "ARE"}
+- {name: "Philippines", iso2: "PH", iso3: "PHL"}
+- {name: "Vietnam", iso2: "VN", iso3: "VNM"}
+- {name: "China", iso2: "CN", iso3: "CHN"}
+- {name: "Thailand", iso2: "TH", iso3: "THA"}
+- {name: "Malaysia", iso2: "MY", iso3: "MYS"}
+- {name: "Singapore", iso2: "SG", iso3: "SGP"}
+- {name: "Kazakhstan", iso2: "KZ", iso3: "KAZ"}
+- {name: "Uzbekistan", iso2: "UZ", iso3: "UZB"}
+- {name: "Azerbaijan", iso2: "AZ", iso3: "AZE"}
+- {name: "Armenia", iso2: "AM", iso3: "ARM"}
+- {name: "Georgia", iso2: "GE", iso3: "GEO"}
+- {name: "Nepal", iso2: "NP", iso3: "NPL"}
+- {name: "Sri Lanka", iso2: "LK", iso3: "LKA"}
+- {name: "Bhutan", iso2: "BT", iso3: "BTN"}
+- {name: "Cambodia", iso2: "KH", iso3: "KHM"}
+- {name: "Laos", iso2: "LA", iso3: "LAO"}
+- {name: "Mongolia", iso2: "MN", iso3: "MNG"}
+- {name: "Kyrgyzstan", iso2: "KG", iso3: "KGZ"}
+- {name: "Tajikistan", iso2: "TJ", iso3: "TJK"}
+- {name: "Turkmenistan", iso2: "TM", iso3: "TKM"}
+- {name: "Qatar", iso2: "QA", iso3: "QAT"}
+- {name: "Kuwait", iso2: "KW", iso3: "KWT"}
+- {name: "Oman", iso2: "OM", iso3: "OMN"}
+- {name: "Jordan", iso2: "JO", iso3: "JOR"}

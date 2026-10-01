@@ -1,0 +1,24 @@
+last_reviewed: "2026-10-01"
+eliminated:
+  - "{code} has left the chat"
+  - "Press F for {code}"
+  - "{code} fumbled"
+  - "gg {code}"
+  - "bruh {code}"
+  - "{code} got bonked"
+meteor:
+  - "{code} met the meteor"
+  - "{code} took the L"
+self_fall:
+  - "{code} tripped over nothing"
+  - "{code} walked off by themselves"
+final3:
+  - "FINAL 3"
+  - "locked in"
+cameo:
+  - "wait for it..."
+  - "{cameo} has entered the chat"
+  - "{cameo} has left the chat"
+winner:
+  - "{name} WINS"
+  - "GG {name}"

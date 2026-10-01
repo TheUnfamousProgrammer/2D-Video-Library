@@ -1,0 +1,32 @@
+- {name: "France", iso2: "FR", iso3: "FRA"}
+- {name: "Germany", iso2: "DE", iso3: "DEU"}
+- {name: "United Kingdom", iso2: "GB", iso3: "GBR"}
+- {name: "Spain", iso2: "ES", iso3: "ESP"}
+- {name: "Portugal", iso2: "PT", iso3: "PRT"}
+- {name: "Italy", iso2: "IT", iso3: "ITA"}
+- {name: "Netherlands", iso2: "NL", iso3: "NLD"}
+- {name: "Poland", iso2: "PL", iso3: "POL"}
+- {name: "Sweden", iso2: "SE", iso3: "SWE"}
+- {name: "Norway", iso2: "NO", iso3: "NOR"}
+- {name: "Denmark", iso2: "DK", iso3: "DNK"}
+- {name: "Finland", iso2: "FI", iso3: "FIN"}
+- {name: "Ireland", iso2: "IE", iso3: "IRL"}
+- {name: "Belgium", iso2: "BE", iso3: "BEL"}
+- {name: "Switzerland", iso2: "CH", iso3: "CHE"}
+- {name: "Austria", iso2: "AT", iso3: "AUT"}
+- {name: "Czechia", iso2: "CZ", iso3: "CZE"}
+- {name: "Hungary", iso2: "HU", iso3: "HUN"}
+- {name: "Romania", iso2: "RO", iso3: "ROU"}
+- {name: "Greece", iso2: "GR", iso3: "GRC"}
+- {name: "Croatia", iso2: "HR", iso3: "HRV"}
+- {name: "Slovenia", iso2: "SI", iso3: "SVN"}
+- {name: "Serbia", iso2: "RS", iso3: "SRB"}
+- {name: "Lithuania", iso2: "LT", iso3: "LTU"}
+- {name: "Latvia", iso2: "LV", iso3: "LVA"}
+- {name: "Estonia", iso2: "EE", iso3: "EST"}
+- {name: "Luxembourg", iso2: "LU", iso3: "LUX"}
+- {name: "Malta", iso2: "MT", iso3: "MLT"}
+- {name: "Slovakia", iso2: "SK", iso3: "SVK"}
+- {name: "Bulgaria", iso2: "BG", iso3: "BGR"}
+- {name: "Albania", iso2: "AL", iso3: "ALB"}
+- {name: "North Macedonia", iso2: "MK", iso3: "MKD"}

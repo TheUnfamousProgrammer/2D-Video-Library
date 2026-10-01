@@ -1,0 +1,32 @@
+- {name: "Egypt", iso2: "EG", iso3: "EGY"}
+- {name: "Nigeria", iso2: "NG", iso3: "NGA"}
+- {name: "South Africa", iso2: "ZA", iso3: "ZAF"}
+- {name: "Morocco", iso2: "MA", iso3: "MAR"}
+- {name: "Ghana", iso2: "GH", iso3: "GHA"}
+- {name: "Kenya", iso2: "KE", iso3: "KEN"}
+- {name: "Ethiopia", iso2: "ET", iso3: "ETH"}
+- {name: "Tanzania", iso2: "TZ", iso3: "TZA"}
+- {name: "Uganda", iso2: "UG", iso3: "UGA"}
+- {name: "Rwanda", iso2: "RW", iso3: "RWA"}
+- {name: "Senegal", iso2: "SN", iso3: "SEN"}
+- {name: "Cote d'Ivoire", iso2: "CI", iso3: "CIV"}
+- {name: "Cameroon", iso2: "CM", iso3: "CMR"}
+- {name: "Angola", iso2: "AO", iso3: "AGO"}
+- {name: "Mozambique", iso2: "MZ", iso3: "MOZ"}
+- {name: "Zambia", iso2: "ZM", iso3: "ZMB"}
+- {name: "Botswana", iso2: "BW", iso3: "BWA"}
+- {name: "Namibia", iso2: "NA", iso3: "NAM"}
+- {name: "Tunisia", iso2: "TN", iso3: "TUN"}
+- {name: "Algeria", iso2: "DZ", iso3: "DZA"}
+- {name: "Libya", iso2: "LY", iso3: "LBY"}
+- {name: "Gambia", iso2: "GM", iso3: "GMB"}
+- {name: "Sierra Leone", iso2: "SL", iso3: "SLE"}
+- {name: "Mali", iso2: "ML", iso3: "MLI"}
+- {name: "Niger", iso2: "NE", iso3: "NER"}
+- {name: "Burkina Faso", iso2: "BF", iso3: "BFA"}
+- {name: "Benin", iso2: "BJ", iso3: "BEN"}
+- {name: "Togo", iso2: "TG", iso3: "TGO"}
+- {name: "Gabon", iso2: "GA", iso3: "GAB"}
+- {name: "Malawi", iso2: "MW", iso3: "MWI"}
+- {name: "Mauritius", iso2: "MU", iso3: "MUS"}
+- {name: "Madagascar", iso2: "MG", iso3: "MDG"}

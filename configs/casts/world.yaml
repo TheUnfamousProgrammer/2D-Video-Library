@@ -1,0 +1,32 @@
+- {name: "Brazil", iso2: "BR", iso3: "BRA"}
+- {name: "Argentina", iso2: "AR", iso3: "ARG"}
+- {name: "France", iso2: "FR", iso3: "FRA"}
+- {name: "Germany", iso2: "DE", iso3: "DEU"}
+- {name: "United Kingdom", iso2: "GB", iso3: "GBR"}
+- {name: "Spain", iso2: "ES", iso3: "ESP"}
+- {name: "Portugal", iso2: "PT", iso3: "PRT"}
+- {name: "Italy", iso2: "IT", iso3: "ITA"}
+- {name: "Netherlands", iso2: "NL", iso3: "NLD"}
+- {name: "Mexico", iso2: "MX", iso3: "MEX"}
+- {name: "United States", iso2: "US", iso3: "USA"}
+- {name: "Canada", iso2: "CA", iso3: "CAN"}
+- {name: "Japan", iso2: "JP", iso3: "JPN"}
+- {name: "South Korea", iso2: "KR", iso3: "KOR"}
+- {name: "India", iso2: "IN", iso3: "IND"}
+- {name: "Pakistan", iso2: "PK", iso3: "PAK"}
+- {name: "Bangladesh", iso2: "BD", iso3: "BGD"}
+- {name: "Indonesia", iso2: "ID", iso3: "IDN"}
+- {name: "Turkey", iso2: "TR", iso3: "TUR"}
+- {name: "United Arab Emirates", iso2: "AE", iso3: "ARE"}
+- {name: "Egypt", iso2: "EG", iso3: "EGY"}
+- {name: "Nigeria", iso2: "NG", iso3: "NGA"}
+- {name: "South Africa", iso2: "ZA", iso3: "ZAF"}
+- {name: "Morocco", iso2: "MA", iso3: "MAR"}
+- {name: "Ghana", iso2: "GH", iso3: "GHA"}
+- {name: "Australia", iso2: "AU", iso3: "AUS"}
+- {name: "Poland", iso2: "PL", iso3: "POL"}
+- {name: "Sweden", iso2: "SE", iso3: "SWE"}
+- {name: "Norway", iso2: "NO", iso3: "NOR"}
+- {name: "Colombia", iso2: "CO", iso3: "COL"}
+- {name: "Philippines", iso2: "PH", iso3: "PHL"}
+- {name: "Vietnam", iso2: "VN", iso3: "VNM"}
