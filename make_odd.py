@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Odd One Out.
 
-Default (no mode flag) builds the levels and the strips. It does not encode video.
---full is refused unless --approved is also passed.
+Default (no mode flag) builds the levels, the puzzle PNGs, and the contact sheet.
+It does not encode video. --full is refused unless --approved is also passed.
 
   python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4
-  python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4 --preview
+  python make_odd.py --config configs/odd_default.yaml --out out/odd_preview.mp4 --preview
   python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4 --full --approved
 """
 
@@ -17,30 +17,29 @@ import time
 import traceback
 from pathlib import Path
 
-from fc_sat.odd_config import load_odd_config
-from fc_sat.odd_render import OddRenderer, contact_sheet, init_odd_worker, render_odd_chunk, write_level_strips, write_pause_test
-from fc_sat.odd_report import write_answers, write_json, write_post, write_report
-from fc_sat.odd_audio import synthesize_odd
-from fc_sat.odd_sim import save_show, simulate_show
 from fc_sat.audio import write_wav
 from fc_sat.encode import iter_ordered_frames, pipe_raw_bgr, resolve_workers
+from fc_sat.odd_audio import synthesize_odd
+from fc_sat.odd_config import load_odd_config
+from fc_sat.odd_render import OddRenderer, contact_sheet, init_odd_worker, render_odd_chunk, write_level_pngs
+from fc_sat.odd_report import write_answers, write_json, write_post, write_report
+from fc_sat.odd_sim import save_show, simulate_show
+from fc_sat.odd_verify import harsh_measure_show
 
 CRITIQUE = """
-L1 hue is findable in the first second: one lighter disc among 36, which is what the 0.15 lightness gap is for. Nothing else marks it. It is an easy scan, not a pre-lit answer.
+Looked at the clean puzzles, the ringed answers, and the contact sheet.
 
-L2 size is the one a still frame can hide. The 18% radius gap does not pop among 64 discs, and the color is the same. That is the medium round. The reveal is what makes it obvious.
+L1 is immediate. Seed 7 put the odd disc in the top-left cell, and the required lightness gap makes it yellow against pink. That is an easy scan, which is what level 1 is for. Nothing else marks it: same size, no ring, no glow.
 
-L3 spin does not survive a pause. Every disc has a tick, the pause frame draws no circle, and the odd disc is only the one going the other way once the clip is moving. "Pausing won't help" sits clear of the timer.
+L2 reads in one glance. One rounded square is turned, the other twenty-four are upright, and they are the same blue. A still frame shows the tilt. It is not hidden, and it is not pre-circled.
 
-L4 pulse is the same idea. Brightness already differs from disc to disc because each one has its own phase, so a brighter disc is not the tell. The different rate shows up only over time. "Last chance" stays left of the seconds.
+L3 is the one that takes a scan. Every disc matches except the one in the lower left with no white dot. The dot is small, so you have to look, and the missing one is the only tell.
 
-HUD text stays outside the field. The caption band ends before the seconds. The reveal pill is inside the field, clamped, and offset from the odd disc. No sampled frame had two text boxes touching.
-
-The contact sheet, read at the same size as a phone crop, matches that. L1 still reads as the light disc. L2 still does not give itself away before the reveal. L3 and L4 stills stay uniform. Half-resolution preview is 540x960 at 30 fps with no audio, and the full-frame profile says about 1.5 minutes with 7 workers.
+The reveal dims the others, puts a flat gold ring on the odd item, and moves the answer into the caption row. Text stays off the field. At most the level label, one caption, and the seconds number are on screen together.
 """.strip()
 
 
-def unique_odd_variants(n: int, seed: int, tiers: tuple[str, ...] = ("normal", "brutal", "quick")) -> list[dict]:
+def unique_odd_variants(n: int, seed: int, tiers: tuple[str, ...] = ("easy", "normal", "hard")) -> list[dict]:
     """Deterministic (seed, tier) pairs. Base hue follows the seed, so pairs do not repeat."""
     if n < 1:
         raise SystemExit("--batch must be >= 1")
@@ -73,7 +72,7 @@ def _variant_path(output: Path, seed: int, tier: str) -> Path:
     return output.with_name(f"{output.stem}_s{seed}_{tier}{output.suffix}")
 
 
-def _encode(renderer: OddRenderer, output: Path, *, audio_path: Path | None, preset: str) -> None:
+def _encode(renderer: OddRenderer, output: Path, *, audio_path: Path | None, preset: str) -> float:
     workers = 1 if renderer.n_frames < 8 else resolve_workers(renderer.cfg.workers)
     ms_frame = renderer.profile_ms()
     eta = (ms_frame / 1000.0) * renderer.n_frames / workers
@@ -94,7 +93,7 @@ def _encode(renderer: OddRenderer, output: Path, *, audio_path: Path | None, pre
             initializer=init_odd_worker,
             initargs=(renderer.cfg, renderer.show, renderer.preview, renderer.safe_overlay),
             render_chunk=render_odd_chunk,
-            chunk_size=4,
+            chunk_size=8,
         ),
         output,
         width=renderer.width,
@@ -105,31 +104,6 @@ def _encode(renderer: OddRenderer, output: Path, *, audio_path: Path | None, pre
         n_frames=renderer.n_frames if workers <= 1 else None,
     )
     return eta
-
-
-def render_preview(cfg, output: Path, show, *, safe_overlay: bool) -> float:
-    from fc_sat.odd_config import timeline_frames
-
-    probe = OddRenderer(cfg, show, preview=False)
-    workers = 1 if timeline_frames(cfg) < 8 else resolve_workers(cfg.workers)
-    ms_full = probe.profile_ms()
-    full_eta = (ms_full / 1000.0) * timeline_frames(cfg) / workers
-    print(
-        f"full-render eta {full_eta / 60.0:.1f} min from {ms_full:.0f} ms/frame with {workers} workers",
-        flush=True,
-    )
-    contact_sheet(probe, output.with_suffix(".contact.png"))
-    preview = OddRenderer(cfg, show, preview=True, safe_overlay=False)
-    _encode(preview, output, audio_path=None, preset="veryfast")
-    if safe_overlay:
-        guides = OddRenderer(cfg, show, preview=True, safe_overlay=True)
-        _encode(
-            guides,
-            output.with_name(output.stem + ".safe.mp4"),
-            audio_path=None,
-            preset="veryfast",
-        )
-    return full_eta
 
 
 def generate(
@@ -150,16 +124,29 @@ def generate(
     print(f"stage sim done in {timings[-1][1]:.2f}s", flush=True)
     output.parent.mkdir(parents=True, exist_ok=True)
     save_show(output.with_suffix(".sim.npz"), show)
-    mark = time.perf_counter()
     renderer = OddRenderer(cfg, show, preview=False)
-    strips = write_level_strips(renderer, output)
-    pause = write_pause_test(renderer, output)
-    timings.append(("strips", time.perf_counter() - mark))
-    print(f"stage strips done in {timings[-1][1]:.2f}s", flush=True)
+    mark = time.perf_counter()
+    pngs = write_level_pngs(renderer, output)
+    contact_sheet(renderer, output.with_suffix(".contact.png"))
+    timings.append(("pngs", time.perf_counter() - mark))
+    print(f"stage pngs done in {timings[-1][1]:.2f}s", flush=True)
+    mark = time.perf_counter()
+    measured = harsh_measure_show(cfg, show)
+    timings.append(("harsh", time.perf_counter() - mark))
+    print(f"stage harsh done in {timings[-1][1]:.2f}s", flush=True)
     eta = None
     if preview:
         mark = time.perf_counter()
-        eta = render_preview(cfg, output, show, safe_overlay=safe_overlay)
+        preview_renderer = OddRenderer(cfg, show, preview=True, safe_overlay=False)
+        full = OddRenderer(cfg, show, preview=False)
+        workers = 1 if full.n_frames < 8 else resolve_workers(cfg.workers)
+        ms_full = full.profile_ms()
+        eta = (ms_full / 1000.0) * full.n_frames / workers
+        print(f"full-render eta {eta / 60.0:.1f} min from {ms_full:.0f} ms/frame with {workers} workers", flush=True)
+        _encode(preview_renderer, output, audio_path=None, preset="veryfast")
+        if safe_overlay:
+            guides = OddRenderer(cfg, show, preview=True, safe_overlay=True)
+            _encode(guides, output.with_name(output.stem + ".safe.mp4"), audio_path=None, preset="veryfast")
         timings.append(("preview", time.perf_counter() - mark))
         print(f"stage preview done in {timings[-1][1]:.2f}s", flush=True)
     loudness = None
@@ -182,16 +169,15 @@ def generate(
             print(format_table(checks))
             if not all(item.ok for item in checks):
                 raise SystemExit(1)
-    write_report(output.with_suffix(".report.md"), cfg, show, timings=timings, critique=critique)
+    write_report(output.with_suffix(".report.md"), cfg, show, timings=timings, critique=critique, measured=measured)
     write_answers(output.with_suffix(".answers.md"), cfg, show)
     write_post(output.with_suffix(".post.txt"), cfg, show)
-    payload_timings = list(timings)
+    payload = list(timings)
     if eta is not None:
-        payload_timings.append(("full_eta_from_preview_frame", eta))
-    write_json(output.with_suffix(".json"), cfg, show, timings=payload_timings, loudness=loudness)
-    elapsed = time.perf_counter() - started
-    print(f"total {elapsed:.2f}s", flush=True)
-    return {"show": show, "renderer": renderer, "strips": strips, "pause": pause, "timings": timings, "eta": eta}
+        payload.append(("full_eta_s", eta))
+    write_json(output.with_suffix(".json"), cfg, show, timings=payload, loudness=loudness)
+    print(f"total {time.perf_counter() - started:.2f}s", flush=True)
+    return {"show": show, "pngs": pngs, "measured": measured, "timings": timings, "eta": eta}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -199,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default="configs/odd_default.yaml")
     parser.add_argument("--out", default="out/odd.mp4")
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--tier", choices=("normal", "brutal", "quick"), default=None)
+    parser.add_argument("--tier", choices=("easy", "normal", "hard"), default=None)
     parser.add_argument("--levels", default=None, help="comma-separated level ids, order kept")
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--strips", action="store_true")
@@ -215,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.full and not args.approved:
         raise SystemExit(
             "--full is refused without --approved. "
-            "Look at the strips, the pause test, and the preview, then re-run with --full --approved."
+            "Look at the puzzle PNGs and the contact sheet, then re-run with --full --approved."
         )
     if args.batch and args.full:
         raise SystemExit("--full encodes one film. Drop --batch and pass --full --approved for that seed.")

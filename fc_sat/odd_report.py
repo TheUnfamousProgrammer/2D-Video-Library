@@ -7,12 +7,37 @@ from pathlib import Path
 
 from fc_sat.odd_config import OddConfig
 from fc_sat.odd_diff import REVEAL_LABELS
-from fc_sat.odd_sim import Show, location_phrase, reveal_position
+from fc_sat.odd_sim import Show
 
 
 def mmss(seconds: float) -> str:
     total = int(round(seconds))
     return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def magnitude_line(cfg: OddConfig, sim) -> str:
+    size = sim.level.size
+    kind = sim.level.difference
+    if kind in ("hue", "hue_subtle"):
+        distance = float(sim.diff_params.get("distance", 0.0))
+        light = float(sim.diff_params.get("lightness_delta", 0.0))
+        return (
+            f"OKLab distance {distance:.3f}, lightness delta {light:.3f}. "
+            f"This is a color gap on a {size:.0f}px item, not a size fraction."
+        )
+    if kind == "tilt":
+        degrees = float(cfg.tier.tilt_degrees)
+        import math
+
+        angle = math.radians(degrees)
+        corner = 0.5 * math.hypot(math.cos(angle) - 1.0, math.sin(angle))
+        return f"tilt {degrees:.0f} deg, corner shift {corner:.2f} of the {size:.0f}px side"
+    dot = float(sim.diff_params.get("dot_radius", cfg.tier.dot_fraction * size / 2.0))
+    mode = cfg.tier.detail_mode
+    return (
+        f"dot diameter {2 * dot:.1f}px is {2 * dot / size:.2f} of the {size:.0f}px item; "
+        f"the odd item's dot is {mode}"
+    )
 
 
 def answer_lines(cfg: OddConfig, show: Show) -> list[str]:
@@ -21,11 +46,9 @@ def answer_lines(cfg: OddConfig, show: Show) -> list[str]:
         sim = show.levels[level.id]
         play = next(segment for segment in show.timeline if segment.kind == "play" and segment.level_id == level.id)
         reveal = next(segment for segment in show.timeline if segment.kind == "reveal" and segment.level_id == level.id)
-        pos = reveal_position(sim, level.timer)
-        where = location_phrase(float(pos[0]), float(pos[1]), cfg)
         lines.append(
-            f"L{level.id} {level.label}: starts {mmss(play.start_s)}, "
-            f"reveal {mmss(reveal.start_s)} ({where}). {REVEAL_LABELS[level.difference]}"
+            f"L{level.id}: starts {mmss(play.start_s)}, reveal {mmss(reveal.start_s)}, "
+            f"row {sim.row + 1} column {sim.col + 1} ({sim.phrase}). {REVEAL_LABELS[level.difference]}"
         )
     return lines
 
@@ -49,84 +72,59 @@ def write_post(path: Path, cfg: OddConfig, show: Show) -> None:
     )
 
 
-def write_report(path: Path, cfg: OddConfig, show: Show, *, timings: list[tuple[str, float]], critique: str) -> None:
+def write_report(
+    path: Path,
+    cfg: OddConfig,
+    show: Show,
+    *,
+    timings: list[tuple[str, float]],
+    critique: str,
+    measured: dict | None = None,
+) -> None:
     lines = [
         "# Odd One Out report",
         "",
         f"Seed {cfg.seed}, tier {cfg.tier_name}.",
         "",
-        "Motion is the same law for every item, including the odd one. "
-        "Speed is drawn once from Normal(mean, 0.20×mean) and clipped to "
-        f"[{cfg.speed_clip[0]:.1f}, {cfg.speed_clip[1]:.1f}]×{cfg.speed_mean:.0f}. "
-        "Heading starts uniform on the circle and omega starts at 0. "
-        f"Each substep adds Normal(0, {cfg.angular_std}×sqrt(dt)) to omega, "
-        f"clips it to ±{cfg.omega_clip}, and steps the heading. "
-        "Walls reflect. Centers closer than "
-        f"{cfg.repulse:.1f}×r (that is, {cfg.repulse / 2:.1f}×(ri+rj)) are pushed apart. "
-        "The 1.0 s warm-up is discarded, so frame 0 is already moving.",
-        "",
-        "Pulse and spin use a per-item phase on a shared clock. "
-        "Normals share a frequency, not one brightness, so a paused frame does not point at the odd item.",
+        "Every item is static on its cell center. The grid has no jitter. "
+        "The odd item is one uniform draw. The only property that changes is the level's difference. "
+        f"Items fade in from {cfg.pop_floor:.2f} opacity to full over {cfg.pop_seconds:.1f}s "
+        "while the timer is already running, so frame 0 is level 1 with a full timer.",
         "",
     ]
     for level in cfg.levels:
         sim = show.levels[level.id]
-        params = sim.diff_params
-        lines.append(f"## Level {level.id} {level.label} ({level.difference})")
+        lines.append(f"## Level {level.id} ({level.difference})")
         lines.append("")
-        lines.append(f"- Items: {level.count}")
-        lines.append(f"- Odd item id: {sim.odd_index}")
+        lines.append(f"- Items: {level.count} on a {level.grid}x{level.grid} grid, {level.size:.0f}px")
+        lines.append(f"- Odd item: index {sim.odd_index}, row {sim.row + 1}, column {sim.col + 1}, {sim.phrase}")
+        lines.append(f"- Difference: {magnitude_line(cfg, sim)}")
         lines.append(f"- Reveal label: {REVEAL_LABELS[level.difference]}")
-        lines.append(f"- Overlap minimum (center distance minus ri+rj): {sim.min_clearance:.3f} px")
+        if sim.reseeds:
+            lines.append(f"- Reseeds: {len(sim.reseeds)} ({'; '.join(sim.reseeds)})")
+        else:
+            lines.append("- Reseeds: 0")
+        cvd = sim.diff_params.get("cvd")
+        if cvd:
+            lines.append(
+                "- CVD: " + " ".join(f"{kind}={float(cvd[kind]):.3f}" for kind in ("protan", "deutan", "tritan"))
+            )
+        if measured and level.id in measured:
+            lines.append(f"- After harsh re-encode: {measured[level.id]}")
         lines.append(
-            f"- Odd speed {sim.odd_speed:.2f} px/s, others p{cfg.speed_low_pct:.0f}..p{cfg.speed_high_pct:.0f} "
-            f"[{sim.speed_band[0]:.2f}, {sim.speed_band[1]:.2f}]"
+            f"- Drivers: {level.count} items share cell centers and one base color. "
+            f"Odd cell only changes {level.difference}."
         )
-        lines.append(
-            f"- Odd mean position during the timer: ({sim.mean_pos[0]:.1f}, {sim.mean_pos[1]:.1f})"
-        )
-        if params.get("cvd"):
-            cvd = ", ".join(f"{name} {value:.3f}" for name, value in params["cvd"].items())
-            lines.append(
-                f"- Hue distance {params['distance']:.3f} (requested {params['requested_distance']:.3f}), "
-                f"lightness delta {params['lightness_delta']:.3f}, CVD {cvd}, "
-                f"rejected offsets {params['rejected_offsets']}"
-            )
-        if "size_ratio" in params:
-            lines.append(f"- Size ratio {params['size_ratio']:.3f}, odd radius {params['odd_radius']:.2f} px")
-        if "rev_s" in params:
-            lines.append(
-                f"- Spin {params['rev_s']} rev/s, normals {params['normal_direction']}, "
-                f"odd {params['odd_direction']}"
-            )
-        if "odd_hz" in params:
-            lines.append(
-                f"- Pulse normals {params['normal_hz']} Hz, odd {params['odd_hz']} Hz, "
-                f"amplitude ±{params['amplitude']:.0%} of lightness. {params['phase']}."
-            )
-        lines.append(f"- Reseeds: {len(sim.reseeds)}")
-        for note in sim.reseeds:
-            lines.append(f"  - attempt {note['attempt']} seed {note['seed']}: {note['reason']}")
-        lines.append("")
-        lines.append("Drivers (index, odd, speed, heading0, spin phase, pulse phase, radius):")
-        lines.append("")
-        for index in range(level.count):
-            mark = "odd" if index == sim.odd_index else "normal"
-            lines.append(
-                f"- {index} {mark} speed {sim.speeds[index]:.2f} heading {sim.headings0[index]:.3f} "
-                f"spin {sim.spin_phase[index]:.3f} pulse {sim.pulse_phase[index]:.3f} "
-                f"r {sim.radii[index]:.2f}"
-            )
         lines.append("")
     if timings:
         lines.append("## Timings")
         lines.append("")
         for name, seconds in timings:
-            lines.append(f"- {name}: {seconds:.2f} s")
+            lines.append(f"- {name}: {seconds:.2f}s")
         lines.append("")
     lines.append("## Critique")
     lines.append("")
-    lines.append(critique.strip() or "Not reviewed yet.")
+    lines.append(critique.strip())
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -137,6 +135,17 @@ def write_json(path: Path, cfg: OddConfig, show: Show, *, timings: list[tuple[st
         "config": cfg.to_public_dict(),
         "timings": [{"stage": name, "seconds": seconds} for name, seconds in timings],
         "loudness": loudness,
+        "levels": [
+            {
+                "id": level.id,
+                "difference": level.difference,
+                "odd_index": show.levels[level.id].odd_index,
+                "row": show.levels[level.id].row,
+                "col": show.levels[level.id].col,
+                "phrase": show.levels[level.id].phrase,
+            }
+            for level in cfg.levels
+        ],
         "timeline": [
             {
                 "kind": segment.kind,
@@ -148,19 +157,5 @@ def write_json(path: Path, cfg: OddConfig, show: Show, *, timings: list[tuple[st
             }
             for segment in show.timeline
         ],
-        "levels": {
-            str(level.id): {
-                "odd_index": show.levels[level.id].odd_index,
-                "min_clearance": show.levels[level.id].min_clearance,
-                "difference": show.levels[level.id].diff_params,
-            }
-            for level in cfg.levels
-        },
     }
-    path.write_text(json.dumps(payload, indent=2, default=_json_default) + "\n", encoding="utf-8")
-
-
-def _json_default(value):
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    raise TypeError(type(value).__name__)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

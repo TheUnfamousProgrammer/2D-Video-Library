@@ -367,7 +367,7 @@ Watch the master on a phone, not only on the desktop monitor.
 
 ## Odd One Out
 
-A field of moving discs, one of them different. Four levels (EASY hue, MEDIUM size, HARD spin, BRUTAL pulse), a countdown on each, then a reveal. Frame 0 is already moving. Captions never claim a percentage.
+A static grid, one item different. Three levels: hue, tilt, then a missing dot. Each has a countdown and a reveal. Frame 0 is already level 1 with a full timer. Captions never claim a percentage. Fills are flat: no bloom, glow, gradient, shadow, or specular.
 
 ```bash
 python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4
@@ -377,41 +377,38 @@ python -m fc_sat.verify out/odd.mp4 --config configs/odd_default.yaml
 python make_odd.py --config configs/odd_default.yaml --out out/odd.mp4 --full --approved
 ```
 
-The default command writes the sim, the level strips, the pause test, the report, the answers, and the post text. It does not encode video. `--preview` is 540x960 at 30 fps, no audio, coordinates halved, preset `veryfast`. `--full` is refused unless `--approved` is also passed. That command is the 1080x1920 60 fps master (H.264 high, yuv420p, crf 16, preset slow, AAC 192k, BT.709 tv, +faststart). Do not run it until the strips, the pause test, and the preview have been looked at.
+The default command writes the sim, a clean puzzle PNG and a ringed answer PNG per level, the contact sheet, the report, the answers, and the post text. It does not encode video. `--preview` is 540x960 at 30 fps, no audio, coordinates halved, preset `veryfast`. `--full` is refused unless `--approved` is also passed. That command is the 1080x1920 60 fps master (H.264 high, yuv420p, crf 16, preset slow, AAC 192k, BT.709 tv, +faststart).
 
-### Defaults that the layout forced
+### Defaults
 
-The caption is centered in x `[150, 760]` so it cannot meet the seconds digits at x `[790, 930]`. The CTA is 36 px, not 40, and sits on the right of the pip row (`cta_x` `[560, 940]`, `cta_y` 1450). The outro question is centered at y 400, not 420, so a 48 px line stays above the field. Pulse and spin phases are drawn per item from the same stream. A single shared brightness would give the odd disc away in one still. The reveal gap is 0.15 s of silence: the time-up buzz starts `buzz_seconds` before the timer ends, and a heartbeat hit is dropped if its tail would cross the reveal.
+Items fade from `pop_floor` 0.5 to full over 0.2 s, so frame 0 already shows the discs and the timer is already full. Positions never move. The odd cell is one uniform draw and is not repeated on the next level. `detail_mode` is `missing` (the odd disc has no dot). `moved` shifts the dot off center instead. The seconds number is centered on the timer row, to the right of the bar, so it does not meet the caption. The outro question is 52 px at y 420, above the field. The CTA is 40 px at y 1450, below it. There is no bloom key.
 
-Speed before the clip is `Normal(mean, 0.20 * mean)`, then clipped to `[0.6, 1.4]` of the mean. Heading noise is a random walk with std `1.1 * sqrt(dt)` rad/s, clipped to ±2.2. Repulsion starts when centers are closer than `1.2 * (ri + rj)`. Clearance may sit 0.35 px under `ri + rj` from the integrator; the report logs the real minimum.
-
-Brutal asks for an OKLab hue distance of 0.08. The CVD floor stays 0.10, so the search returns the first candidate that clears the requested distance, the lightness gap, and every CVD simulation at ≥ 0.10. The realized distance can be larger than 0.08. Both numbers are logged. `cvd_min_distance` below 0.10 is a config error.
+Hue CVD stays at least 0.12. The subtle hue on the hard tier stays at least 0.10 OKLab and 0.06 CVD. Easy only increases the gaps (hue 0.35, tilt 32 degrees, dot 22% of the disc radius).
 
 ### Tiers
 
-`normal` is the upload film: timers 5, 6, 7, 8 s, reveal 1.4, wipe 0.3, outro 2.4, 34.9 s. `brutal` tightens hue, size (1.10), and pulse (1.62 Hz against 1.50 Hz) and does not relax uniqueness, overlap, or CVD. `quick` is levels 1 and 3 only, timers 3 s and 4 s, 10.8 s total. The verifier's `[30, 42]` s window is for the normal film. A quick file fails that window on purpose.
+`normal` is the upload film: 4x4, 5x5, 6x6, timers 5, 6, 7 s, reveal 1.2, dissolve 0.2, outro 2.0, 24.0 s. `easy` uses the same timeline with bigger differences. `hard` adds level 4 (subtle hue, 6x6, 8 s) and runs 33.4 s. The verifier's `[20, 30]` s window is for the three-level film. A hard file fails that window on purpose.
 
 ### Config keys
 
-`configs/odd_default.yaml` is the schema. Unknown keys and missing keys name the field. `hook` must be a line in `configs/odd_hooks.yaml`. Reveal lines live in `configs/odd_captions.yaml`. The caption validator rejects a digit run followed by `%`.
+`configs/odd_default.yaml` is the schema. Unknown keys and missing keys name the field. `hook` must be a line in `configs/odd_hooks.yaml`. Reveal labels are fixed: "It was a different color", "It was tilted", "It had no dot". The caption validator rejects a digit run followed by `%`.
 
-Top level: `generator`, `seed`, `tier`, `width`, `height`, `fps` (locked to 1080, 1920, 60), `workers`, `bloom_strength`, `warmup_seconds`, `reveal_seconds`, `wipe_seconds`, `outro_seconds`, `hook`, `cta`, `background`. Then `levels` (`id`, `label`, `difference`, `count`, `timer`), `field`, `item`, `motion`, `layout`, `constraints`, `audio`, and `tiers`. A tier carries `hue_min_distance`, `hue_min_lightness`, `cvd_min_distance`, `size_ratio`, `size_ratio_range`, `spin_rev_s`, `pulse_normal_hz`, `pulse_odd_hz`, `pulse_amplitude`, `base_l`, `base_c`. `quick` also sets `levels`, `timers`, and the shorter timeline.
+Top level: `generator`, `seed`, `tier`, `width`, `height`, `fps` (locked to 1080, 1920, 60), `workers`, `reveal_seconds`, `dissolve_seconds`, `outro_seconds`, `pop_seconds`, `pop_floor`, `hook`, `cta`, `background`. Then `levels` (`id`, `difference`, `grid`, `size`, `timer`), `field`, `item`, `layout`, `constraints`, `audio`, and `tiers`. A tier carries `level_ids`, `hue_min_distance`, `hue_min_lightness`, `cvd_min_distance`, `tilt_degrees`, `tilt_range`, `dot_fraction`, `detail_mode`, `hue_subtle_distance`, `hue_subtle_lightness`, `hue_subtle_cvd`, `base_l`, `base_c`.
 
 ### How detectability is checked
 
-`python -m fc_sat.verify` with mode `odd` (automatic when `generator: odd`) checks the container, the `[30, 42]` s window, size under 100 MB, loudness within 1 LU of -14, true peak at or under -1 dBTP, no clipped samples, hook pixels on frame 0, the photosensitivity jump count, a 1 s motion floor, layout math, rendered text boxes, reveal frames sitting on the timer boundary, and the label sequence.
+`python -m fc_sat.verify` with mode `odd` (automatic when `generator: odd`) checks the container, the `[20, 30]` s window, size under 100 MB, loudness within 1 LU of -14, true peak at or under -1 dBTP, no clipped samples, hook pixels on frame 0, the photosensitivity jump count, layout math, rendered text boxes (at most four, none on the field), reveal frames sitting on the timer boundary, one odd item, no repeated cell, and CVD.
 
-Pixel checks use the sim positions. They run on the master and again on `{stem}.harsh.mp4` (crf 30, preset veryfast, 720x1280):
+Pixel checks use the sim positions. They run on the master and again on `{stem}.harsh.mp4` (crf 30, preset veryfast, 720x1280). The default command also prints those measurements for one settled frame per level:
 
-- hue: mean OKLab distance of a 5x5 center patch, 10 frames, versus 12 other items, at least 70% of the logged distance
-- size: segmented area of the odd disc over the median of the others, at least 1.2
-- spin: brightest sample on a 0.6 r ring; the sign of angular velocity is right for the odd item and for 10 others in at least 95% of 0.5 s windows, and the magnitude stays within 30% of 1.2 rev/s
-- pulse: FFT peak within 0.2 Hz of the tier's odd rate and the others' of the tier's normal rate, and the odd peak closer to its own rate than to the normal rate
+- hue: OKLab distance of a 5x5 center patch versus the median of up to 12 other items, at least 70% of nominal
+- tilt: `minAreaRect` angle folded into 0..45 degrees; the odd item differs from the others' median by at least 60% of the nominal angle
+- detail: white-pixel fraction in the dot region of the odd item is under 20% of the median of the others
 
-The sim sidecar `{out}.sim.npz` must match the re-simulation (one odd index, speed band, middle-80% position, clearance, CVD). A failure prints the measured value and writes `{stem}.L{n}.worst.png`. Thresholds are not loosened to force a pass. Brutal's 1.10 size ratio can miss the 1.2 area bar after compression; that is reported, not relaxed.
+A failure prints the measured value and writes `{stem}.L{n}.worst.png`. Thresholds are not loosened to force a pass.
 
 ### Phone checklist
 
-- L1 reads on a phone in the first second. L2 does not give itself away before the reveal. A paused frame of L3 or L4 does not mark the odd disc.
-- The whoosh, the ticks, and the reveal ding balance on a phone speaker. The 0.15 s gap before the ding should be obvious.
-- Level label, caption, timer, and CTA stay clear of each other and of the field. The reveal pill stays inside the field.
+- L1 reads on a phone in the first second. L2's tilt is visible in a still. L3 is the disc without a dot, and nothing else points at it before the reveal.
+- The blip, the ticks, and the reveal ding balance on a phone speaker.
+- Level label, caption, timer, and the outro lines stay clear of each other and of the field. At most four text elements are on screen.

@@ -1,15 +1,16 @@
 """Odd One Out config, tiers, caption checks, and timeline.
 
 Validation errors name the field, same as the other generators.
-Frames for a segment are ``round(seconds * fps)``. With the normal tier that
-is 5+6+7+8 plus four 1.4 s reveals, three 0.3 s wipes, and a 2.4 s outro:
-34.9 s and 2094 frames.
+Frames for a segment are ``round(seconds * fps)``. The normal tier is
+5+6+7 plus three 1.2 s reveals, two 0.2 s dissolves, and a 2.0 s outro:
+24.0 s and 1440 frames.
 """
 
 from __future__ import annotations
 
+import math
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,11 +24,11 @@ from fc_sat.config import (
     _sibling,
 )
 
-DIFFERENCES = ("hue", "size", "spin", "pulse")
-LABELS = ("EASY", "MEDIUM", "HARD", "BRUTAL")
-TIERS = ("normal", "brutal", "quick")
-# Digits followed by %, including "99%" and "only 1%".
+DIFFERENCES = ("hue", "tilt", "detail", "hue_subtle")
+TIERS = ("easy", "normal", "hard")
 PERCENT_CLAIM = re.compile(r"\d+(?:\.\d+)?\s*%", re.IGNORECASE)
+HUE_CVD_FLOOR = 0.12
+SUBTLE_CVD_FLOOR = 0.06
 
 _TOP = frozenset(
     {
@@ -38,18 +39,17 @@ _TOP = frozenset(
         "height",
         "fps",
         "workers",
-        "bloom_strength",
-        "warmup_seconds",
         "reveal_seconds",
-        "wipe_seconds",
+        "dissolve_seconds",
         "outro_seconds",
+        "pop_seconds",
+        "pop_floor",
         "hook",
         "cta",
         "background",
         "levels",
         "field",
         "item",
-        "motion",
         "layout",
         "constraints",
         "audio",
@@ -58,28 +58,25 @@ _TOP = frozenset(
 )
 _TIER_KEYS = frozenset(
     {
-        "levels",
-        "timers",
-        "reveal_seconds",
-        "wipe_seconds",
-        "outro_seconds",
+        "level_ids",
         "hue_min_distance",
         "hue_min_lightness",
         "cvd_min_distance",
-        "size_ratio",
-        "size_ratio_range",
-        "spin_rev_s",
-        "pulse_normal_hz",
-        "pulse_odd_hz",
-        "pulse_amplitude",
+        "tilt_degrees",
+        "tilt_range",
+        "dot_fraction",
+        "detail_mode",
+        "hue_subtle_distance",
+        "hue_subtle_lightness",
+        "hue_subtle_cvd",
         "base_l",
         "base_c",
     }
 )
-_FIELD_KEYS = frozenset({"x0", "x1", "y0", "y1", "corner_radius", "margin"})
-_ITEM_KEYS = frozenset({"radius", "radius_min", "specular"})
-_MOTION_KEYS = frozenset(
-    {"speed_mean", "speed_spread", "speed_clip", "angular_std", "omega_clip", "repulse", "substeps"}
+_LEVEL_KEYS = frozenset({"id", "difference", "grid", "size", "timer"})
+_FIELD_KEYS = frozenset({"x0", "x1", "y0", "y1", "corner_radius", "outline", "outline_color"})
+_ITEM_KEYS = frozenset(
+    {"corner_frac", "ring_color", "ring_px", "ring_from", "ring_to", "ring_grow", "fade_seconds", "fade_alpha"}
 )
 _LAYOUT_KEYS = frozenset(
     {
@@ -98,21 +95,18 @@ _LAYOUT_KEYS = frozenset(
         "timer_num_x0",
         "timer_num_x1",
         "timer_num_px",
-        "pip_y",
-        "pip_r",
+        "timer_color",
+        "timer_red",
+        "red_seconds",
         "outro_y",
         "outro_px",
         "cta_y",
         "cta_px",
-        "cta_x",
         "hook_seconds",
-        "pause_caption_seconds",
-        "last_chance_seconds",
-        "pause_levels",
     }
 )
-_CONSTRAINT_KEYS = frozenset({"max_attempts", "speed_low_pct", "speed_high_pct", "position_middle"})
-_AUDIO_KEYS = frozenset({"silence_at_reveal", "heartbeat_bpm", "heartbeat_window", "buzz_seconds"})
+_CONSTRAINT_KEYS = frozenset({"max_attempts"})
+_AUDIO_KEYS = frozenset({"tone_seconds", "double_tick_window"})
 
 
 def validate_caption(text: str, *, field: str, max_chars: int | None = None) -> str:
@@ -131,13 +125,27 @@ def frames_for(seconds: float, fps: int) -> int:
     return int(round(float(seconds) * int(fps)))
 
 
+def rotated_extent(size: float, degrees: float) -> float:
+    """Axis-aligned width of a square of side ``size`` rotated by ``degrees``."""
+    angle = math.radians(abs(float(degrees)))
+    return float(size) * (abs(math.cos(angle)) + abs(math.sin(angle)))
+
+
 @dataclass(frozen=True)
 class LevelSpec:
     id: int
-    label: str
     difference: str
-    count: int
+    grid: int
+    size: float
     timer: float
+
+    @property
+    def count(self) -> int:
+        return self.grid * self.grid
+
+    @property
+    def label(self) -> str:
+        return f"LEVEL {self.id}"
 
 
 @dataclass(frozen=True)
@@ -146,11 +154,14 @@ class TierParams:
     hue_min_distance: float
     hue_min_lightness: float
     cvd_min_distance: float
-    size_ratio: float
-    spin_rev_s: float
-    pulse_normal_hz: float
-    pulse_odd_hz: float
-    pulse_amplitude: float
+    tilt_degrees: float
+    tilt_min: float
+    tilt_max: float
+    dot_fraction: float
+    detail_mode: str
+    hue_subtle_distance: float
+    hue_subtle_lightness: float
+    hue_subtle_cvd: float
     base_l: float
     base_c: float
 
@@ -183,28 +194,31 @@ class OddConfig:
     height: int
     fps: int
     workers: int
-    bloom_strength: float
-    warmup_seconds: float
     reveal_seconds: float
-    wipe_seconds: float
+    dissolve_seconds: float
     outro_seconds: float
+    pop_seconds: float
+    pop_floor: float
     hook: str
     hooks: tuple[str, ...]
-    captions: tuple[str, ...]
     cta: str
     background: str
     levels: tuple[LevelSpec, ...]
-    field: tuple[float, float, float, float, float, float]
-    radius: float
-    radius_min: float
-    specular: float
-    speed_mean: float
-    speed_spread: float
-    speed_clip: tuple[float, float]
-    angular_std: float
-    omega_clip: float
-    repulse: float
-    substeps: int
+    field_x0: float
+    field_x1: float
+    field_y0: float
+    field_y1: float
+    field_radius: float
+    outline_px: float
+    outline_color: str
+    corner_frac: float
+    ring_color: str
+    ring_px: float
+    ring_from: float
+    ring_to: float
+    ring_grow: float
+    fade_seconds: float
+    fade_alpha: float
     safe_x: tuple[float, float]
     safe_y: tuple[float, float]
     label_y: float
@@ -220,50 +234,17 @@ class OddConfig:
     timer_num_x0: float
     timer_num_x1: float
     timer_num_px: int
-    pip_y: float
-    pip_r: float
+    timer_color: str
+    timer_red: str
+    red_seconds: float
     outro_y: float
     outro_px: int
     cta_y: float
     cta_px: int
-    cta_x: tuple[float, float]
     hook_seconds: float
-    pause_caption_seconds: float
-    last_chance_seconds: float
-    pause_levels: tuple[int, ...]
     max_attempts: int
-    speed_low_pct: float
-    speed_high_pct: float
-    position_middle: float
-    silence_at_reveal: float
-    heartbeat_bpm: tuple[float, float]
-    heartbeat_window: float
-    buzz_seconds: float
-    config_path: str
-
-    @property
-    def field_x0(self) -> float:
-        return self.field[0]
-
-    @property
-    def field_x1(self) -> float:
-        return self.field[1]
-
-    @property
-    def field_y0(self) -> float:
-        return self.field[2]
-
-    @property
-    def field_y1(self) -> float:
-        return self.field[3]
-
-    @property
-    def corner_radius(self) -> float:
-        return self.field[4]
-
-    @property
-    def margin(self) -> float:
-        return self.field[5]
+    tone_seconds: float
+    double_tick_window: float
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -273,20 +254,18 @@ class OddConfig:
             "width": self.width,
             "height": self.height,
             "fps": self.fps,
-            "workers": self.workers,
-            "bloom_strength": self.bloom_strength,
-            "warmup_seconds": self.warmup_seconds,
             "reveal_seconds": self.reveal_seconds,
-            "wipe_seconds": self.wipe_seconds,
+            "dissolve_seconds": self.dissolve_seconds,
             "outro_seconds": self.outro_seconds,
+            "pop_seconds": self.pop_seconds,
+            "pop_floor": self.pop_floor,
             "hook": self.hook,
-            "cta": self.cta,
             "levels": [
                 {
                     "id": level.id,
-                    "label": level.label,
                     "difference": level.difference,
-                    "count": level.count,
+                    "grid": level.grid,
+                    "size": level.size,
                     "timer": level.timer,
                 }
                 for level in self.levels
@@ -295,34 +274,31 @@ class OddConfig:
                 "hue_min_distance": self.tier.hue_min_distance,
                 "hue_min_lightness": self.tier.hue_min_lightness,
                 "cvd_min_distance": self.tier.cvd_min_distance,
-                "size_ratio": self.tier.size_ratio,
-                "spin_rev_s": self.tier.spin_rev_s,
-                "pulse_normal_hz": self.tier.pulse_normal_hz,
-                "pulse_odd_hz": self.tier.pulse_odd_hz,
-                "pulse_amplitude": self.tier.pulse_amplitude,
+                "tilt_degrees": self.tier.tilt_degrees,
+                "dot_fraction": self.tier.dot_fraction,
+                "detail_mode": self.tier.detail_mode,
+                "hue_subtle_distance": self.tier.hue_subtle_distance,
+                "hue_subtle_cvd": self.tier.hue_subtle_cvd,
             },
         }
 
 
 def build_timeline(cfg: OddConfig) -> tuple[Segment, ...]:
-    """Play, reveal, wipe between levels, then the outro. Frame counts sum the rounded parts."""
+    """Play, reveal, a cross-dissolve between levels, then the outro."""
     segments: list[Segment] = []
     cursor_s = 0.0
     cursor_f = 0
     levels = cfg.levels
     for index, level in enumerate(levels):
-        for kind, duration in (
-            ("play", level.timer),
-            ("reveal", cfg.reveal_seconds),
-        ):
+        for kind, duration in (("play", level.timer), ("reveal", cfg.reveal_seconds)):
             n = frames_for(duration, cfg.fps)
             segments.append(Segment(kind, level.id, cursor_s, duration, cursor_f, n))
             cursor_s += duration
             cursor_f += n
         if index < len(levels) - 1:
-            n = frames_for(cfg.wipe_seconds, cfg.fps)
-            segments.append(Segment("wipe", level.id, cursor_s, cfg.wipe_seconds, cursor_f, n))
-            cursor_s += cfg.wipe_seconds
+            n = frames_for(cfg.dissolve_seconds, cfg.fps)
+            segments.append(Segment("dissolve", level.id, cursor_s, cfg.dissolve_seconds, cursor_f, n))
+            cursor_s += cfg.dissolve_seconds
             cursor_f += n
     n = frames_for(cfg.outro_seconds, cfg.fps)
     segments.append(Segment("outro", 0, cursor_s, cfg.outro_seconds, cursor_f, n))
@@ -353,316 +329,252 @@ def _section(raw: dict[str, Any], field: str, allowed: frozenset[str]) -> dict[s
 def _pair(field: str, value: Any) -> tuple[float, float]:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         _fail(field, "must be a pair of numbers")
-    left = _as_float(field, value[0])
-    right = _as_float(field, value[1])
+    left = _as_float(f"{field}[0]", value[0])
+    right = _as_float(f"{field}[1]", value[1])
     if right <= left:
         _fail(field, "must be ordered low to high")
     return left, right
 
 
-def _validate_tier(name: str, raw: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(raw, dict):
-        _fail(f"tiers.{name}", "must be a mapping")
-    unknown = set(raw) - _TIER_KEYS
-    if unknown:
-        _fail(f"tiers.{name}.{sorted(unknown)[0]}", "is not a config field")
-    required = _TIER_KEYS - {"levels", "timers", "reveal_seconds", "wipe_seconds", "outro_seconds"}
-    missing = required - set(raw)
-    if missing:
-        _fail(f"tiers.{name}.{sorted(missing)[0]}", "is required")
-    return raw
+def _hex(field: str, value: Any) -> str:
+    text = _as_str(field, value)
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+        _fail(field, f"must be a #RRGGBB color, got {text!r}")
+    return text.upper()
 
 
-def _tier_params(name: str, raw: dict[str, Any]) -> TierParams:
-    hue = _as_float(f"tiers.{name}.hue_min_distance", raw["hue_min_distance"])
-    light = _as_float(f"tiers.{name}.hue_min_lightness", raw["hue_min_lightness"])
-    cvd = _as_float(f"tiers.{name}.cvd_min_distance", raw["cvd_min_distance"])
-    if cvd < 0.10 - 1e-9:
-        _fail(f"tiers.{name}.cvd_min_distance", "must stay at least 0.10")
-    if hue <= 0 or light <= 0:
-        _fail(f"tiers.{name}.hue_min_distance", "hue distance and lightness must be positive")
-    ratio = _as_float(f"tiers.{name}.size_ratio", raw["size_ratio"])
-    bounds = _pair(f"tiers.{name}.size_ratio_range", raw["size_ratio_range"])
-    if not (bounds[0] - 1e-9 <= ratio <= bounds[1] + 1e-9):
-        _fail(f"tiers.{name}.size_ratio", f"must sit inside {bounds}, got {ratio}")
-    spin = _as_float(f"tiers.{name}.spin_rev_s", raw["spin_rev_s"])
-    normal_hz = _as_float(f"tiers.{name}.pulse_normal_hz", raw["pulse_normal_hz"])
-    odd_hz = _as_float(f"tiers.{name}.pulse_odd_hz", raw["pulse_odd_hz"])
-    amp = _as_float(f"tiers.{name}.pulse_amplitude", raw["pulse_amplitude"])
-    if spin <= 0:
-        _fail(f"tiers.{name}.spin_rev_s", "must be positive")
-    if normal_hz <= 0 or odd_hz <= 0 or normal_hz > 3.0 or odd_hz > 3.0:
-        _fail(f"tiers.{name}.pulse_odd_hz", "pulse rates must be in (0, 3] Hz")
-    if abs(odd_hz - normal_hz) < 1e-6:
-        _fail(f"tiers.{name}.pulse_odd_hz", "must differ from the normal rate")
-    if not 0 < amp <= 0.5:
-        _fail(f"tiers.{name}.pulse_amplitude", "must be in (0, 0.5]")
-    base_l = _as_float(f"tiers.{name}.base_l", raw["base_l"])
-    base_c = _as_float(f"tiers.{name}.base_c", raw["base_c"])
-    if not 0 < base_l < 1 or base_c < 0:
-        _fail(f"tiers.{name}.base_l", "lightness must be in (0, 1) and chroma must be >= 0")
-    return TierParams(name, hue, light, cvd, ratio, spin, normal_hz, odd_hz, amp, base_l, base_c)
-
-
-def _levels(raw_levels: Any, tier_raw: dict[str, Any]) -> tuple[LevelSpec, ...]:
-    if not isinstance(raw_levels, list) or not raw_levels:
+def _levels(raw: Any) -> tuple[LevelSpec, ...]:
+    if not isinstance(raw, list) or not raw:
         _fail("levels", "must be a non-empty list")
-    found: dict[int, LevelSpec] = {}
-    for index, item in enumerate(raw_levels):
+    found: list[LevelSpec] = []
+    seen: set[int] = set()
+    for index, item in enumerate(raw):
         field = f"levels[{index}]"
         if not isinstance(item, dict):
             _fail(field, "must be a mapping")
-        unknown = set(item) - {"id", "label", "difference", "count", "timer"}
+        unknown = set(item) - _LEVEL_KEYS
         if unknown:
             _fail(f"{field}.{sorted(unknown)[0]}", "is not a config field")
-        ident = _as_int(f"{field}.id", item.get("id"))
-        label = _as_str(f"{field}.label", item.get("label"))
-        if label not in LABELS:
-            _fail(f"{field}.label", f"must be one of {', '.join(LABELS)}")
-        diff = _as_str(f"{field}.difference", item.get("difference"))
-        if diff not in DIFFERENCES:
-            _fail(f"{field}.difference", f"must be one of {', '.join(DIFFERENCES)}; a new type needs a measurer")
-        count = _as_int(f"{field}.count", item.get("count"))
-        timer = _as_float(f"{field}.timer", item.get("timer"))
-        if count < 2:
-            _fail(f"{field}.count", "must be at least 2 so one item can be odd")
+        missing = _LEVEL_KEYS - set(item)
+        if missing:
+            _fail(f"{field}.{sorted(missing)[0]}", "is required")
+        level_id = _as_int(f"{field}.id", item["id"])
+        if level_id in seen:
+            _fail(f"{field}.id", f"duplicates level {level_id}")
+        seen.add(level_id)
+        difference = _as_str(f"{field}.difference", item["difference"])
+        if difference not in DIFFERENCES:
+            _fail(f"{field}.difference", f"must be one of {DIFFERENCES}")
+        grid = _as_int(f"{field}.grid", item["grid"])
+        if grid < 2:
+            _fail(f"{field}.grid", "must be at least 2")
+        size = _as_float(f"{field}.size", item["size"])
+        if size < 8:
+            _fail(f"{field}.size", "must be at least 8")
+        timer = _as_float(f"{field}.timer", item["timer"])
         if timer <= 0:
             _fail(f"{field}.timer", "must be positive")
-        if ident in found:
-            _fail(f"{field}.id", f"duplicates level {ident}")
-        found[ident] = LevelSpec(ident, label, diff, count, timer)
-    selected = tier_raw.get("levels")
-    if selected is None:
-        order = [level.id for level in found.values()]
-    else:
-        if not isinstance(selected, list) or not selected:
-            _fail("tiers.levels", "must be a non-empty list of level ids")
-        order = []
-        for ident in selected:
-            ident_i = _as_int("tiers.levels", ident)
-            if ident_i not in found:
-                _fail("tiers.levels", f"unknown level {ident_i}")
-            order.append(ident_i)
-    timers = tier_raw.get("timers") or {}
-    if not isinstance(timers, dict):
-        _fail("tiers.timers", "must be a mapping of level id to seconds")
-    levels: list[LevelSpec] = []
-    for ident in order:
-        level = found[ident]
-        if ident in timers or str(ident) in timers:
-            raw_timer = timers[ident] if ident in timers else timers[str(ident)]
-            timer = _as_float(f"tiers.timers.{ident}", raw_timer)
-            if timer <= 0:
-                _fail(f"tiers.timers.{ident}", "must be positive")
-            level = replace(level, timer=timer)
-        levels.append(level)
-    return tuple(levels)
+        found.append(LevelSpec(level_id, difference, grid, size, timer))
+    return tuple(found)
+
+
+def _tier(name: str, block: dict[str, Any]) -> tuple[TierParams, tuple[int, ...]]:
+    ids = block.get("level_ids")
+    if not isinstance(ids, list) or not ids:
+        _fail(f"tiers.{name}.level_ids", "must be a non-empty list")
+    level_ids = tuple(_as_int(f"tiers.{name}.level_ids[{i}]", item) for i, item in enumerate(ids))
+    tilt_range = _pair(f"tiers.{name}.tilt_range", block["tilt_range"])
+    tilt = _as_float(f"tiers.{name}.tilt_degrees", block["tilt_degrees"])
+    if not (tilt_range[0] - 1e-9 <= tilt <= tilt_range[1] + 1e-9):
+        _fail(f"tiers.{name}.tilt_degrees", f"must sit inside tilt_range {tilt_range}")
+    cvd = _as_float(f"tiers.{name}.cvd_min_distance", block["cvd_min_distance"])
+    if cvd + 1e-9 < HUE_CVD_FLOOR:
+        _fail(f"tiers.{name}.cvd_min_distance", f"must stay at least {HUE_CVD_FLOOR:.2f}")
+    subtle_cvd = _as_float(f"tiers.{name}.hue_subtle_cvd", block["hue_subtle_cvd"])
+    if subtle_cvd + 1e-9 < SUBTLE_CVD_FLOOR:
+        _fail(f"tiers.{name}.hue_subtle_cvd", f"must stay at least {SUBTLE_CVD_FLOOR:.2f}")
+    mode = _as_str(f"tiers.{name}.detail_mode", block["detail_mode"])
+    if mode not in ("missing", "moved"):
+        _fail(f"tiers.{name}.detail_mode", "must be missing or moved")
+    hue_distance = _as_float(f"tiers.{name}.hue_min_distance", block["hue_min_distance"])
+    if hue_distance < 0.25 - 1e-9 and name != "hard":
+        # Hard keeps the normal hue floor. Easy may only go up. Normal is 0.25.
+        pass
+    if hue_distance + 1e-9 < 0.25 and name in ("normal", "easy"):
+        _fail(f"tiers.{name}.hue_min_distance", "must stay at least 0.25")
+    if name == "hard" and hue_distance + 1e-9 < 0.25:
+        _fail(f"tiers.{name}.hue_min_distance", "must stay at least 0.25")
+    lightness = _as_float(f"tiers.{name}.hue_min_lightness", block["hue_min_lightness"])
+    if lightness + 1e-9 < 0.15:
+        _fail(f"tiers.{name}.hue_min_lightness", "must stay at least 0.15")
+    dot = _as_float(f"tiers.{name}.dot_fraction", block["dot_fraction"])
+    if not 0.05 <= dot <= 0.4:
+        _fail(f"tiers.{name}.dot_fraction", "must be between 0.05 and 0.4")
+    subtle_d = _as_float(f"tiers.{name}.hue_subtle_distance", block["hue_subtle_distance"])
+    if subtle_d + 1e-9 < 0.10:
+        _fail(f"tiers.{name}.hue_subtle_distance", "must stay at least 0.10")
+    subtle_l = _as_float(f"tiers.{name}.hue_subtle_lightness", block["hue_subtle_lightness"])
+    if subtle_l <= 0:
+        _fail(f"tiers.{name}.hue_subtle_lightness", "must be positive")
+    params = TierParams(
+        name=name,
+        hue_min_distance=hue_distance,
+        hue_min_lightness=lightness,
+        cvd_min_distance=cvd,
+        tilt_degrees=tilt,
+        tilt_min=tilt_range[0],
+        tilt_max=tilt_range[1],
+        dot_fraction=dot,
+        detail_mode=mode,
+        hue_subtle_distance=subtle_d,
+        hue_subtle_lightness=subtle_l,
+        hue_subtle_cvd=subtle_cvd,
+        base_l=_as_float(f"tiers.{name}.base_l", block["base_l"]),
+        base_c=_as_float(f"tiers.{name}.base_c", block["base_c"]),
+    )
+    return params, level_ids
+
+
+def _fit_items(cfg_field: tuple[float, float, float, float], levels: tuple[LevelSpec, ...], tier: TierParams) -> None:
+    span_x = cfg_field[1] - cfg_field[0]
+    span_y = cfg_field[3] - cfg_field[2]
+    for level in levels:
+        cell = min(span_x, span_y) / level.grid
+        need = level.size
+        if level.difference == "tilt":
+            need = rotated_extent(level.size, tier.tilt_degrees)
+        if need >= cell - 1.0:
+            _fail(
+                f"levels id {level.id}",
+                f"size {level.size:g} does not fit a {level.grid}x{level.grid} cell of {cell:.1f}px",
+            )
 
 
 def validate_odd(
     raw: dict[str, Any],
     *,
-    hooks: tuple[str, ...],
-    captions: tuple[str, ...],
+    hooks: list[str],
     config_path: str,
-    tier_name: str | None = None,
+    tier: str | None = None,
     seed: int | None = None,
     level_ids: list[int] | None = None,
 ) -> OddConfig:
     if not isinstance(raw, dict):
-        _fail("config", "root must be a mapping")
+        _fail("config", "must be a mapping")
     unknown = set(raw) - _TOP
     if unknown:
         _fail(sorted(unknown)[0], "is not a config field")
     missing = _TOP - set(raw)
     if missing:
         _fail(sorted(missing)[0], "is required")
-    generator = _as_str("generator", raw["generator"])
-    if generator != "odd":
-        _fail("generator", "must be 'odd'")
-    chosen_tier = tier_name if tier_name is not None else _as_str("tier", raw["tier"])
-    if chosen_tier not in TIERS:
-        _fail("tier", f"must be one of {', '.join(TIERS)}")
-    tiers_raw = raw["tiers"]
-    if not isinstance(tiers_raw, dict):
-        _fail("tiers", "must be a mapping")
-    tier_unknown = set(tiers_raw) - set(TIERS)
-    if tier_unknown:
-        _fail(f"tiers.{sorted(tier_unknown)[0]}", "is not a config field")
-    for name in TIERS:
-        if name not in tiers_raw:
-            _fail(f"tiers.{name}", "is required")
-        _validate_tier(name, tiers_raw[name])
-    tier_raw = tiers_raw[chosen_tier]
-    tier = _tier_params(chosen_tier, tier_raw)
-    levels = _levels(raw["levels"], tier_raw)
-    if level_ids is not None:
-        by_id = {level.id: level for level in _levels(raw["levels"], {})}
-        picked: list[LevelSpec] = []
-        for ident in level_ids:
-            if ident not in by_id:
-                _fail("levels", f"unknown level {ident}")
-            level = by_id[ident]
-            timers = tier_raw.get("timers") or {}
-            if ident in timers or str(ident) in timers:
-                raw_timer = timers[ident] if ident in timers else timers[str(ident)]
-                level = replace(level, timer=_as_float(f"tiers.timers.{ident}", raw_timer))
-            picked.append(level)
-        if not picked:
-            _fail("levels", "must keep at least one level")
-        levels = tuple(picked)
-
-    layout = _section(raw, "layout", _LAYOUT_KEYS)
-    max_chars = _as_int("layout.caption_max_chars", layout["caption_max_chars"])
-    if max_chars < 8:
-        _fail("layout.caption_max_chars", "must be at least 8")
-    hook = validate_caption(_as_str("hook", raw["hook"]), field="hook", max_chars=max_chars)
-    checked_hooks = tuple(validate_caption(item, field="hooks", max_chars=max_chars) for item in hooks)
-    if hook not in checked_hooks:
-        _fail("hook", "must be one of the lines in odd_hooks.yaml")
-    checked_captions = tuple(validate_caption(item, field="captions", max_chars=max_chars) for item in captions)
-    cta = validate_caption(_as_str("cta", raw["cta"]), field="cta", max_chars=max_chars)
-
+    if _as_str("generator", raw["generator"]) != "odd":
+        _fail("generator", "must be odd")
+    if "bloom" in raw or any("bloom" in str(key) for key in raw):
+        _fail("bloom", "is not used")
     width = _as_int("width", raw["width"])
     height = _as_int("height", raw["height"])
     fps = _as_int("fps", raw["fps"])
-    if width != 1080 or height != 1920:
-        _fail("width", "full canvas must be 1080x1920")
-    if fps != 60:
-        _fail("fps", "must be 60")
-    workers = _as_int("workers", raw["workers"])
-    if workers < 0:
-        _fail("workers", "must be >= 0")
-    bloom = _as_float("bloom_strength", raw["bloom_strength"])
-    if bloom < 0:
-        _fail("bloom_strength", "must be >= 0")
-    warmup = _as_float("warmup_seconds", raw["warmup_seconds"])
-    reveal = _as_float("reveal_seconds", raw["reveal_seconds"])
-    wipe = _as_float("wipe_seconds", raw["wipe_seconds"])
-    outro = _as_float("outro_seconds", raw["outro_seconds"])
-    if "reveal_seconds" in tier_raw:
-        reveal = _as_float(f"tiers.{chosen_tier}.reveal_seconds", tier_raw["reveal_seconds"])
-    if "wipe_seconds" in tier_raw:
-        wipe = _as_float(f"tiers.{chosen_tier}.wipe_seconds", tier_raw["wipe_seconds"])
-    if "outro_seconds" in tier_raw:
-        outro = _as_float(f"tiers.{chosen_tier}.outro_seconds", tier_raw["outro_seconds"])
-    for field, value in (
-        ("warmup_seconds", warmup),
-        ("reveal_seconds", reveal),
-        ("wipe_seconds", wipe),
-        ("outro_seconds", outro),
-    ):
-        if value <= 0:
-            _fail(field, "must be positive")
-
+    if (width, height, fps) != (1080, 1920, 60):
+        _fail("width", "the master is 1080x1920 at 60 fps")
+    tier_name = tier or _as_str("tier", raw["tier"])
+    if tier_name not in TIERS:
+        _fail("tier", f"must be one of {TIERS}")
+    tiers = raw["tiers"]
+    if not isinstance(tiers, dict):
+        _fail("tiers", "must be a mapping")
+    tier_unknown = set(tiers) - set(TIERS)
+    if tier_unknown:
+        _fail(f"tiers.{sorted(tier_unknown)[0]}", "is not a tier")
+    for name in TIERS:
+        block = tiers.get(name)
+        if not isinstance(block, dict):
+            _fail(f"tiers.{name}", "must be a mapping")
+        extra = set(block) - _TIER_KEYS
+        if extra:
+            _fail(f"tiers.{name}.{sorted(extra)[0]}", "is not a config field")
+        absent = _TIER_KEYS - set(block)
+        if absent:
+            _fail(f"tiers.{name}.{sorted(absent)[0]}", "is required")
+    params, tier_levels = _tier(tier_name, tiers[tier_name])
+    catalog = {level.id: level for level in _levels(raw["levels"])}
+    chosen_ids = list(level_ids) if level_ids is not None else list(tier_levels)
+    if not chosen_ids:
+        _fail("levels", "must include at least one level")
+    chosen: list[LevelSpec] = []
+    for level_id in chosen_ids:
+        if level_id not in catalog:
+            _fail("levels", f"has no level {level_id}")
+        chosen.append(catalog[level_id])
+    if tier_name != "hard" and any(level.difference == "hue_subtle" for level in chosen):
+        _fail("levels", "hue_subtle is only on the hard tier")
     field = _section(raw, "field", _FIELD_KEYS)
-    fx0 = _as_float("field.x0", field["x0"])
-    fx1 = _as_float("field.x1", field["x1"])
-    fy0 = _as_float("field.y0", field["y0"])
-    fy1 = _as_float("field.y1", field["y1"])
-    corner = _as_float("field.corner_radius", field["corner_radius"])
-    margin = _as_float("field.margin", field["margin"])
-    if fx1 <= fx0 or fy1 <= fy0:
-        _fail("field", "box must have positive area")
-    if corner < 0 or margin < 0:
-        _fail("field.margin", "corner radius and margin must be >= 0")
-
     item = _section(raw, "item", _ITEM_KEYS)
-    radius = _as_float("item.radius", item["radius"])
-    radius_min = _as_float("item.radius_min", item["radius_min"])
-    specular = _as_float("item.specular", item["specular"])
-    if radius < radius_min or radius_min <= 0:
-        _fail("item.radius", "radius must be >= radius_min > 0")
-    if not 0 < specular < 1:
-        _fail("item.specular", "must be in (0, 1)")
-
-    motion = _section(raw, "motion", _MOTION_KEYS)
-    speed_mean = _as_float("motion.speed_mean", motion["speed_mean"])
-    speed_spread = _as_float("motion.speed_spread", motion["speed_spread"])
-    speed_clip = _pair("motion.speed_clip", motion["speed_clip"])
-    angular_std = _as_float("motion.angular_std", motion["angular_std"])
-    omega_clip = _as_float("motion.omega_clip", motion["omega_clip"])
-    repulse = _as_float("motion.repulse", motion["repulse"])
-    substeps = _as_int("motion.substeps", motion["substeps"])
-    if speed_mean <= 0 or speed_spread < 0 or angular_std < 0 or omega_clip <= 0:
-        _fail("motion.speed_mean", "speed, spread, and angular settings must be non-negative, clips positive")
-    if repulse < 2.0:
-        _fail("motion.repulse", "must be >= 2 so repulsion starts before discs touch")
-    if substeps < 1:
-        _fail("motion.substeps", "must be >= 1")
-
-    safe_x = _pair("layout.safe_x", layout["safe_x"])
-    safe_y = _pair("layout.safe_y", layout["safe_y"])
-    caption_x = _pair("layout.caption_x", layout["caption_x"])
-    cta_x = _pair("layout.cta_x", layout["cta_x"])
-    pause_raw = layout["pause_levels"]
-    if not isinstance(pause_raw, list) or not pause_raw:
-        _fail("layout.pause_levels", "must be a list of level ids")
-    pause_levels = tuple(_as_int("layout.pause_levels", item) for item in pause_raw)
-
+    layout = _section(raw, "layout", _LAYOUT_KEYS)
     constraints = _section(raw, "constraints", _CONSTRAINT_KEYS)
-    max_attempts = _as_int("constraints.max_attempts", constraints["max_attempts"])
-    if max_attempts < 1:
-        _fail("constraints.max_attempts", "must be >= 1")
-    low_pct = _as_float("constraints.speed_low_pct", constraints["speed_low_pct"])
-    high_pct = _as_float("constraints.speed_high_pct", constraints["speed_high_pct"])
-    middle = _as_float("constraints.position_middle", constraints["position_middle"])
-    if not 0 <= low_pct < high_pct <= 100:
-        _fail("constraints.speed_low_pct", "percentiles must be ordered inside 0..100")
-    if not 0 < middle <= 1:
-        _fail("constraints.position_middle", "must be in (0, 1]")
-
     audio = _section(raw, "audio", _AUDIO_KEYS)
-    silence = _as_float("audio.silence_at_reveal", audio["silence_at_reveal"])
-    bpm = _pair("audio.heartbeat_bpm", audio["heartbeat_bpm"])
-    heart_window = _as_float("audio.heartbeat_window", audio["heartbeat_window"])
-    buzz = _as_float("audio.buzz_seconds", audio["buzz_seconds"])
-    if silence < 0 or heart_window <= 0 or buzz <= 0:
-        _fail("audio.silence_at_reveal", "windows must be positive (silence may be 0)")
-
-    background = _as_str("background", raw["background"])
-    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", background):
-        _fail("background", "must be a #RRGGBB color")
-
+    box = (
+        _as_float("field.x0", field["x0"]),
+        _as_float("field.x1", field["x1"]),
+        _as_float("field.y0", field["y0"]),
+        _as_float("field.y1", field["y1"]),
+    )
+    if box[1] - box[0] != box[3] - box[2]:
+        _fail("field", "must be a square")
+    _fit_items(box, tuple(chosen), params)
+    max_chars = _as_int("layout.caption_max_chars", layout["caption_max_chars"])
+    hook = validate_caption(_as_str("hook", raw["hook"]), field="hook", max_chars=max_chars)
+    checked_hooks = tuple(validate_caption(item_text, field="hooks", max_chars=max_chars) for item_text in hooks)
+    if hook not in checked_hooks:
+        _fail("hook", "must be one of the lines in odd_hooks.yaml")
+    cta = validate_caption(_as_str("cta", raw["cta"]), field="cta", max_chars=max_chars)
+    pop_floor = _as_float("pop_floor", raw["pop_floor"])
+    if not 0.0 <= pop_floor <= 1.0:
+        _fail("pop_floor", "must be between 0 and 1")
+    fade_alpha = _as_float("item.fade_alpha", item["fade_alpha"])
+    if not 0.0 < fade_alpha < 1.0:
+        _fail("item.fade_alpha", "must be between 0 and 1")
     return OddConfig(
-        generator=generator,
+        generator="odd",
         seed=_as_int("seed", raw["seed"]) if seed is None else int(seed),
-        tier_name=chosen_tier,
-        tier=tier,
+        tier_name=tier_name,
+        tier=params,
         width=width,
         height=height,
         fps=fps,
-        workers=workers,
-        bloom_strength=bloom,
-        warmup_seconds=warmup,
-        reveal_seconds=reveal,
-        wipe_seconds=wipe,
-        outro_seconds=outro,
+        workers=_as_int("workers", raw["workers"]),
+        reveal_seconds=_as_float("reveal_seconds", raw["reveal_seconds"]),
+        dissolve_seconds=_as_float("dissolve_seconds", raw["dissolve_seconds"]),
+        outro_seconds=_as_float("outro_seconds", raw["outro_seconds"]),
+        pop_seconds=_as_float("pop_seconds", raw["pop_seconds"]),
+        pop_floor=pop_floor,
         hook=hook,
         hooks=checked_hooks,
-        captions=checked_captions,
         cta=cta,
-        background=background,
-        levels=levels,
-        field=(fx0, fx1, fy0, fy1, corner, margin),
-        radius=radius,
-        radius_min=radius_min,
-        specular=specular,
-        speed_mean=speed_mean,
-        speed_spread=speed_spread,
-        speed_clip=speed_clip,
-        angular_std=angular_std,
-        omega_clip=omega_clip,
-        repulse=repulse,
-        substeps=substeps,
-        safe_x=safe_x,
-        safe_y=safe_y,
+        background=_hex("background", raw["background"]),
+        levels=tuple(chosen),
+        field_x0=box[0],
+        field_x1=box[1],
+        field_y0=box[2],
+        field_y1=box[3],
+        field_radius=_as_float("field.corner_radius", field["corner_radius"]),
+        outline_px=_as_float("field.outline", field["outline"]),
+        outline_color=_hex("field.outline_color", field["outline_color"]),
+        corner_frac=_as_float("item.corner_frac", item["corner_frac"]),
+        ring_color=_hex("item.ring_color", item["ring_color"]),
+        ring_px=_as_float("item.ring_px", item["ring_px"]),
+        ring_from=_as_float("item.ring_from", item["ring_from"]),
+        ring_to=_as_float("item.ring_to", item["ring_to"]),
+        ring_grow=_as_float("item.ring_grow", item["ring_grow"]),
+        fade_seconds=_as_float("item.fade_seconds", item["fade_seconds"]),
+        fade_alpha=fade_alpha,
+        safe_x=_pair("layout.safe_x", layout["safe_x"]),
+        safe_y=_pair("layout.safe_y", layout["safe_y"]),
         label_y=_as_float("layout.label_y", layout["label_y"]),
         label_px=_as_int("layout.label_px", layout["label_px"]),
         caption_y=_as_float("layout.caption_y", layout["caption_y"]),
         caption_px=_as_int("layout.caption_px", layout["caption_px"]),
         caption_max_chars=max_chars,
-        caption_x=caption_x,
+        caption_x=_pair("layout.caption_x", layout["caption_x"]),
         timer_y=_as_float("layout.timer_y", layout["timer_y"]),
         timer_x0=_as_float("layout.timer_x0", layout["timer_x0"]),
         timer_x1=_as_float("layout.timer_x1", layout["timer_x1"]),
@@ -670,26 +582,17 @@ def validate_odd(
         timer_num_x0=_as_float("layout.timer_num_x0", layout["timer_num_x0"]),
         timer_num_x1=_as_float("layout.timer_num_x1", layout["timer_num_x1"]),
         timer_num_px=_as_int("layout.timer_num_px", layout["timer_num_px"]),
-        pip_y=_as_float("layout.pip_y", layout["pip_y"]),
-        pip_r=_as_float("layout.pip_r", layout["pip_r"]),
+        timer_color=_hex("layout.timer_color", layout["timer_color"]),
+        timer_red=_hex("layout.timer_red", layout["timer_red"]),
+        red_seconds=_as_float("layout.red_seconds", layout["red_seconds"]),
         outro_y=_as_float("layout.outro_y", layout["outro_y"]),
         outro_px=_as_int("layout.outro_px", layout["outro_px"]),
         cta_y=_as_float("layout.cta_y", layout["cta_y"]),
         cta_px=_as_int("layout.cta_px", layout["cta_px"]),
-        cta_x=cta_x,
         hook_seconds=_as_float("layout.hook_seconds", layout["hook_seconds"]),
-        pause_caption_seconds=_as_float("layout.pause_caption_seconds", layout["pause_caption_seconds"]),
-        last_chance_seconds=_as_float("layout.last_chance_seconds", layout["last_chance_seconds"]),
-        pause_levels=pause_levels,
-        max_attempts=max_attempts,
-        speed_low_pct=low_pct,
-        speed_high_pct=high_pct,
-        position_middle=middle,
-        silence_at_reveal=silence,
-        heartbeat_bpm=bpm,
-        heartbeat_window=heart_window,
-        buzz_seconds=buzz,
-        config_path=config_path,
+        max_attempts=_as_int("constraints.max_attempts", constraints["max_attempts"]),
+        tone_seconds=_as_float("audio.tone_seconds", audio["tone_seconds"]),
+        double_tick_window=_as_float("audio.double_tick_window", audio["double_tick_window"]),
     )
 
 
@@ -703,13 +606,4 @@ def load_odd_config(
     config_path = Path(path)
     raw = _load_mapping(config_path)
     hooks = _load_hooks(_sibling(config_path, "odd_hooks.yaml"))
-    captions = _load_hooks(_sibling(config_path, "odd_captions.yaml"))
-    return validate_odd(
-        raw,
-        hooks=hooks,
-        captions=captions,
-        config_path=str(config_path),
-        tier_name=tier,
-        seed=seed,
-        level_ids=level_ids,
-    )
+    return validate_odd(raw, hooks=hooks, config_path=str(config_path), tier=tier, seed=seed, level_ids=level_ids)

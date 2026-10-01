@@ -14,4 +14,11 @@ def test_batch_pairs_are_unique():
     variants = unique_odd_variants(6, 7)
     keys = [(item["seed"], item["tier"]) for item in variants]
     assert len(keys) == len(set(keys)) == 6
-    assert {item["tier"] for item in variants} == {"normal", "brutal", "quick"}
+    assert {item["tier"] for item in variants} == {"easy", "normal", "hard"}
+
+
+def test_batch_full_is_refused():
+    from make_odd import main
+
+    with pytest.raises(SystemExit, match="--batch"):
+        main(["--full", "--approved", "--batch", "2", "--out", "out/odd.mp4"])

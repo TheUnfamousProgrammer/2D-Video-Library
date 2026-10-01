@@ -1,5 +1,6 @@
-# Odd One Out. Times are seconds. Frames are round(seconds * fps).
-# Tiers never relax uniqueness, the no-overlap rule, or the CVD floor.
+# Odd One Out, revision 2. Flat fills, a static grid, three levels.
+# Frames are round(seconds * fps). Normal tier:
+# 5+6+7 + three 1.2 s reveals + two 0.2 s dissolves + 2.0 s outro = 24.0 s.
 generator: odd
 seed: 7
 tier: normal
@@ -7,142 +8,130 @@ width: 1080
 height: 1920
 fps: 60
 workers: 0
-bloom_strength: 0.6
-warmup_seconds: 1.0
-reveal_seconds: 1.4
-wipe_seconds: 0.3
-outro_seconds: 2.4
+reveal_seconds: 1.2
+dissolve_seconds: 0.2
+outro_seconds: 2.0
+# Items fade from this opacity to 1 over pop_seconds. 0.5 keeps frame 0 readable.
+pop_seconds: 0.2
+pop_floor: 0.5
 hook: Find the odd one
 cta: Comment your level
-background: "#0B0F1A"
+background: "#14171F"
 
 levels:
   - id: 1
-    label: EASY
     difference: hue
-    count: 36
+    grid: 4
+    size: 100
     timer: 5.0
   - id: 2
-    label: MEDIUM
-    difference: size
-    count: 64
+    difference: tilt
+    grid: 5
+    size: 96
     timer: 6.0
   - id: 3
-    label: HARD
-    difference: spin
-    count: 96
+    difference: detail
+    grid: 6
+    size: 88
     timer: 7.0
   - id: 4
-    label: BRUTAL
-    difference: pulse
-    count: 128
+    difference: hue_subtle
+    grid: 6
+    size: 88
     timer: 8.0
 
 field:
   x0: 150
   x1: 930
-  y0: 450
-  y1: 1390
-  corner_radius: 40
-  margin: 24
+  y0: 520
+  y1: 1300
+  corner_radius: 24
+  outline: 2
+  outline_color: "#2A2F3A"
 
 item:
-  radius: 16
-  radius_min: 14
-  specular: 0.22
-
-motion:
-  speed_mean: 110
-  speed_spread: 0.20
-  speed_clip: [0.6, 1.4]
-  angular_std: 1.1
-  omega_clip: 2.2
-  repulse: 2.4
-  substeps: 4
+  corner_frac: 0.18
+  ring_color: "#FFD166"
+  ring_px: 8
+  ring_from: 1.0
+  ring_to: 1.35
+  ring_grow: 0.25
+  fade_seconds: 0.15
+  fade_alpha: 0.30
 
 layout:
   safe_x: [130, 950]
   safe_y: [200, 1536]
-  label_y: 240
-  label_px: 56
-  caption_y: 310
-  caption_px: 54
+  label_y: 300
+  label_px: 60
+  caption_y: 380
+  caption_px: 52
   caption_max_chars: 26
-  # Caption is centered in the band left of the seconds digits so the two cannot meet.
-  caption_x: [150, 760]
-  timer_y: 372
+  caption_x: [150, 930]
+  timer_y: 450
   timer_x0: 170
   timer_x1: 770
-  timer_h: 16
+  timer_h: 14
   timer_num_x0: 790
   timer_num_x1: 930
-  timer_num_px: 72
-  pip_y: 1440
-  pip_r: 14
-  outro_y: 400
-  outro_px: 48
-  # 1450 collides with pips at 1440, so the CTA sits on the right of that row.
+  timer_num_px: 64
+  timer_color: "#E6E8EE"
+  timer_red: "#E5484D"
+  red_seconds: 1.5
+  outro_y: 420
+  outro_px: 52
   cta_y: 1450
-  cta_px: 36
-  cta_x: [560, 940]
+  cta_px: 40
   hook_seconds: 3.0
-  pause_caption_seconds: 2.5
-  last_chance_seconds: 2.0
-  pause_levels: [3, 4]
 
 constraints:
   max_attempts: 20
-  speed_low_pct: 10
-  speed_high_pct: 90
-  position_middle: 0.80
 
 audio:
-  silence_at_reveal: 0.15
-  heartbeat_bpm: [80, 140]
-  heartbeat_window: 2.0
-  buzz_seconds: 0.3
+  tone_seconds: 0.3
+  double_tick_window: 2.0
 
+# Easy makes the gap bigger. Hard adds level 4. Neither drops a CVD floor.
 tiers:
   normal:
-    hue_min_distance: 0.20
+    level_ids: [1, 2, 3]
+    hue_min_distance: 0.25
     hue_min_lightness: 0.15
-    cvd_min_distance: 0.10
-    size_ratio: 1.18
-    size_ratio_range: [1.12, 1.30]
-    spin_rev_s: 1.2
-    pulse_normal_hz: 1.50
-    pulse_odd_hz: 1.85
-    pulse_amplitude: 0.16
+    cvd_min_distance: 0.12
+    tilt_degrees: 22
+    tilt_range: [15, 35]
+    dot_fraction: 0.16
+    detail_mode: missing
+    hue_subtle_distance: 0.10
+    hue_subtle_lightness: 0.06
+    hue_subtle_cvd: 0.06
     base_l: 0.72
     base_c: 0.10
-  brutal:
-    # Requested hue distance is 0.08. CVD stays at 0.10, so the search
-    # keeps the closest color that still clears the CVD floor.
-    hue_min_distance: 0.08
-    hue_min_lightness: 0.08
-    cvd_min_distance: 0.10
-    size_ratio: 1.10
-    size_ratio_range: [1.05, 1.30]
-    spin_rev_s: 1.2
-    pulse_normal_hz: 1.50
-    pulse_odd_hz: 1.62
-    pulse_amplitude: 0.16
+  easy:
+    level_ids: [1, 2, 3]
+    hue_min_distance: 0.35
+    hue_min_lightness: 0.22
+    cvd_min_distance: 0.12
+    tilt_degrees: 32
+    tilt_range: [15, 35]
+    dot_fraction: 0.22
+    detail_mode: missing
+    hue_subtle_distance: 0.10
+    hue_subtle_lightness: 0.06
+    hue_subtle_cvd: 0.06
     base_l: 0.72
     base_c: 0.10
-  quick:
-    levels: [1, 3]
-    timers: {1: 3.0, 3: 4.0}
-    reveal_seconds: 1.0
-    wipe_seconds: 0.2
-    outro_seconds: 1.6
-    hue_min_distance: 0.20
+  hard:
+    level_ids: [1, 2, 3, 4]
+    hue_min_distance: 0.25
     hue_min_lightness: 0.15
-    cvd_min_distance: 0.10
-    size_ratio: 1.18
-    size_ratio_range: [1.12, 1.30]
-    spin_rev_s: 1.2
-    pulse_normal_hz: 1.50
-    pulse_odd_hz: 1.85
-    pulse_amplitude: 0.16
+    cvd_min_distance: 0.12
+    tilt_degrees: 22
+    tilt_range: [15, 35]
+    dot_fraction: 0.16
+    detail_mode: missing
+    hue_subtle_distance: 0.10
+    hue_subtle_lightness: 0.06
+    hue_subtle_cvd: 0.06
     base_l: 0.72
     base_c: 0.10

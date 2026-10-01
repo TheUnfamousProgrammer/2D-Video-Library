@@ -155,3 +155,43 @@ def apply_bloom(signal: np.ndarray, strength: float) -> None:
     bloom = cv2.resize(blur, (signal.shape[1], signal.shape[0]), interpolation=cv2.INTER_LINEAR)
     combined = signal + float(strength) * bloom
     signal[:] = 255.0 * (1.0 - np.exp(-combined / 90.0))
+
+
+def raster_text_flat(
+    text: str,
+    font_path: str,
+    font_px: int,
+    max_width: int,
+    max_lines: int = 1,
+) -> np.ndarray:
+    """White text with no stroke and no shadow. RGBA uint8.
+
+    Odd One Out uses this. The stroked ``raster_text`` stays the bounce and hop path.
+    """
+    px = max(8, int(font_px))
+    font: ImageFont.FreeTypeFont | None = None
+    lines: list[str] | None = None
+    while px >= 12:
+        font = ImageFont.truetype(font_path, px)
+        lines = _wrap(text, font, max_width, max_lines)
+        if lines is not None:
+            break
+        px = int(px * 0.9)
+    if font is None or lines is None:
+        font = ImageFont.truetype(font_path, 12)
+        lines = [text]
+    bboxes = [font.getbbox(line) for line in lines]
+    widths = [box[2] - box[0] for box in bboxes]
+    heights = [box[3] - box[1] for box in bboxes]
+    gap = max(0, int(px * 0.08))
+    text_w = max(widths) if widths else 1
+    text_h = sum(heights) + gap * (len(lines) - 1)
+    pad = 2
+    image = Image.new("RGBA", (text_w + pad * 2, text_h + pad * 2), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    y = pad
+    for line, box, width in zip(lines, bboxes, widths):
+        x = pad + (text_w - width) / 2 - box[0]
+        draw.text((x, y - box[1]), line, font=font, fill=(255, 255, 255, 255))
+        y += (box[3] - box[1]) + gap
+    return np.array(image)

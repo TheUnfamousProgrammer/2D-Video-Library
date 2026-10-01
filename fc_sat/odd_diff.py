@@ -1,12 +1,7 @@
-"""The four Odd One Out differences.
+"""The four Odd One Out differences. Each one can be measured back from pixels.
 
-Each type can draw itself (``apply_look``) and measure itself from pixels.
-A new type needs both. v1 is hue, size, spin, and pulse.
-
-Pulse and spin are pause-proof: a single frame does not mark the odd item.
-Normals and the odd item share the same amplitude or the same tick length.
-Each item draws its own phase. Normals share a frequency, not one brightness.
-A shared brightness would show the odd item in a still, which the pause test rejects.
+v1 is hue, tilt, detail, and hue_subtle. A new type needs a measurer before it
+can ship. Fills are flat: no antialiasing, no glow.
 """
 
 from __future__ import annotations
@@ -21,9 +16,9 @@ from fc_sat.odd_config import TierParams
 
 REVEAL_LABELS = {
     "hue": "It was a different color",
-    "size": "It was slightly bigger",
-    "spin": "It spun the other way",
-    "pulse": "It pulsed at a different speed",
+    "tilt": "It was tilted",
+    "detail": "It had no dot",
+    "hue_subtle": "It was a different color",
 }
 CVD_KINDS = ("protan", "deutan", "tritan")
 
@@ -33,51 +28,57 @@ def lab_to_bgr(lab: np.ndarray) -> tuple[int, int, int]:
     return int(rgb[2]), int(rgb[1]), int(rgb[0])
 
 
-def choose_odd_lab(base: np.ndarray, tier: TierParams) -> dict:
-    """Smallest grid match that clears distance, lightness, and every CVD floor.
+def choose_odd_lab(
+    base: np.ndarray,
+    tier: TierParams,
+    *,
+    subtle: bool = False,
+) -> dict:
+    """First grid color that clears distance, lightness, and the CVD floor.
 
-    Brutal asks for a hue distance of 0.08. The CVD floor stays 0.10, so the
-    color that comes back can be farther than 0.08. That is logged, not loosened.
+    The floors are not relaxed. If nothing clears them the search raises.
     """
     base = np.asarray(base, dtype=np.float64)
     base_h = math.atan2(float(base[2]), float(base[1]))
-    base_c = tier.base_c
+    chroma = tier.base_c
+    min_distance = tier.hue_subtle_distance if subtle else tier.hue_min_distance
+    min_light = tier.hue_subtle_lightness if subtle else tier.hue_min_lightness
+    min_cvd = tier.hue_subtle_cvd if subtle else tier.cvd_min_distance
     rejected = 0
-    light_steps = (0.08, 0.10, 0.12, 0.15, 0.16, 0.18, 0.22, 0.28)
+    light_steps = (0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.22, 0.28, 0.34)
     for mag in light_steps:
         for sign in (1.0, -1.0):
-            d_l = sign * mag
-            if abs(d_l) + 1e-9 < tier.hue_min_lightness:
+            if mag + 1e-9 < min_light:
                 continue
-            lightness = float(np.clip(base[0] + d_l, 0.12, 0.92))
+            lightness = float(np.clip(base[0] + sign * mag, 0.12, 0.92))
             actual_dl = lightness - float(base[0])
-            if abs(actual_dl) + 1e-9 < tier.hue_min_lightness:
+            if abs(actual_dl) + 1e-9 < min_light:
                 continue
             for step in range(0, 36):
                 hue = base_h + math.radians(8 + step * 5)
-                odd = lch_to_oklab(lightness, base_c, hue)
+                odd = lch_to_oklab(lightness, chroma, hue)
                 distance = oklab_delta(base, odd)
-                if distance + 1e-9 < tier.hue_min_distance:
+                if distance + 1e-9 < min_distance:
                     rejected += 1
                     continue
                 cvd = {kind: cvd_distance(base, odd, kind) for kind in CVD_KINDS}
-                if min(cvd.values()) + 1e-9 < tier.cvd_min_distance:
+                if min(cvd.values()) + 1e-9 < min_cvd:
                     rejected += 1
                     continue
                 return {
                     "lab": odd,
                     "distance": distance,
                     "lightness_delta": actual_dl,
-                    "hue": hue,
                     "hue_offset_rad": hue - base_h,
                     "cvd": cvd,
                     "rejected_offsets": rejected,
-                    "requested_distance": tier.hue_min_distance,
+                    "requested_distance": min_distance,
+                    "requested_cvd": min_cvd,
                 }
     raise RuntimeError(
         "no hue offset met the OKLab distance, the lightness gap, and the CVD floor of "
-        f"{tier.cvd_min_distance:.2f}. Not loosening those rules. "
-        f"Rejected {rejected} candidates. Requested distance was {tier.hue_min_distance:.2f}."
+        f"{min_cvd:.2f}. Not loosening those rules. Rejected {rejected} candidates. "
+        f"Requested distance was {min_distance:.2f}."
     )
 
 
@@ -88,56 +89,131 @@ def apply_look(
     is_odd: bool,
     base_lab: np.ndarray,
     odd_lab: np.ndarray,
-    radius: float,
-    t: float,
-    spin_phase: float,
-    pulse_phase: float,
-    exaggerate: float,
+    size: float,
 ) -> dict:
-    """One item's drawable state at sim time ``t``.
-
-    ``exaggerate`` is 0 or 1. For one second of the reveal the odd item's
-    difference is doubled: hue offset, size excess (1.18 becomes 1.36), pulse
-    amplitude. The spin tick gets longer and brighter; its speed stays 1.2 rev/s
-    so the direction, not a new speed, is what the reveal shows.
-    """
+    """Drawable state of one static item. Nothing here depends on time."""
     if kind not in REVEAL_LABELS:
         raise ValueError(f"no measurer for difference {kind!r}")
-    gain = 1.0 + float(exaggerate) if is_odd else 1.0
-    lab = np.array(odd_lab if is_odd else base_lab, dtype=np.float64, copy=True)
-    draw_radius = float(radius)
-    tick = None
-    if kind == "hue" and is_odd and exaggerate:
-        lab = np.asarray(base_lab, dtype=np.float64) + gain * (np.asarray(odd_lab, dtype=np.float64) - base_lab)
-        lab[0] = float(np.clip(lab[0], 0.08, 0.95))
-    elif kind == "size" and is_odd:
-        ratio = 1.0 + (tier.size_ratio - 1.0) * gain
-        draw_radius = float(radius) * ratio
-    elif kind == "spin":
-        direction = -1.0 if is_odd else 1.0
-        angle = float(spin_phase + direction * tier.spin_rev_s * 2.0 * math.pi * t)
-        longer = 1.0 + (0.55 if is_odd and exaggerate else 0.0)
-        tick = {
-            "angle": angle,
-            "inner": 0.25 / longer,
-            "outer": min(0.98, 0.85 * longer),
-            "width": 3.0 + (3.0 if is_odd and exaggerate else 0.0),
-            "alpha": 1.0 if not (is_odd and exaggerate) else 1.0,
-            "bright": bool(is_odd and exaggerate),
-        }
-    elif kind == "pulse":
-        amp = tier.pulse_amplitude * (gain if is_odd else 1.0)
-        freq = tier.pulse_odd_hz if is_odd else tier.pulse_normal_hz
-        wave = math.sin(2.0 * math.pi * freq * t + pulse_phase)
-        lab = np.array(lab, dtype=np.float64, copy=True)
-        lab[0] = float(np.clip(lab[0] * (1.0 + amp * wave), 0.05, 0.98))
+    lab = np.array(odd_lab if is_odd and kind in ("hue", "hue_subtle") else base_lab, dtype=np.float64)
+    angle = float(tier.tilt_degrees if is_odd and kind == "tilt" else 0.0)
+    dot = None
+    if kind == "detail":
+        radius = tier.dot_fraction * (size / 2.0)
+        if not is_odd:
+            dot = {"ox": 0.0, "oy": 0.0, "radius": radius}
+        elif tier.detail_mode == "moved":
+            shift = 0.34 * (size / 2.0)
+            dot = {"ox": shift, "oy": -shift, "radius": radius}
+    shape = "square" if kind == "tilt" else "disc"
     return {
-        "lab": lab,
-        "radius": draw_radius,
-        "tick": tick,
         "kind": kind,
+        "shape": shape,
+        "lab": lab,
+        "bgr": lab_to_bgr(lab),
+        "size": float(size),
+        "angle": angle,
+        "dot": dot,
         "is_odd": is_odd,
     }
+
+
+def _rounded_square_mask(side: int, corner_frac: float, angle_deg: float) -> np.ndarray:
+    side = max(2, int(side))
+    canvas = int(math.ceil(side * (abs(math.cos(math.radians(angle_deg))) + abs(math.sin(math.radians(angle_deg)))) + 4))
+    canvas = max(canvas, side + 2)
+    if canvas % 2:
+        canvas += 1
+    mask = np.zeros((canvas, canvas), dtype=np.uint8)
+    radius = max(1, int(round(corner_frac * side)))
+    left = (canvas - side) // 2
+    top = left
+    right = left + side - 1
+    bottom = top + side - 1
+    cv2.rectangle(mask, (left + radius, top), (right - radius, bottom), 255, -1)
+    cv2.rectangle(mask, (left, top + radius), (right, bottom - radius), 255, -1)
+    cv2.circle(mask, (left + radius, top + radius), radius, 255, -1, lineType=cv2.LINE_8)
+    cv2.circle(mask, (right - radius, top + radius), radius, 255, -1, lineType=cv2.LINE_8)
+    cv2.circle(mask, (left + radius, bottom - radius), radius, 255, -1, lineType=cv2.LINE_8)
+    cv2.circle(mask, (right - radius, bottom - radius), radius, 255, -1, lineType=cv2.LINE_8)
+    if abs(angle_deg) > 1e-3:
+        center = (canvas / 2.0, canvas / 2.0)
+        matrix = cv2.getRotationMatrix2D(center, angle_deg, 1.0)
+        mask = cv2.warpAffine(mask, matrix, (canvas, canvas), flags=cv2.INTER_NEAREST)
+    return mask
+
+
+def _disc_mask(diameter: int) -> np.ndarray:
+    diameter = max(2, int(diameter))
+    if diameter % 2 == 0:
+        diameter += 1
+    mask = np.zeros((diameter, diameter), dtype=np.uint8)
+    radius = diameter // 2
+    cv2.circle(mask, (radius, radius), radius, 255, -1, lineType=cv2.LINE_8)
+    return mask
+
+
+def blit_mask(
+    frame: np.ndarray,
+    mask: np.ndarray,
+    color: tuple[int, int, int],
+    cx: float,
+    cy: float,
+    alpha: float,
+) -> None:
+    """Stamp a flat color through ``mask``. ``alpha`` blends over the frame."""
+    if alpha <= 0:
+        return
+    height, width = mask.shape
+    x0 = int(round(cx)) - width // 2
+    y0 = int(round(cy)) - height // 2
+    fx0 = max(0, x0)
+    fy0 = max(0, y0)
+    fx1 = min(frame.shape[1], x0 + width)
+    fy1 = min(frame.shape[0], y0 + height)
+    if fx0 >= fx1 or fy0 >= fy1:
+        return
+    crop = mask[fy0 - y0 : fy1 - y0, fx0 - x0 : fx1 - x0]
+    on = crop > 0
+    if not np.any(on):
+        return
+    region = frame[fy0:fy1, fx0:fx1]
+    if alpha >= 0.999:
+        region[on] = color
+        return
+    painted = region.copy()
+    painted[on] = color
+    mixed = region.astype(np.float32) * (1.0 - alpha) + painted.astype(np.float32) * alpha
+    frame[fy0:fy1, fx0:fx1] = mixed.astype(np.uint8)
+
+
+def paint_item(
+    frame: np.ndarray,
+    look: dict,
+    cx: float,
+    cy: float,
+    *,
+    corner_frac: float,
+    alpha: float = 1.0,
+    scale: float = 1.0,
+) -> None:
+    size = look["size"] * scale
+    if look["shape"] == "square":
+        mask = _rounded_square_mask(int(round(size)), corner_frac, look["angle"])
+    else:
+        mask = _disc_mask(int(round(size)))
+    blit_mask(frame, mask, look["bgr"], cx * scale, cy * scale, alpha)
+    dot = look.get("dot")
+    if dot is not None and alpha > 0:
+        radius = max(1, int(round(dot["radius"] * scale)))
+        dot_mask = _disc_mask(radius * 2 + 1)
+        blit_mask(
+            frame,
+            dot_mask,
+            (255, 255, 255),
+            cx * scale + dot["ox"] * scale,
+            cy * scale + dot["oy"] * scale,
+            alpha,
+        )
 
 
 def _patch_lab(frame: np.ndarray, x: float, y: float) -> np.ndarray:
@@ -149,152 +225,101 @@ def _patch_lab(frame: np.ndarray, x: float, y: float) -> np.ndarray:
     return rgb_u8_to_oklab(patch[..., ::-1]).mean(axis=(0, 1))
 
 
-def measure_hue(frames: list[np.ndarray], odd_xy: list[tuple[float, float]], other_xy: list[list[tuple[float, float]]]) -> float:
-    """Mean OKLab distance from the odd center to each comparison item, averaged over frames."""
-    odd = np.mean([_patch_lab(frame, x, y) for frame, (x, y) in zip(frames, odd_xy)], axis=0)
-    distances = []
-    for index in range(len(other_xy[0])):
-        other = np.mean(
-            [_patch_lab(frame, points[index][0], points[index][1]) for frame, points in zip(frames, other_xy)],
-            axis=0,
-        )
-        distances.append(oklab_delta(odd, other))
-    return float(np.mean(distances))
-
-
-def _area(frame: np.ndarray, x: float, y: float, window: float, bg_lab: np.ndarray) -> int:
-    radius = int(math.ceil(window))
-    ix = int(round(x))
-    iy = int(round(y))
-    if iy - radius < 0 or ix - radius < 0 or iy + radius + 1 > frame.shape[0] or ix + radius + 1 > frame.shape[1]:
-        return 0
-    crop = frame[iy - radius : iy + radius + 1, ix - radius : ix + radius + 1]
-    lab = rgb_u8_to_oklab(crop[..., ::-1])
-    dist = np.linalg.norm(lab - bg_lab, axis=-1)
-    yy, xx = np.ogrid[: crop.shape[0], : crop.shape[1]]
-    circle = (xx - radius) ** 2 + (yy - radius) ** 2 <= window * window
-    return int(np.count_nonzero((dist > 0.08) & circle))
-
-
-def measure_size(
+def measure_hue(
     frame: np.ndarray,
     odd_xy: tuple[float, float],
     other_xy: list[tuple[float, float]],
-    window: float,
-    bg_lab: np.ndarray,
+) -> float:
+    """OKLab distance from the odd center to the median color of the other centers."""
+    odd = _patch_lab(frame, odd_xy[0], odd_xy[1])
+    others = np.stack([_patch_lab(frame, x, y) for x, y in other_xy], axis=0)
+    median = np.median(others, axis=0)
+    return oklab_delta(odd, median)
+
+
+def _axis_delta(angle: float) -> float:
+    folded = abs(float(angle)) % 90.0
+    if folded > 45.0:
+        folded = 90.0 - folded
+    return folded
+
+
+def _cell_angle(frame: np.ndarray, box: tuple[float, float, float, float], bg_bgr: tuple[int, int, int]) -> float:
+    x0 = max(0, int(math.floor(box[0])))
+    y0 = max(0, int(math.floor(box[1])))
+    x1 = min(frame.shape[1], int(math.ceil(box[2])))
+    y1 = min(frame.shape[0], int(math.ceil(box[3])))
+    crop = frame[y0:y1, x0:x1]
+    if crop.size == 0:
+        return 0.0
+    bg = np.array(bg_bgr, dtype=np.int16)
+    dist = np.max(np.abs(crop.astype(np.int16) - bg), axis=-1)
+    mask = (dist > 18).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 0.0
+    contour = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(contour) < 8:
+        return 0.0
+    rect = cv2.minAreaRect(contour)
+    return _axis_delta(rect[2])
+
+
+def measure_tilt(
+    frame: np.ndarray,
+    cells: list[tuple[float, float, float, float]],
+    odd_index: int,
+    bg_bgr: tuple[int, int, int],
 ) -> dict:
-    odd_area = _area(frame, odd_xy[0], odd_xy[1], window, bg_lab)
-    others = [_area(frame, x, y, window, bg_lab) for x, y in other_xy]
+    """Odd angle minus the median of the others, in degrees, folded into 0..45."""
+    angles = [_cell_angle(frame, box, bg_bgr) for box in cells]
+    odd = angles[odd_index]
+    others = [angle for index, angle in enumerate(angles) if index != odd_index]
     median = float(np.median(others)) if others else 0.0
-    ratio = float(odd_area / median) if median > 0 else 0.0
-    return {"odd_area": odd_area, "median_area": median, "ratio": ratio}
+    return {"odd": odd, "median": median, "delta": abs(odd - median), "angles": angles}
 
 
-def _brightest_angle(frame: np.ndarray, x: float, y: float, radius: float) -> float:
-    count = 24
-    angles = np.linspace(0.0, 2.0 * math.pi, count, endpoint=False)
-    ring = 0.6 * radius
-    values = np.empty(count, dtype=np.float64)
-    for index, angle in enumerate(angles):
-        px = int(round(x + math.cos(angle) * ring))
-        py = int(round(y + math.sin(angle) * ring))
-        patch = frame[py - 1 : py + 2, px - 1 : px + 2]
-        values[index] = float(patch.mean()) if patch.size else 0.0
-    peak = int(np.argmax(values))
-    left = values[(peak - 1) % count]
-    mid = values[peak]
-    right = values[(peak + 1) % count]
-    denom = left - 2.0 * mid + right
-    delta = 0.0 if abs(denom) < 1e-6 else float(np.clip(0.5 * (left - right) / denom, -1.0, 1.0))
-    return float(angles[peak] + delta * (2.0 * math.pi / count))
-
-
-def spin_from_angles(
-    angles,
-    fps: float,
-    *,
-    expect_sign: float,
-    nominal_rev_s: float,
-) -> dict:
-    """Unwrap angles of the brightest ring sample. ``expect_sign`` is +1 clockwise."""
-    series = np.unwrap(np.asarray(angles, dtype=np.float64))
-    win = max(3, int(round(0.5 * fps)))
-    nominal = nominal_rev_s * 2.0 * math.pi
-    if len(series) <= win:
-        return {"sign_fraction": 0.0, "omega": 0.0, "nominal": nominal, "windows": 0}
-    signs = []
-    magnitudes = []
-    step = max(1, win // 2)
-    for start in range(0, len(series) - win, step):
-        vel = np.diff(series[start : start + win]) * fps
-        med = float(np.median(vel))
-        signs.append(math.copysign(1.0, med) == math.copysign(1.0, expect_sign) if abs(med) > 1e-6 else False)
-        magnitudes.append(abs(med))
-    return {
-        "sign_fraction": float(np.mean(signs)) if signs else 0.0,
-        "omega": float(np.median(magnitudes)) if magnitudes else 0.0,
-        "nominal": nominal,
-        "windows": len(signs),
-    }
-
-
-def measure_spin(
-    frames: list[np.ndarray],
-    points: list[tuple[float, float]],
-    radius: float,
-    fps: float,
-    *,
-    expect_sign: float,
-    nominal_rev_s: float,
-) -> dict:
-    """Unwrap the brightest point on a 0.6 r ring. ``expect_sign`` is +1 clockwise."""
-    angles = [_brightest_angle(frame, x, y, radius) for frame, (x, y) in zip(frames, points)]
-    return spin_from_angles(angles, fps, expect_sign=expect_sign, nominal_rev_s=nominal_rev_s)
-
-
-def center_luma(frame: np.ndarray, x: float, y: float) -> float:
+def _white_fraction(frame: np.ndarray, x: float, y: float, radius: float) -> float:
+    radius = max(1.0, float(radius))
     ix = int(round(x))
     iy = int(round(y))
-    patch = frame[iy - 2 : iy + 3, ix - 2 : ix + 3].astype(np.float64)
-    if patch.shape[0] != 5 or patch.shape[1] != 5:
+    r = int(math.ceil(radius))
+    if iy - r < 0 or ix - r < 0 or iy + r + 1 > frame.shape[0] or ix + r + 1 > frame.shape[1]:
         return 0.0
-    luma = 0.0722 * patch[..., 0] + 0.7152 * patch[..., 1] + 0.2126 * patch[..., 2]
-    return float(luma.mean() / 255.0)
-
-
-def pulse_peak_hz(series, fps: float) -> float:
-    """Peak frequency of a brightness series, in Hz. The DC bin is ignored."""
-    values = np.asarray(series, dtype=np.float64)
-    if len(values) < 8:
+    crop = frame[iy - r : iy + r + 1, ix - r : ix + r + 1]
+    yy, xx = np.ogrid[: crop.shape[0], : crop.shape[1]]
+    circle = (xx - r) ** 2 + (yy - r) ** 2 <= radius * radius
+    white = (crop[..., 0] > 220) & (crop[..., 1] > 220) & (crop[..., 2] > 220)
+    total = int(np.count_nonzero(circle))
+    if total == 0:
         return 0.0
-    values = values - float(values.mean())
-    window = np.hanning(len(values))
-    spec = np.abs(np.fft.rfft(values * window))
-    freqs = np.fft.rfftfreq(len(values), d=1.0 / fps)
-    spec[0] = 0.0
-    return float(freqs[int(np.argmax(spec))])
+    return float(np.count_nonzero(white & circle) / total)
 
 
-def measure_pulse(frames: list[np.ndarray], points: list[tuple[float, float]], fps: float) -> float:
-    """Peak frequency of the item-center brightness, in Hz."""
-    series = [center_luma(frame, x, y) for frame, (x, y) in zip(frames, points)]
-    return pulse_peak_hz(series, fps)
+def measure_detail(
+    frame: np.ndarray,
+    odd_xy: tuple[float, float],
+    other_xy: list[tuple[float, float]],
+    dot_radius: float,
+) -> dict:
+    """White-pixel fraction in the center dot. The odd item should be near zero."""
+    odd = _white_fraction(frame, odd_xy[0], odd_xy[1], dot_radius)
+    others = [_white_fraction(frame, x, y, dot_radius) for x, y in other_xy]
+    median = float(np.median(others)) if others else 0.0
+    return {"odd": odd, "median": median, "ratio": (odd / median) if median > 1e-6 else 0.0}
 
 
-def paint_synthetic(width: int, height: int, looks: list[dict], background: tuple[int, int, int]) -> np.ndarray:
-    """Solid discs and ticks, no bloom. Used by the round-trip tests."""
+def paint_synthetic(
+    width: int,
+    height: int,
+    looks: list[dict],
+    centers: list[tuple[float, float]],
+    background: tuple[int, int, int],
+    *,
+    corner_frac: float = 0.18,
+) -> np.ndarray:
     frame = np.empty((height, width, 3), dtype=np.uint8)
     frame[:] = background
-    for look in looks:
-        color = lab_to_bgr(look["lab"])
-        center = (int(round(look["x"])), int(round(look["y"])))
-        cv2.circle(frame, center, max(1, int(round(look["radius"]))), color, -1, lineType=cv2.LINE_AA)
-        tick = look.get("tick")
-        if tick is not None:
-            radius = float(look["radius"])
-            x0 = int(round(look["x"] + math.cos(tick["angle"]) * radius * tick["inner"]))
-            y0 = int(round(look["y"] + math.sin(tick["angle"]) * radius * tick["inner"]))
-            x1 = int(round(look["x"] + math.cos(tick["angle"]) * radius * tick["outer"]))
-            y1 = int(round(look["y"] + math.sin(tick["angle"]) * radius * tick["outer"]))
-            cv2.line(frame, (x0, y0), (x1, y1), (255, 255, 255), int(round(tick["width"])), lineType=cv2.LINE_AA)
+    for look, (x, y) in zip(looks, centers):
+        paint_item(frame, look, x, y, corner_frac=corner_frac)
     return frame
