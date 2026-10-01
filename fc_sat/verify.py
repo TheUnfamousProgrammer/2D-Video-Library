@@ -853,7 +853,7 @@ def verify_arena_file(path: Path, cfg, sidecar: dict | None = None) -> list[Chec
     """Container, loudness, pacing, layout, and photosensitivity checks for Flag Arena."""
     import cv2
 
-    from fc_sat.arena_render import camera_view
+    from fc_sat.arena_render import PLATFORM_BOX, camera_view, layout_boxes, layout_clear
 
     path = Path(path)
     checks: list[Check] = []
@@ -898,7 +898,7 @@ def verify_arena_file(path: Path, cfg, sidecar: dict | None = None) -> list[Chec
     if vdur is None:
         _add(checks, "duration", False, "video duration missing")
     else:
-        _add(checks, "duration", 31.0 <= vdur <= 42.0, f"{vdur:.3f}s")
+        _add(checks, "duration", 33.0 <= vdur <= 43.0, f"{vdur:.3f}s")
         if adur is not None:
             _add(checks, "av sync", abs(vdur - adur) <= 0.020, f"video {vdur:.4f}s audio {adur:.4f}s")
     size_mb = path.stat().st_size / (1024 * 1024)
@@ -927,12 +927,56 @@ def verify_arena_file(path: Path, cfg, sidecar: dict | None = None) -> list[Chec
     ]
     _add(checks, "text safe zone", bool(boxes) and not box_fail, f"{len(boxes)} boxes, {len(box_fail)} outside")
     zone_ok = True
-    for moment in (2.0, 10.0):
-        view = camera_view(cfg, moment, shake=0.0)
-        left, top, right, bottom = view.circle_bounds()
-        if abs(view.screen_radius - cfg.screen_radius) > 1.0 or left < cfg.zone_x[0] or right > cfg.zone_x[1] or top < cfg.zone_y[0] or bottom > cfg.zone_y[1]:
+    zone_detail = "inside x [130, 950], y [480, 1400]"
+    for moment, hw, hh in ((2.0, frame[1], frame[2]) for frame in cfg.platform_keyframes[:2]):
+        view = camera_view(cfg, moment, hw, hh)
+        if (
+            view.left < PLATFORM_BOX[0] - 1
+            or view.right > PLATFORM_BOX[1] + 1
+            or view.top < PLATFORM_BOX[2] - 1
+            or view.bottom > PLATFORM_BOX[3] + 1
+            or hw * view.zoom > cfg.screen_hw + 1.0
+            or hh * view.zoom > cfg.screen_hh + 1.0
+        ):
             zone_ok = False
-    _add(checks, "zone camera", zone_ok, "400 px at t=2 and t=10 with shake 0")
+            zone_detail = (
+                f"t={moment:.1f} box {view.left:.0f},{view.top:.0f},{view.right:.0f},{view.bottom:.0f} "
+                f"zoom {view.zoom:.3f}"
+            )
+    _add(checks, "platform box", zone_ok, zone_detail)
+    hitstop = meta.get("hitstop")
+    hitstop_value = None if hitstop is None else float(hitstop)
+    _add(
+        checks,
+        "hit-stop",
+        hitstop_value is not None and hitstop_value <= 1.5 + 1e-6,
+        "missing" if hitstop_value is None else f"{hitstop_value:.3f}s",
+    )
+    sources = [str(item) for item in (meta.get("impulse_sources") or [])]
+    bad_sources = sorted({item for item in sources if item not in {"ball", "dash", "boss", "clash"}})
+    _add(
+        checks,
+        "impulse sources",
+        bool(sources) and not bad_sources,
+        "missing" if not sources else ("ok" if not bad_sources else " ".join(bad_sources)),
+    )
+    windup = meta.get("dash_windup_min")
+    windup_value = None if windup is None else float(windup)
+    _add(
+        checks,
+        "dash windup",
+        windup_value is not None and windup_value >= 15.0 / 60.0 - 1e-6,
+        "missing" if windup_value is None else f"{windup_value:.3f}s",
+    )
+    layout_ok = True
+    layout_detail = "clear"
+    for video_t in (0.5, 2.0, 3.2, 4.5, 8.0):
+        for phase in ("main", "final", "wait"):
+            boxes_now = layout_boxes(cfg, video_t, alive=16, phase=phase)
+            if not layout_clear(boxes_now):
+                layout_ok = False
+                layout_detail = f"overlap at {video_t:.1f}s phase {phase}"
+    _add(checks, "text boxes", layout_ok, layout_detail)
     cast = [str(code) for code in meta.get("cast") or [country.iso2 for country in cfg.countries]]
     blocked = sorted(code for code in cast if code in cfg.guards.blocked)
     _add(checks, "guards", not blocked, "blocked " + " ".join(blocked) if blocked else f"{len(cast)} codes")

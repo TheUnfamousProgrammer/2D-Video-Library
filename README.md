@@ -284,86 +284,69 @@ Ticks are the bounce mallet (middle velocity layer) on the 15-note C major penta
 
 ## Flag Arena
 
-A 32-flag battle royale on a shrinking floor. Balls are the same size and weight. The seed is the only randomness. Last country standing wins.
+Top-down battle royale. Thirty-two country balls, same radius, same mass, same combat rules. There is no gravity. A `gravity` key anywhere in the config is rejected. The only impulses are ball contact, a ball's own dash, the boss, and the opening clash. Damping and the edge brake are accelerations and are not logged as impulses.
+
+The solver is numpy. Fixed step 1/240. Hashes match inside that solver. pymunk is not used for the arena.
 
 ```bash
 python tools/fetch_flags.py
 python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4
-python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4 --preview --contact-sheet
-python -m fc_sat.verify out/arena_world_s1.mp4 --config configs/arena_default.yaml
+python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4 --sim-only
+python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4 --preview --seed 5 --contact-sheet
+python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4 --full --seed 5
 ```
 
-Output names include the cast stem and the seed (`arena_world_s165.mp4`) so batch files cannot collide. A full render verifies itself. Preview is 540x960 at 30 fps with no audio, and it skips verification unless you pass `--verify`.
+With no mode flag the command runs the 40-seed search and a debug reel. If fewer than 30% of seeds pass, it prints each gate's rate and exits non-zero. It still writes the reel of the seed that cleared the most gates. `--seed` renders that seed even when it would lose the search. `--full` is the only mode that encodes the 1080x1920 master. Do not start that until a seed passes.
 
-### Setup
+Output names include the cast stem and the seed (`arena_world_s5.mp4`). Preview is 540x960 at 30 fps with no audio. The reel is 360x640 at 15 fps: circles, ISO codes, velocity vectors, windup lines.
 
-Install the requirements, including `pymunk`. The simulator uses pymunk when it imports and a numpy circle-impulse solver otherwise. Hashes match inside one backend only. The two backends are not required to match each other.
+### Tuned knobs
 
-Flags come from flag-icons. `tools/fetch_flags.py` checks that tag `v7.5.0` exists on GitHub before downloading. If the tag is missing, the script exits and names the latest release it actually found. It does not substitute that tag. Rasterizing needs one of cairosvg, `resvg`, or `rsvg-convert`. The script prints install hints for all three when none are present. Commit the SVGs and PNGs if you want later renders to work offline.
+These are the only numbers that were moved off the spec table. Gates were not relaxed.
 
-The Ohio cameo tries the Wikimedia Commons file `Flag_of_Ohio` and accepts it only when the API says the license is public domain. Otherwise it draws a swallowtail burgee with Pillow and marks that artwork stylized in `assets/cameos/CREDITS.md`.
+- `physics.damping` stays 2.2. Lower moves the opening clash earlier than 0.4 s. Higher drops mean speed under 140 px/s.
+- `ai.dash_speed` is 1200, not 1500, so one hit does not cross the floor.
+- `ai.aggression_scale` is 1.2.
+- `platform.keyframes` start at half-size 1020 x 1150 and shrink at about 12 px/s, under the 28 px/s cap. The spec 410 x 460 floor wiped the cast before 12 s. Camera zoom is `min(410 / hw, 460 / hh)`, so the wider floor still fills the same on-screen box and the balls grow as it shrinks. The opening punch is clamped by that limit and shows up only after the floor has shrunk.
 
-### Guards
+A 40-seed search on this tuning passed 0/40. The gates that still miss are the final duel, the winner window, and dead time. Causes, the opening impact, and neighbor spacing passed. See `out/sim_report.md`.
 
-`configs/guards.yaml` is the block list, and it is yours to edit. Casts cannot override it. `--allow-sensitive` prints a warning and continues.
+### Budgets
+
+One seed is meant to stay under 3 s. Long matches that run to the horizon are slower than that on this machine. The debug reel for seed 5 encoded in about 21 s. One full-resolution frame measured 45 ms; 2881 frames at that rate is about 2.1 minutes in-process. That is under 25 minutes, so half-resolution bloom and fewer particles were not applied.
+
+### Guards and casts
+
+`configs/guards.yaml` is the block list. Casts cannot override it. `--allow-sensitive` prints a warning and continues.
 
 - Religious inscriptions: SA, AF, IQ, IR, BN
 - Contested: TW, PS, XK, EH
-- Active conflict, including wars in progress when this file was written: RU, UA, IL, SD, SS, MM
+- Active conflict: RU, UA, IL, SD, SS, MM
 
-SD, SS, and MM are in the active-conflict block on purpose. The Africa cast uses GM (Gambia) and SL (Sierra Leone) in their place. The Asia cast uses BT (Bhutan) in place of MM. A test loads every file in `configs/casts/` and fails if any code is blocked.
+The cast is locked at 32. Quote ISO codes in YAML (`NO` would otherwise become false). The world cast starts BR, AR, FR, DE and ends with iso3 VNM. Africa uses GM and SL. Asia uses BT.
 
-### Cast size
+Flags are flag-icons v7.5.0 (MIT). `tools/fetch_flags.py` confirms that tag and does not fall through. The Ohio cameo is a stylized burgee when Commons is not public domain. That is recorded in `assets/cameos/CREDITS.md`.
 
-v1 locks the cast at exactly 32. `cast_size` must be 32, and a cast file of any other length is rejected. Gate times, zone keyframes, the sweeper, meteors, and the cameo are the absolute yaml values. They are not scaled by cast size. The finished video must land in [31, 42] seconds.
+### Memes and hooks
 
-`configs/casts/world.yaml` is the default 32. `asia.yaml`, `africa.yaml`, `europe.yaml`, and `americas.yaml` are regional 32s. Add a cast by copying one of those files, keeping 32 entries with quoted `name`, `iso2`, and `iso3` (YAML 1.1 would otherwise read `NO` as false), then render with `--cast path/to/your.yaml`. Fetch flags again if you introduce a new code.
+`configs/memes.yaml` placeholders are `{killer}`, `{victim}`, `{cameo}`, and `{name}`. Phrases do not mention nationality. The validator rejects a denylist token and warns above 34 characters. One hook line in `configs/arena_hooks.yaml` is 25 characters (`32 countries. 1 survives.`), so `hook_max_chars` is 25. The sub-caption is "Same size. Same weight. Same moves." It does not say "pure physics."
 
-### Config keys
+The two clash balls draw their first cooldown from `[0.7, 1.2]` so a windup cannot cancel the opening impact. Other balls use `[0.2, 1.2]`.
 
-`configs/arena_default.yaml` holds the numbers. Unknown keys and a cast that is not 32 fail with `config field '...'`.
+### Audio and voice
 
-| Section | Keys |
-| --- | --- |
-| top | `generator`, `seed`, `width`, `height`, `fps`, `workers`, `bloom_strength`, `cast_size`, `cast`, `hook`, `hook_index` |
-| `world` | `center`, `floor_radius`, `ball_radius`, `ball_mass`, `restitution`, `damping`, `substeps_hz` |
-| `spawn` | `disk_radius`, `speed_min`, `speed_max`, `inward_deg`, `wander_accel`, `wander_period`, `edge_accel`, `edge_margin`, `edge_factor`, `no_elim_before`, `fall_seconds`, `out_margin_radii` |
-| `zone` | `keyframes`, `warning_lead`, `shrink_seconds` |
-| `sweeper` | `start`, `thickness`, `inset`, `omega_start`, `omega_end`, `omega_end_time` |
-| `meteors` | `start`, `gap`, `reticle`, `radius`, `impulse` |
-| `cameo` | `name`, `enter`, `exit`, `radius`, `mass` |
-| `pacing` | `gates`, `win`, `final_duel_min`, `min_pass_rate`, `search` |
-| `drama` | `near_miss_window`, `near_miss_margin_radii`, `near_miss_cap`, `near_miss_weight`, `duel_cap`, `duel_weight`, `late_elim_window`, `late_elim_min`, `late_elim_weight`, `double_window`, `double_cap`, `double_weight`, `meteor_elim_range`, `meteor_elim_weight`, `repeat_penalty` |
-| `camera` | `screen_radius`, `smooth`, `punch_seconds`, `punch_from`, `punch_to`, `shake_px`, `shake_hz`, `shake_decay`, `zone_x`, `zone_y` |
-| `layout` | `safe_x`, `safe_y`, `counter_y`, `counter_px`, `hook_y`, `hook_px`, `hook_lines`, `kill_x`, `kill_y`, `kill_px`, `kill_lines`, `kill_fade`, `cta_y`, `name_px`, `name_seconds`, `name_fade`, `last_named` |
-| `timeline` | `slowmo_rate`, `slowmo_pre`, `slowmo_post`, `replay_sim`, `replay_zoom`, `celebration`, `winner_scale`, `confetti`, `counter_pop`, `counter_pop_scale`, `hook_until`, `hook_fade`, `fact_text`, `fact_window`, `wait_text`, `wait_start` |
-| `juice` | `squash`, `squash_seconds`, `trail_speed`, `spark_speed`, `sparks`, `eye_frac`, `blink`, `scared_margin`, `hit_seconds`, `shadow_offset_radii`, `highlight_alpha` |
-| `audio` | `bpm`, `sidechain_db`, `voice_duck_db`, `slowmo_duck_db`, `slowmo_lpf`, `stinger_gap`, `pre_drop`, `max_voices`, `max_onsets_per_100ms`, `bonk_noise_ms`, `bonk_drop_ms`, `bonk_hz`, `cowbell_hz`, `airhorn_hz`, `ding_hz`, `ding_ms`, `whistle_hz`, `whistle_seconds`, `meteor_beep_hz`, `meteor_beep_gap`, `meteor_beeps`, `sub_hz`, `target_lufs`, `true_peak_db`, `fade_ms`, `loudness_iters` |
-| `voice` | `model_id`, `voice_id` |
+`finish_broadcast` removes DC, fades 5 ms, and runs the shared loudness loop. It does not call `master()`. The AAC delivery path still clips at about -9.2 dB and low-passes at 12 kHz so the native encoder stays at or under -1 dBTP. `{out}.sfx_only.mp4` is the picture with effects and no bed.
 
-Hooks live in `configs/arena_hooks.yaml` so the bounce file `configs/hooks.yaml` is left alone. `--hook-index` picks a line. Otherwise the seed picks it. Sweeper speed stays at `omega_start` until six seconds before `omega_end_time`, then ramps. While the last two are inside the minimum duel, the sweeper eases off, edge avoidance rises, and meteors do not impulse, so the duel can last. The gate numbers themselves are not relaxed. If a search passes fewer than 15% of seeds, the run prints each gate's rate and exits without encoding.
-
-`--seed` renders that seed even when it would lose the search. A render with no seed runs the search (default 300) and will not encode below the pass rate.
-
-### Memes
-
-`configs/memes.yaml` has `last_reviewed` and phrase lists. Placeholders are `{code}`, `{name}`, and `{cameo}`. Phrases talk about the event, not nationality. Once a week, read the lists, drop anything stale, and set `last_reviewed` to that day. The validator rejects a token that is not a placeholder and is on the slur and demographic denylist, and it warns when a rendered phrase is over 28 characters.
-
-### Audio, voice, and a trending sound
-
-The mix is synthesized. `finish_broadcast` removes DC, fades 5 ms at each edge, and runs the shared loudness loop with the tail left intact. It does not call `master()`, which would silence the last 300 ms. After that, the delivery path clips 4x oversampled peaks and low-passes at 12 kHz so the native AAC encoder stays at or under -1 dBTP. The bed drops out for 0.35 s before the final knockout, then the hit and the celebration play.
-
-There is no API key in this repo. `{out}.announcer.txt` is always written for the last three outs and the winner. Its header says `target model: Eleven v4 (verify the model id in the ElevenLabs docs)`. Paste one bracketed line at a time into an energetic designed caster voice, with stability on Natural or Creative. The request model id is `voice.model_id` from the config, not a constant in the Python. Set `ELEVENLABS_API_KEY` and either `ELEVENLABS_VOICE_ID` or `voice.voice_id` when you want the clip fetched. If either is missing, the render logs one line and continues. If the API rejects the model, the error names `voice.model_id` and points you at the ElevenLabs model docs.
-
-`{out}.sfx_only.mp4` is the same picture with sound effects and the announcer, and no music bed. Lay a trending sound under that file. `--safe-overlay` writes a second `{out}.safe.mp4` with the safe-zone guides, so the verified master stays clean.
+`{out}.announcer.txt` is always written. The header starts with `target model: Eleven v4 (verify the model id in the ElevenLabs docs)`. The request uses `voice.model_id`. No API call is made without `ELEVENLABS_API_KEY`. A missing key logs one line and continues.
 
 ### Phone checklist
 
-Watch the master on a phone, not only on the desktop monitor.
+Watch a passing master on a phone speaker before you post it.
 
-- Flags still read at arm's length, including the small kill-feed icons and the podium.
-- The bed and the impacts balance on the phone speaker. The pre-knockout drop should be obvious and the celebration should still be audible.
-- Hook, counter, kill feed, and the end-card text sit clear of the rounded corners and the platform UI. The guides in the safe-overlay file are the same rectangle the verifier checks.
+- Flags still read at arm's length, including the kill-feed marks and the podium.
+- You can point at the hit that knocked someone out. The windup line is visible before the dash.
+- Impacts and the bed balance on the phone speaker. The drop before the last knockout is obvious, and the celebration is still audible.
+- Hook, counter, kill feed, and the end card sit clear of the platform box.
 
 ## Odd One Out
 
