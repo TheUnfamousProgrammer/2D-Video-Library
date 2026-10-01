@@ -281,3 +281,86 @@ The outbound color blend is `recolor_strength * E`. The return blend goes all th
 Ticks are the bounce mallet (middle velocity layer) on the 15-note C major pentatonic from C4. Pitch rises on the way to B and falls on the way back, plus a seeded step of -1, 0, or +1. Gain is 0.35 to 0.6, panned with equal power from the particle's x. The whoosh is band-passed noise (about 1.4x around a sweep from 300 Hz to 1800 Hz, and back) following the smoothed fraction of particles in flight. A C-E-G chime (decay 1.2 s) marks the B hold. A quieter 0.6 s chime marks the return home; the shared bounce master then zeros the last 300 ms, so most of that final chime is silence. The master is DC removal, a 12 kHz low-pass, 5 ms fades, the zero tail, then the loudness loop to -14 LUFS and -1 dBTP with the resample_poly true-peak meter. Audio length is `N * 800` samples.
 
 `python -m fc_sat.verify` stays on bounce unless you pass `--mode morph` or the config contains `recolor_strength` (a `song` field still selects hop). Morph checks the container (1080x1920, 60 fps, H.264 high, yuv420p, BT.709 TV tags, AAC 48 kHz stereo, duration `N/60`, A/V within 20 ms, under 100 MB), loudness within 1 LU of -14, true peak at or under -1 dBTP, no sample clipping, and the last 300 ms under -50 dBFS. The loop SSIM of the first and last frame must be at least 0.995. The middle frame of the B hold, and frame 0, are averaged per cell and compared in OKLab to the prepared grids. That comparison fails the file only when `recolor_strength >= 0.99` and the mean error is above `max_delta_e`. There must be no black frame, and no 1 second window may contain more than 3 frames whose mean luma jumps by more than 0.10. Outside the image box and the hook, pixels must stay within 8/255 mean absolute RGB and 0.06 p99 luma of the vignette. A failure prints the measured values and writes the worst frame; the thresholds are not loosened to force a pass. A sample of frames is also drawn before compositing to confirm no particle pixel leaves the image box.
+
+## Flag Arena
+
+A 32-flag battle royale on a shrinking floor. Balls are the same size and weight. The seed is the only randomness. Last country standing wins.
+
+```bash
+python tools/fetch_flags.py
+python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4
+python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4 --preview --contact-sheet
+python -m fc_sat.verify out/arena_world_s1.mp4 --config configs/arena_default.yaml
+```
+
+Output names include the cast stem and the seed (`arena_world_s165.mp4`) so batch files cannot collide. A full render verifies itself. Preview is 540x960 at 30 fps with no audio, and it skips verification unless you pass `--verify`.
+
+### Setup
+
+Install the requirements, including `pymunk`. The simulator uses pymunk when it imports and a numpy circle-impulse solver otherwise. Hashes match inside one backend only. The two backends are not required to match each other.
+
+Flags come from flag-icons. `tools/fetch_flags.py` checks that tag `v7.5.0` exists on GitHub before downloading. If the tag is missing, the script exits and names the latest release it actually found. It does not substitute that tag. Rasterizing needs one of cairosvg, `resvg`, or `rsvg-convert`. The script prints install hints for all three when none are present. Commit the SVGs and PNGs if you want later renders to work offline.
+
+The Ohio cameo tries the Wikimedia Commons file `Flag_of_Ohio` and accepts it only when the API says the license is public domain. Otherwise it draws a swallowtail burgee with Pillow and marks that artwork stylized in `assets/cameos/CREDITS.md`.
+
+### Guards
+
+`configs/guards.yaml` is the block list, and it is yours to edit. Casts cannot override it. `--allow-sensitive` prints a warning and continues.
+
+- Religious inscriptions: SA, AF, IQ, IR, BN
+- Contested: TW, PS, XK, EH
+- Active conflict, including wars in progress when this file was written: RU, UA, IL, SD, SS, MM
+
+SD, SS, and MM are in the active-conflict block on purpose. The Africa cast uses GM (Gambia) and SL (Sierra Leone) in their place. The Asia cast uses BT (Bhutan) in place of MM. A test loads every file in `configs/casts/` and fails if any code is blocked.
+
+### Cast size
+
+v1 locks the cast at exactly 32. `cast_size` must be 32, and a cast file of any other length is rejected. Gate times, zone keyframes, the sweeper, meteors, and the cameo are the absolute yaml values. They are not scaled by cast size. The finished video must land in [31, 42] seconds.
+
+`configs/casts/world.yaml` is the default 32. `asia.yaml`, `africa.yaml`, `europe.yaml`, and `americas.yaml` are regional 32s. Add a cast by copying one of those files, keeping 32 entries with quoted `name`, `iso2`, and `iso3` (YAML 1.1 would otherwise read `NO` as false), then render with `--cast path/to/your.yaml`. Fetch flags again if you introduce a new code.
+
+### Config keys
+
+`configs/arena_default.yaml` holds the numbers. Unknown keys and a cast that is not 32 fail with `config field '...'`.
+
+| Section | Keys |
+| --- | --- |
+| top | `generator`, `seed`, `width`, `height`, `fps`, `workers`, `bloom_strength`, `cast_size`, `cast`, `hook`, `hook_index` |
+| `world` | `center`, `floor_radius`, `ball_radius`, `ball_mass`, `restitution`, `damping`, `substeps_hz` |
+| `spawn` | `disk_radius`, `speed_min`, `speed_max`, `inward_deg`, `wander_accel`, `wander_period`, `edge_accel`, `edge_margin`, `edge_factor`, `no_elim_before`, `fall_seconds`, `out_margin_radii` |
+| `zone` | `keyframes`, `warning_lead`, `shrink_seconds` |
+| `sweeper` | `start`, `thickness`, `inset`, `omega_start`, `omega_end`, `omega_end_time` |
+| `meteors` | `start`, `gap`, `reticle`, `radius`, `impulse` |
+| `cameo` | `name`, `enter`, `exit`, `radius`, `mass` |
+| `pacing` | `gates`, `win`, `final_duel_min`, `min_pass_rate`, `search` |
+| `drama` | `near_miss_window`, `near_miss_margin_radii`, `near_miss_cap`, `near_miss_weight`, `duel_cap`, `duel_weight`, `late_elim_window`, `late_elim_min`, `late_elim_weight`, `double_window`, `double_cap`, `double_weight`, `meteor_elim_range`, `meteor_elim_weight`, `repeat_penalty` |
+| `camera` | `screen_radius`, `smooth`, `punch_seconds`, `punch_from`, `punch_to`, `shake_px`, `shake_hz`, `shake_decay`, `zone_x`, `zone_y` |
+| `layout` | `safe_x`, `safe_y`, `counter_y`, `counter_px`, `hook_y`, `hook_px`, `hook_lines`, `kill_x`, `kill_y`, `kill_px`, `kill_lines`, `kill_fade`, `cta_y`, `name_px`, `name_seconds`, `name_fade`, `last_named` |
+| `timeline` | `slowmo_rate`, `slowmo_pre`, `slowmo_post`, `replay_sim`, `replay_zoom`, `celebration`, `winner_scale`, `confetti`, `counter_pop`, `counter_pop_scale`, `hook_until`, `hook_fade`, `fact_text`, `fact_window`, `wait_text`, `wait_start` |
+| `juice` | `squash`, `squash_seconds`, `trail_speed`, `spark_speed`, `sparks`, `eye_frac`, `blink`, `scared_margin`, `hit_seconds`, `shadow_offset_radii`, `highlight_alpha` |
+| `audio` | `bpm`, `sidechain_db`, `voice_duck_db`, `slowmo_duck_db`, `slowmo_lpf`, `stinger_gap`, `pre_drop`, `max_voices`, `max_onsets_per_100ms`, `bonk_noise_ms`, `bonk_drop_ms`, `bonk_hz`, `cowbell_hz`, `airhorn_hz`, `ding_hz`, `ding_ms`, `whistle_hz`, `whistle_seconds`, `meteor_beep_hz`, `meteor_beep_gap`, `meteor_beeps`, `sub_hz`, `target_lufs`, `true_peak_db`, `fade_ms`, `loudness_iters` |
+| `voice` | `model_id`, `voice_id` |
+
+Hooks live in `configs/arena_hooks.yaml` so the bounce file `configs/hooks.yaml` is left alone. `--hook-index` picks a line. Otherwise the seed picks it. Sweeper speed stays at `omega_start` until six seconds before `omega_end_time`, then ramps. While the last two are inside the minimum duel, the sweeper eases off, edge avoidance rises, and meteors do not impulse, so the duel can last. The gate numbers themselves are not relaxed. If a search passes fewer than 15% of seeds, the run prints each gate's rate and exits without encoding.
+
+`--seed` renders that seed even when it would lose the search. A render with no seed runs the search (default 300) and will not encode below the pass rate.
+
+### Memes
+
+`configs/memes.yaml` has `last_reviewed` and phrase lists. Placeholders are `{code}`, `{name}`, and `{cameo}`. Phrases talk about the event, not nationality. Once a week, read the lists, drop anything stale, and set `last_reviewed` to that day. The validator rejects a token that is not a placeholder and is on the slur and demographic denylist, and it warns when a rendered phrase is over 28 characters.
+
+### Audio, voice, and a trending sound
+
+The mix is synthesized. `finish_broadcast` removes DC, fades 5 ms at each edge, and runs the shared loudness loop with the tail left intact. It does not call `master()`, which would silence the last 300 ms. The bed drops out for 0.35 s before the final knockout, then the hit and the celebration play.
+
+There is no API key in this repo. `{out}.announcer.txt` is always written for the last three outs and the winner. Its header says `target model: Eleven v4 (verify the model id in the ElevenLabs docs)`. Paste one bracketed line at a time into an energetic designed caster voice, with stability on Natural or Creative. The request model id is `voice.model_id` from the config, not a constant in the Python. Set `ELEVENLABS_API_KEY` and either `ELEVENLABS_VOICE_ID` or `voice.voice_id` when you want the clip fetched. If either is missing, the render logs one line and continues. If the API rejects the model, the error names `voice.model_id` and points you at the ElevenLabs model docs.
+
+`{out}.sfx_only.mp4` is the same picture with sound effects and the announcer, and no music bed. Lay a trending sound under that file. `--safe-overlay` writes a second `{out}.safe.mp4` with the safe-zone guides, so the verified master stays clean.
+
+### Phone checklist
+
+Watch the master on a phone, not only on the desktop monitor.
+
+- Flags still read at arm's length, including the small kill-feed icons and the podium.
+- The bed and the impacts balance on the phone speaker. The pre-knockout drop should be obvious and the celebration should still be audible.
+- Hook, counter, kill feed, and the end-card text sit clear of the rounded corners and the platform UI. The guides in the safe-overlay file are the same rectangle the verifier checks.

@@ -35,7 +35,7 @@ from fc_sat.arena_sim import (
 )
 from fc_sat.arena_voice import load_voice, write_announcer
 from fc_sat.audio import write_wav
-from fc_sat.encode import iter_ordered_frames, pipe_raw_bgr, resolve_workers
+from fc_sat.encode import find_ffmpeg, iter_ordered_frames, pipe_raw_bgr, resolve_workers
 
 
 def output_name(base: Path, cast_path: str, seed: int) -> Path:
@@ -98,6 +98,53 @@ def _sample_boxes(renderer: ArenaRenderer) -> list[list[int]]:
         renderer.render(renderer.frame_at(moment))
         boxes.extend([list(box) for box in renderer.boxes])
     return boxes
+
+
+def _mux_audio_copy(video: Path, wav: Path, dest: Path) -> None:
+    """Same picture, different audio. The video stream is copied."""
+    import os
+    import subprocess
+
+    ffmpeg = find_ffmpeg()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temporary = dest.with_name(f".{dest.stem}.partial.mp4")
+    if temporary.exists():
+        temporary.unlink()
+    command = [
+        ffmpeg,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video),
+        "-i",
+        str(wav),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        str(temporary),
+    ]
+    proc = subprocess.run(command, check=False, capture_output=True, text=True)
+    if proc.returncode != 0:
+        if temporary.exists():
+            temporary.unlink()
+        raise SystemExit(f"sfx mux failed:\n{proc.stderr.strip()}")
+    os.replace(temporary, dest)
 
 
 def render_job(
@@ -173,23 +220,7 @@ def render_job(
         n_frames=renderer.n_frames if workers <= 1 else None,
     )
     if not preview and sfx_wav.exists():
-        sfx_out = output.with_name(output.stem + ".sfx_only.mp4")
-        pipe_raw_bgr(
-            iter_ordered_frames(
-                renderer.n_frames,
-                workers=workers,
-                render_one=render_index,
-                initializer=init_arena_worker,
-                initargs=(cfg, str(cache), preview, False),
-                render_chunk=render_arena_chunk,
-            ),
-            sfx_out,
-            width=renderer.width,
-            height=renderer.height,
-            fps=renderer.fps,
-            audio_path=sfx_wav,
-            n_frames=renderer.n_frames if workers <= 1 else None,
-        )
+        _mux_audio_copy(output, sfx_wav, output.with_name(output.stem + ".sfx_only.mp4"))
     if safe_overlay:
         pipe_raw_bgr(
             iter_ordered_frames(
