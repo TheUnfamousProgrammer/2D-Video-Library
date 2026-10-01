@@ -21,13 +21,13 @@ world:
 
 spawn:
   disk_radius: 300
-  speed_min: 250
-  speed_max: 450
+  speed_min: 155
+  speed_max: 295
   inward_deg: 50
   wander_accel: 120
   wander_period: [0.5, 1.2]
-  edge_accel: 400
-  edge_margin: 60
+  edge_accel: 1550
+  edge_margin: 105
   edge_factor: [0.5, 1.0]
   no_elim_before: 1.5
   fall_seconds: 0.9
@@ -47,20 +47,21 @@ zone:
   warning_lead: 1.2
   shrink_seconds: 3.0
 
+# Omega holds at omega_start until six seconds before omega_end_time, then ramps.
 sweeper:
-  start: 6.0
+  start: 2.0
   thickness: 24
   inset: 10
-  omega_start: 0.8
-  omega_end: 2.2
-  omega_end_time: 24.0
+  omega_start: 1.02
+  omega_end: 2.55
+  omega_end_time: 23.6
 
 meteors:
-  start: 9.0
-  gap: [2.0, 3.5]
+  start: 15.0
+  gap: [3.2, 4.8]
   reticle: 0.9
   radius: 110
-  impulse: 900
+  impulse: 680
 
 cameo:
   name: OHIO
