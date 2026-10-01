@@ -1,0 +1,148 @@
+# Odd One Out. Times are seconds. Frames are round(seconds * fps).
+# Tiers never relax uniqueness, the no-overlap rule, or the CVD floor.
+generator: odd
+seed: 7
+tier: normal
+width: 1080
+height: 1920
+fps: 60
+workers: 0
+bloom_strength: 0.6
+warmup_seconds: 1.0
+reveal_seconds: 1.4
+wipe_seconds: 0.3
+outro_seconds: 2.4
+hook: Find the odd one
+cta: Comment your level
+background: "#0B0F1A"
+
+levels:
+  - id: 1
+    label: EASY
+    difference: hue
+    count: 36
+    timer: 5.0
+  - id: 2
+    label: MEDIUM
+    difference: size
+    count: 64
+    timer: 6.0
+  - id: 3
+    label: HARD
+    difference: spin
+    count: 96
+    timer: 7.0
+  - id: 4
+    label: BRUTAL
+    difference: pulse
+    count: 128
+    timer: 8.0
+
+field:
+  x0: 150
+  x1: 930
+  y0: 450
+  y1: 1390
+  corner_radius: 40
+  margin: 24
+
+item:
+  radius: 16
+  radius_min: 14
+  specular: 0.22
+
+motion:
+  speed_mean: 110
+  speed_spread: 0.20
+  speed_clip: [0.6, 1.4]
+  angular_std: 1.1
+  omega_clip: 2.2
+  repulse: 2.4
+  substeps: 4
+
+layout:
+  safe_x: [130, 950]
+  safe_y: [200, 1536]
+  label_y: 240
+  label_px: 56
+  caption_y: 310
+  caption_px: 54
+  caption_max_chars: 26
+  # Caption is centered in the band left of the seconds digits so the two cannot meet.
+  caption_x: [150, 760]
+  timer_y: 372
+  timer_x0: 170
+  timer_x1: 770
+  timer_h: 16
+  timer_num_x0: 790
+  timer_num_x1: 930
+  timer_num_px: 72
+  pip_y: 1440
+  pip_r: 14
+  outro_y: 400
+  outro_px: 48
+  # 1450 collides with pips at 1440, so the CTA sits on the right of that row.
+  cta_y: 1450
+  cta_px: 40
+  cta_x: [560, 940]
+  hook_seconds: 3.0
+  pause_caption_seconds: 2.5
+  last_chance_seconds: 2.0
+  pause_levels: [3, 4]
+
+constraints:
+  max_attempts: 20
+  speed_low_pct: 10
+  speed_high_pct: 90
+  position_middle: 0.80
+
+audio:
+  silence_at_reveal: 0.15
+  heartbeat_bpm: [80, 140]
+  heartbeat_window: 2.0
+  buzz_seconds: 0.3
+
+tiers:
+  normal:
+    hue_min_distance: 0.20
+    hue_min_lightness: 0.15
+    cvd_min_distance: 0.10
+    size_ratio: 1.18
+    size_ratio_range: [1.12, 1.30]
+    spin_rev_s: 1.2
+    pulse_normal_hz: 1.50
+    pulse_odd_hz: 1.85
+    pulse_amplitude: 0.16
+    base_l: 0.72
+    base_c: 0.10
+  brutal:
+    # Requested hue distance is 0.08. CVD stays at 0.10, so the search
+    # keeps the closest color that still clears the CVD floor.
+    hue_min_distance: 0.08
+    hue_min_lightness: 0.08
+    cvd_min_distance: 0.10
+    size_ratio: 1.10
+    size_ratio_range: [1.05, 1.30]
+    spin_rev_s: 1.2
+    pulse_normal_hz: 1.50
+    pulse_odd_hz: 1.62
+    pulse_amplitude: 0.16
+    base_l: 0.72
+    base_c: 0.10
+  quick:
+    levels: [1, 3]
+    timers: {1: 3.0, 3: 4.0}
+    reveal_seconds: 1.0
+    wipe_seconds: 0.2
+    outro_seconds: 1.6
+    hue_min_distance: 0.20
+    hue_min_lightness: 0.15
+    cvd_min_distance: 0.10
+    size_ratio: 1.18
+    size_ratio_range: [1.12, 1.30]
+    spin_rev_s: 1.2
+    pulse_normal_hz: 1.50
+    pulse_odd_hz: 1.85
+    pulse_amplitude: 0.16
+    base_l: 0.72
+    base_c: 0.10
