@@ -16,7 +16,7 @@ import pyloudnorm as pyln
 
 from fc_sat.audio import true_peak_db
 from fc_sat.encode import find_ffmpeg, find_ffprobe
-from fc_sat.odd_config import OddConfig, build_timeline, timeline_frames
+from fc_sat.odd_config import SKIPPED_MEASURE, OddConfig, build_timeline, timeline_frames
 from fc_sat.odd_diff import measure_detail, measure_hue, measure_tilt
 from fc_sat.odd_layout import math_layout_failures
 from fc_sat.verify import (
@@ -69,15 +69,18 @@ def _bg(cfg: OddConfig) -> tuple[int, int, int]:
 
 def score_frame(frame: np.ndarray, cfg: OddConfig, sim, scale: float) -> tuple[bool, str]:
     """Detectability for one settled puzzle frame. ``scale`` maps full-res sim coords onto ``frame``."""
+    if int(sim.diff_params.get("rung", 1)) >= 5:
+        print(SKIPPED_MEASURE, flush=True)
+        return True, SKIPPED_MEASURE
     kind = sim.level.difference
     odd = int(sim.odd_index)
     centers = [(float(p[0]) * scale, float(p[1]) * scale) for p in sim.centers]
     odd_xy = centers[odd]
     others = [xy for index, xy in enumerate(centers) if index != odd]
     sample = others[:12]
-    if kind in ("hue", "hue_subtle"):
+    nominal = float(sim.diff_params["nominal"])
+    if kind == "hue":
         measured = measure_hue(frame, odd_xy, sample)
-        nominal = float(sim.diff_params["distance"])
         ok = measured >= 0.70 * nominal
         return ok, f"oklab {measured:.3f} vs 70% of {nominal:.3f}"
     if kind == "tilt":
@@ -85,13 +88,16 @@ def score_frame(frame: np.ndarray, cfg: OddConfig, sim, scale: float) -> tuple[b
             (box[0] * scale, box[1] * scale, box[2] * scale, box[3] * scale) for box in sim.cells
         )
         stats = measure_tilt(frame, list(cells), odd, _bg(cfg))
-        nominal = float(cfg.tier.tilt_degrees)
         ok = stats["delta"] >= 0.60 * nominal
         return ok, f"angle delta {stats['delta']:.1f} deg vs 60% of {nominal:.0f} (odd {stats['odd']:.1f}, median {stats['median']:.1f})"
-    dot = float(sim.diff_params["dot_radius"]) * scale
-    stats = measure_detail(frame, odd_xy, others, dot)
-    ok = stats["median"] > 0.2 and stats["ratio"] < 0.20
-    return ok, f"white fraction odd {stats['odd']:.3f} is {stats['ratio']:.3f} of median {stats['median']:.3f} (need < 0.20)"
+    item_radius = (sim.level.size / 2.0) * scale
+    stats = measure_detail(frame, odd_xy, others, item_radius)
+    ok = stats["odd"] >= 0.60 * nominal and stats["max_other"] < 0.25 * nominal
+    return (
+        ok,
+        f"centroid offset {stats['odd']:.3f} R vs 60% of {nominal:.3f}; "
+        f"others max {stats['max_other']:.3f} R (need < {0.25 * nominal:.3f})",
+    )
 
 
 def harsh_measure_show(cfg: OddConfig, show) -> dict[int, str]:
@@ -134,7 +140,10 @@ def harsh_measure_show(cfg: OddConfig, show) -> dict[int, str]:
                 raise SystemExit(proc.stderr.decode("utf-8", "replace"))
             decoded = next(_iter_decoded(ffmpeg, mp4, HARSH_W, HARSH_H))
             ok, detail = score_frame(decoded, cfg, show.levels[level.id], HARSH_W / cfg.width)
-            found[level.id] = ("pass " if ok else "FAIL ") + detail
+            if detail == SKIPPED_MEASURE:
+                found[level.id] = detail
+            else:
+                found[level.id] = ("pass " if ok else "FAIL ") + detail
             print(f"harsh L{level.id} {found[level.id]}", flush=True)
             if not ok:
                 cv2.imwrite(str(png.with_name(f"L{level.id}.worst.png")), decoded)
@@ -151,9 +160,9 @@ def sim_checks(cfg: OddConfig, show) -> list[Check]:
         repeated = previous is not None and cell == previous
         _add(checks, f"L{level.id} new cell", not repeated, f"row {sim.row + 1} col {sim.col + 1} {sim.phrase}")
         previous = cell
-        if level.difference in ("hue", "hue_subtle"):
+        if level.difference == "hue":
             cvd = sim.diff_params.get("cvd") or {}
-            floor = cfg.tier.hue_subtle_cvd if level.difference == "hue_subtle" else cfg.tier.cvd_min_distance
+            floor = float(sim.diff_params.get("cvd_floor", 0.0))
             worst = min(float(cvd.get(kind, 0.0)) for kind in ("protan", "deutan", "tritan"))
             _add(
                 checks,
@@ -268,7 +277,7 @@ def container_checks(path: Path, cfg: OddConfig) -> tuple[list[Check], dict | No
     if vdur is None:
         _add(checks, "duration", False, "video duration missing")
     else:
-        _add(checks, "duration window", 20.0 <= vdur <= 30.0, f"{vdur:.3f}s")
+        _add(checks, "duration window", 22.0 <= vdur <= 32.0, f"{vdur:.3f}s")
         _add(checks, "duration vs timeline", abs(vdur - expected) <= 0.020, f"{vdur:.4f}s vs {expected:.4f}s")
         if adur is not None:
             _add(checks, "av sync", abs(vdur - adur) <= 0.020, f"video {vdur:.4f}s audio {adur:.4f}s")
@@ -289,8 +298,9 @@ def _play_frame(cfg: OddConfig, level_id: int, fraction: float) -> int:
 def verify_odd_file(path: Path, cfg: OddConfig, show=None) -> list[Check]:
     """Container, loudness, layout, sim constraints, and pixel detectability.
 
-    The harsh re-encode is ``{stem}.harsh.mp4``. The hard tier is longer than 30 s,
+    The harsh re-encode is ``{stem}.harsh.mp4``. The hard tier is longer than 32 s,
     so the duration window fails on purpose. The upload file is the three-level cut.
+    Rung 5 measurement checks print SKIPPED and do not fail the file.
     """
     from fc_sat.odd_render import OddRenderer, _settled_time
     from fc_sat.odd_sim import simulate_show

@@ -21,21 +21,23 @@ from fc_sat.audio import write_wav
 from fc_sat.encode import iter_ordered_frames, pipe_raw_bgr, resolve_workers
 from fc_sat.odd_audio import synthesize_odd
 from fc_sat.odd_config import load_odd_config
-from fc_sat.odd_render import OddRenderer, contact_sheet, init_odd_worker, render_odd_chunk, write_level_pngs
+from fc_sat.odd_render import OddRenderer, contact_sheet, init_odd_worker, render_odd_chunk, write_ladder, write_level_pngs
 from fc_sat.odd_report import write_answers, write_json, write_post, write_report
 from fc_sat.odd_sim import save_show, simulate_show
 from fc_sat.odd_verify import harsh_measure_show
 
 CRITIQUE = """
-Looked at the clean puzzles, the ringed answers, and the contact sheet.
+Looked at the clean puzzles, the ringed answers, the contact sheet, and the ladder stills.
 
-L1 is immediate. Seed 7 put the odd disc in the top-left cell, and the required lightness gap makes it yellow against pink. That is an easy scan, which is what level 1 is for. Nothing else marks it: same size, no ring, no glow.
+L1 is a fast scan. Seed 7 put the odd disc at row 1, column 2: olive against pink, same size, no ring, no glow. The measured OKLab gap is 0.190 against a nominal 0.15, and the lightness delta is 0.050, so it is a real color difference without being a neon mismatch.
 
-L2 reads in one glance. One rounded square is turned, the other twenty-four are upright, and they are the same blue. A still frame shows the tilt. It is not hidden, and it is not pre-circled.
+L2 reads in a still. One rounded square is turned 9 degrees and the other 35 are upright, all the same blue, at row 2 column 2. The location phrase is also "upper left", and the cell is not the level 1 cell.
 
-L3 is the one that takes a scan. Every disc matches except the one in the lower left with no white dot. The dot is small, so you have to look, and the missing one is the only tell.
+L3 takes a scan. Forty-nine discs, and the only tell is the lower-left dot shifted east by 0.22 of the radius. Next to its neighbor the shift is obvious. In the full grid it is easy to walk past, which is what this rung is for. Nothing else points at it.
 
-The reveal dims the others, puts a flat gold ring on the odd item, and moves the answer into the caption row. Text stays off the field. At most the level label, one caption, and the seconds number are on screen together.
+The reveal dims the others, puts a flat gold ring on the odd item, and the caption says the dot was off center. Text stays off the field. At most the level label, one caption, and the seconds number are on screen.
+
+On the ladder, hue rung 5 is a slight tint, tilt rung 4 is a small turn you can still see, and detail rung 1 is an obvious shove. Detail rung 4 is this film's level 3. Rung 5 is allowed and flagged as not reliably measurable after compression.
 """.strip()
 
 
@@ -169,7 +171,26 @@ def generate(
             print(format_table(checks))
             if not all(item.ok for item in checks):
                 raise SystemExit(1)
-    write_report(output.with_suffix(".report.md"), cfg, show, timings=timings, critique=critique, measured=measured)
+    if eta is None:
+        workers = 1 if renderer.n_frames < 8 else resolve_workers(cfg.workers)
+        ms_full = renderer.profile_ms()
+        eta = (ms_full / 1000.0) * renderer.n_frames / max(workers, 1)
+        timings.append(("profile", ms_full / 1000.0))
+        print(
+            f"full-render eta {eta / 60.0:.1f} min from {ms_full:.0f} ms/frame with {workers} workers",
+            flush=True,
+        )
+    ladder = Path("ladder")
+    ladder_paths = sorted(str(path) for path in ladder.glob("*.png")) if ladder.is_dir() else []
+    write_report(
+        output.with_suffix(".report.md"),
+        cfg,
+        show,
+        timings=timings,
+        critique=critique,
+        measured=measured,
+        ladder_paths=ladder_paths,
+    )
     write_answers(output.with_suffix(".answers.md"), cfg, show)
     write_post(output.with_suffix(".post.txt"), cfg, show)
     payload = list(timings)
@@ -197,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch", type=int, default=None)
     parser.add_argument("--keep-temp", action="store_true")
     parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--ladder", action="store_true", help="write ladder stills and answers; no video")
     args = parser.parse_args(argv)
     if args.full and not args.approved:
         raise SystemExit(
@@ -205,7 +227,18 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.batch and args.full:
         raise SystemExit("--full encodes one film. Drop --batch and pass --full --approved for that seed.")
+    if args.ladder and (args.full or args.preview):
+        raise SystemExit("--ladder does not render video.")
     level_ids = _parse_levels(args.levels)
+    if args.ladder:
+        cfg = load_odd_config(args.config, tier=args.tier, seed=args.seed)
+        started = time.perf_counter()
+        paths = write_ladder(cfg, Path("ladder"))
+        elapsed = time.perf_counter() - started
+        print(f"ladder {len(paths)} images in {elapsed:.2f}s -> ladder/", flush=True)
+        if elapsed >= 30.0:
+            raise SystemExit(f"ladder took {elapsed:.1f}s, over the 30s budget")
+        return 0
     output = Path(args.out)
     if args.audio_only and not args.preview and args.batch is None and not args.full:
         import json

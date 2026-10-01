@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .cache/
 out/
+ladder/
 *.pyc
 *.partial.mp4
 *.wav

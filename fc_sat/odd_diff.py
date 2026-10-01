@@ -1,7 +1,7 @@
-"""The four Odd One Out differences. Each one can be measured back from pixels.
+"""The three Odd One Out differences. Each one can be measured back from pixels.
 
-v1 is hue, tilt, detail, and hue_subtle. A new type needs a measurer before it
-can ship. Fills are flat: no antialiasing, no glow.
+Hue, tilt, and a moved dot. A new type needs a measurer before it can ship.
+Fills are flat: no antialiasing, no glow.
 """
 
 from __future__ import annotations
@@ -12,15 +12,32 @@ import cv2
 import numpy as np
 
 from fc_sat.color import cvd_distance, lch_to_oklab, oklab_delta, oklab_to_rgb_u8, rgb_u8_to_oklab
-from fc_sat.odd_config import TierParams
+from fc_sat.odd_config import DETAIL_OFFSET, DOT_FRACTION, TILT_DEGREES, TierParams
 
 REVEAL_LABELS = {
     "hue": "It was a different color",
     "tilt": "It was tilted",
-    "detail": "It had no dot",
-    "hue_subtle": "It was a different color",
+    "detail": "The dot was off center",
 }
+DIR_NAMES = (
+    "east",
+    "southeast",
+    "south",
+    "southwest",
+    "west",
+    "northwest",
+    "north",
+    "northeast",
+)
 CVD_KINDS = ("protan", "deutan", "tritan")
+
+
+def reveal_label(kind: str, mode: str = "moved") -> str:
+    if kind == "detail" and mode == "missing":
+        return "It had no dot"
+    if kind not in REVEAL_LABELS:
+        raise ValueError(f"no reveal label for {kind!r}")
+    return REVEAL_LABELS[kind]
 
 
 def lab_to_bgr(lab: np.ndarray) -> tuple[int, int, int]:
@@ -30,9 +47,11 @@ def lab_to_bgr(lab: np.ndarray) -> tuple[int, int, int]:
 
 def choose_odd_lab(
     base: np.ndarray,
-    tier: TierParams,
     *,
-    subtle: bool = False,
+    min_distance: float,
+    min_lightness: float,
+    min_cvd: float,
+    chroma: float,
 ) -> dict:
     """First grid color that clears distance, lightness, and the CVD floor.
 
@@ -40,19 +59,15 @@ def choose_odd_lab(
     """
     base = np.asarray(base, dtype=np.float64)
     base_h = math.atan2(float(base[2]), float(base[1]))
-    chroma = tier.base_c
-    min_distance = tier.hue_subtle_distance if subtle else tier.hue_min_distance
-    min_light = tier.hue_subtle_lightness if subtle else tier.hue_min_lightness
-    min_cvd = tier.hue_subtle_cvd if subtle else tier.cvd_min_distance
     rejected = 0
-    light_steps = (0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.22, 0.28, 0.34)
+    light_steps = (0.05, 0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.22, 0.28, 0.34)
     for mag in light_steps:
         for sign in (1.0, -1.0):
-            if mag + 1e-9 < min_light:
+            if mag + 1e-9 < min_lightness:
                 continue
             lightness = float(np.clip(base[0] + sign * mag, 0.12, 0.92))
             actual_dl = lightness - float(base[0])
-            if abs(actual_dl) + 1e-9 < min_light:
+            if abs(actual_dl) + 1e-9 < min_lightness:
                 continue
             for step in range(0, 36):
                 hue = base_h + math.radians(8 + step * 5)
@@ -90,20 +105,31 @@ def apply_look(
     base_lab: np.ndarray,
     odd_lab: np.ndarray,
     size: float,
+    params: dict | None = None,
 ) -> dict:
     """Drawable state of one static item. Nothing here depends on time."""
     if kind not in REVEAL_LABELS:
         raise ValueError(f"no measurer for difference {kind!r}")
-    lab = np.array(odd_lab if is_odd and kind in ("hue", "hue_subtle") else base_lab, dtype=np.float64)
-    angle = float(tier.tilt_degrees if is_odd and kind == "tilt" else 0.0)
+    params = params or {}
+    lab = np.array(odd_lab if is_odd and kind == "hue" else base_lab, dtype=np.float64)
+    angle = 0.0
+    if is_odd and kind == "tilt":
+        angle = float(params.get("tilt_degrees", TILT_DEGREES[tier.tilt_rung]))
     dot = None
     if kind == "detail":
-        radius = tier.dot_fraction * (size / 2.0)
-        if not is_odd:
+        item_radius = size / 2.0
+        radius = float(params.get("dot_radius", float(params.get("dot_fraction", DOT_FRACTION)) * item_radius))
+        mode = str(params.get("detail_mode", "moved"))
+        if is_odd and mode == "missing":
+            dot = None
+        elif is_odd and mode == "moved":
+            offset = float(params.get("offset", DETAIL_OFFSET[tier.detail_rung]))
+            direction = int(params.get("direction", 0)) % 8
+            dist = offset * item_radius
+            theta = direction * math.pi / 4.0
+            dot = {"ox": math.cos(theta) * dist, "oy": math.sin(theta) * dist, "radius": radius}
+        else:
             dot = {"ox": 0.0, "oy": 0.0, "radius": radius}
-        elif tier.detail_mode == "moved":
-            shift = 0.34 * (size / 2.0)
-            dot = {"ox": shift, "oy": -shift, "radius": radius}
     shape = "square" if kind == "tilt" else "disc"
     return {
         "kind": kind,
@@ -254,7 +280,9 @@ def _cell_angle(frame: np.ndarray, box: tuple[float, float, float, float], bg_bg
         return 0.0
     bg = np.array(bg_bgr, dtype=np.int16)
     dist = np.max(np.abs(crop.astype(np.int16) - bg), axis=-1)
-    mask = (dist > 18).astype(np.uint8) * 255
+    # The compressed halo rounds a small tilt back to 0. Keep the solid core.
+    mask = (dist > 48).astype(np.uint8) * 255
+    mask = cv2.erode(mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return 0.0
@@ -279,34 +307,45 @@ def measure_tilt(
     return {"odd": odd, "median": median, "delta": abs(odd - median), "angles": angles}
 
 
-def _white_fraction(frame: np.ndarray, x: float, y: float, radius: float) -> float:
-    radius = max(1.0, float(radius))
+def _centroid_offset(frame: np.ndarray, x: float, y: float, item_radius: float) -> float:
+    """Distance of the white-dot centroid from the item center, in radii.
+
+    The dot is the region clearly brighter than the disc. Comparing against the
+    fractional center keeps a centered dot near zero after the 720p re-encode.
+    """
+    item_radius = max(1.0, float(item_radius))
     ix = int(round(x))
     iy = int(round(y))
-    r = int(math.ceil(radius))
+    r = int(math.ceil(item_radius)) + 2
     if iy - r < 0 or ix - r < 0 or iy + r + 1 > frame.shape[0] or ix + r + 1 > frame.shape[1]:
         return 0.0
     crop = frame[iy - r : iy + r + 1, ix - r : ix + r + 1]
     yy, xx = np.ogrid[: crop.shape[0], : crop.shape[1]]
-    circle = (xx - r) ** 2 + (yy - r) ** 2 <= radius * radius
-    white = (crop[..., 0] > 220) & (crop[..., 1] > 220) & (crop[..., 2] > 220)
-    total = int(np.count_nonzero(circle))
-    if total == 0:
+    circle = (xx - r) ** 2 + (yy - r) ** 2 <= (item_radius * 0.92) ** 2
+    luma = 0.114 * crop[..., 0] + 0.587 * crop[..., 1] + 0.299 * crop[..., 2]
+    if not np.any(circle):
         return 0.0
-    return float(np.count_nonzero(white & circle) / total)
+    base = float(np.median(luma[circle]))
+    white = circle & (luma >= base + 60.0) & (crop.min(axis=-1) >= 160)
+    if int(np.count_nonzero(white)) < 3:
+        return 0.0
+    ys, xs = np.nonzero(white)
+    true_x = float(x) - (ix - r)
+    true_y = float(y) - (iy - r)
+    return float(math.hypot(float(xs.mean()) - true_x, float(ys.mean()) - true_y) / item_radius)
 
 
 def measure_detail(
     frame: np.ndarray,
     odd_xy: tuple[float, float],
     other_xy: list[tuple[float, float]],
-    dot_radius: float,
+    item_radius: float,
 ) -> dict:
-    """White-pixel fraction in the center dot. The odd item should be near zero."""
-    odd = _white_fraction(frame, odd_xy[0], odd_xy[1], dot_radius)
-    others = [_white_fraction(frame, x, y, dot_radius) for x, y in other_xy]
-    median = float(np.median(others)) if others else 0.0
-    return {"odd": odd, "median": median, "ratio": (odd / median) if median > 1e-6 else 0.0}
+    """White-dot centroid offset from the item center, divided by the item radius."""
+    odd = _centroid_offset(frame, odd_xy[0], odd_xy[1], item_radius)
+    others = [_centroid_offset(frame, x, y, item_radius) for x, y in other_xy]
+    peak = float(max(others)) if others else 0.0
+    return {"odd": odd, "others": others, "max_other": peak}
 
 
 def paint_synthetic(

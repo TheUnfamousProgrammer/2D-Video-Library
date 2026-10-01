@@ -20,6 +20,7 @@ def test_one_odd_item_and_grid_cells():
     for level in cfg.levels:
         sim = show.levels[level.id]
         assert 0 <= sim.odd_index < level.count
+        assert level.grid in (5, 6, 7)
         assert len(sim.centers) == level.grid * level.grid
         half = level.size / 2.0
         for (cx, cy), box in zip(sim.centers, sim.cells):

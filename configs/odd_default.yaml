@@ -1,6 +1,6 @@
-# Odd One Out, revision 2. Flat fills, a static grid, three levels.
+# Odd One Out, revision 3. Flat fills, a static grid, three levels.
 # Frames are round(seconds * fps). Normal tier:
-# 5+6+7 + three 1.2 s reveals + two 0.2 s dissolves + 2.0 s outro = 24.0 s.
+# 6+7+8 + three 1.2 s reveals + two 0.2 s dissolves + 2.0 s outro = 27.0 s.
 generator: odd
 seed: 7
 tier: normal
@@ -18,27 +18,34 @@ hook: Find the odd one
 cta: Comment your level
 background: "#14171F"
 
+# 1 is easiest. The tables live in code. CVD floor is half the hue distance.
+rung:
+  hue: 2
+  tilt: 3
+  detail: 4
+
 levels:
   - id: 1
     difference: hue
-    grid: 4
-    size: 100
-    timer: 5.0
+    grid: 5
+    size: 90
+    timer: 6.0
   - id: 2
     difference: tilt
-    grid: 5
-    size: 96
-    timer: 6.0
+    grid: 6
+    size: 84
+    timer: 7.0
   - id: 3
     difference: detail
-    grid: 6
-    size: 88
-    timer: 7.0
-  - id: 4
-    difference: hue_subtle
-    grid: 6
-    size: 88
+    grid: 7
+    size: 76
     timer: 8.0
+  - id: 4
+    difference: hue
+    grid: 7
+    size: 76
+    timer: 9.0
+    rung: 5
 
 field:
   x0: 150
@@ -58,6 +65,8 @@ item:
   ring_grow: 0.25
   fade_seconds: 0.15
   fade_alpha: 0.30
+  detail_mode: moved
+  dot_fraction: 0.14
 
 layout:
   safe_x: [130, 950]
@@ -91,47 +100,21 @@ audio:
   tone_seconds: 0.3
   double_tick_window: 2.0
 
-# Easy makes the gap bigger. Hard adds level 4. Neither drops a CVD floor.
+# Easy uses rung 1. Hard adds level 4 at hue rung 5 and otherwise keeps these rungs.
 tiers:
   normal:
     level_ids: [1, 2, 3]
-    hue_min_distance: 0.25
-    hue_min_lightness: 0.15
-    cvd_min_distance: 0.12
-    tilt_degrees: 22
-    tilt_range: [15, 35]
-    dot_fraction: 0.16
-    detail_mode: missing
-    hue_subtle_distance: 0.10
-    hue_subtle_lightness: 0.06
-    hue_subtle_cvd: 0.06
     base_l: 0.72
     base_c: 0.10
   easy:
     level_ids: [1, 2, 3]
-    hue_min_distance: 0.35
-    hue_min_lightness: 0.22
-    cvd_min_distance: 0.12
-    tilt_degrees: 32
-    tilt_range: [15, 35]
-    dot_fraction: 0.22
-    detail_mode: missing
-    hue_subtle_distance: 0.10
-    hue_subtle_lightness: 0.06
-    hue_subtle_cvd: 0.06
+    rung:
+      hue: 1
+      tilt: 1
+      detail: 1
     base_l: 0.72
     base_c: 0.10
   hard:
     level_ids: [1, 2, 3, 4]
-    hue_min_distance: 0.25
-    hue_min_lightness: 0.15
-    cvd_min_distance: 0.12
-    tilt_degrees: 22
-    tilt_range: [15, 35]
-    dot_fraction: 0.16
-    detail_mode: missing
-    hue_subtle_distance: 0.10
-    hue_subtle_lightness: 0.06
-    hue_subtle_cvd: 0.06
     base_l: 0.72
     base_c: 0.10

@@ -9,7 +9,7 @@ def test_ticks_double_in_the_last_two_seconds():
     cfg = load_odd_config("configs/odd_default.yaml")
     events = event_list(cfg)
     ticks = [event["t"] for event in events if event["kind"] == "tick" and event["level"] == 1]
-    assert ticks == [1.0, 2.0, 3.0, 3.5, 4.0, 4.5]
+    assert ticks == [1.0, 2.0, 3.0, 4.0, 4.5, 5.0, 5.5]
     kinds = {event["kind"] for event in events}
     assert "heart" not in kinds
     assert "riser" not in kinds

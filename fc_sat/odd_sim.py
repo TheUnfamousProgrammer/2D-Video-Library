@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from fc_sat.color import lch_to_oklab
-from fc_sat.odd_config import LevelSpec, OddConfig, build_timeline
-from fc_sat.odd_diff import choose_odd_lab
+from fc_sat.odd_config import HUE_LIGHTNESS, LevelSpec, OddConfig, active_rung, build_timeline, cvd_floor, nominal_value
+from fc_sat.odd_diff import DIR_NAMES, choose_odd_lab
 
 
 class ConstraintFailure(Exception):
@@ -118,14 +118,24 @@ def _simulate_once(cfg: OddConfig, level: LevelSpec, seed: int, forbidden: tuple
             raise ConstraintFailure(f"odd cell row {row} col {col} repeats the previous level")
     hue = float(color.uniform(0.0, 2.0 * np.pi))
     base = lch_to_oklab(cfg.tier.base_l, cfg.tier.base_c, hue)
+    rung = active_rung(cfg.tier, level)
+    nominal = nominal_value(level.difference, rung)
     odd_info = None
-    if level.difference in ("hue", "hue_subtle"):
-        odd_info = choose_odd_lab(base, cfg.tier, subtle=level.difference == "hue_subtle")
+    if level.difference == "hue":
+        odd_info = choose_odd_lab(
+            base,
+            min_distance=nominal,
+            min_lightness=HUE_LIGHTNESS,
+            min_cvd=cvd_floor(nominal),
+            chroma=cfg.tier.base_c,
+        )
         odd_lab = odd_info["lab"]
     else:
         odd_lab = np.array(base, dtype=np.float64)
     params = {
         "kind": level.difference,
+        "rung": rung,
+        "nominal": nominal,
         "base_lab": [float(v) for v in base],
         "odd_lab": [float(v) for v in odd_lab],
         "base_hue": hue,
@@ -143,14 +153,19 @@ def _simulate_once(cfg: OddConfig, level: LevelSpec, seed: int, forbidden: tuple
                 "cvd": odd_info["cvd"],
                 "rejected_offsets": odd_info["rejected_offsets"],
                 "requested_distance": odd_info["requested_distance"],
+                "cvd_floor": cvd_floor(nominal),
             }
         )
     if level.difference == "tilt":
-        params["tilt_degrees"] = cfg.tier.tilt_degrees
+        params["tilt_degrees"] = nominal
     if level.difference == "detail":
-        params["dot_fraction"] = cfg.tier.dot_fraction
-        params["detail_mode"] = cfg.tier.detail_mode
-        params["dot_radius"] = cfg.tier.dot_fraction * (level.size / 2.0)
+        direction = int(make_rng(seed, level.id, 3).integers(0, 8))
+        params["offset"] = nominal
+        params["direction"] = direction
+        params["direction_name"] = DIR_NAMES[direction]
+        params["dot_fraction"] = cfg.dot_fraction
+        params["detail_mode"] = cfg.detail_mode
+        params["dot_radius"] = cfg.dot_fraction * (level.size / 2.0)
     half = level.size / 2.0
     for cx, cy in centers:
         if cx - half < cfg.field_x0 or cx + half > cfg.field_x1 or cy - half < cfg.field_y0 or cy + half > cfg.field_y1:
@@ -188,7 +203,8 @@ def simulate_level(
     result, _k, notes = reseed_loop(seed, cfg.max_attempts, attempt)
     result.reseeds = notes
     print(
-        f"  level {level.id} odd cell row {result.row} col {result.col} ({result.phrase}) "
+        f"  level {level.id} rung {result.diff_params['rung']} "
+        f"odd cell row {result.row} col {result.col} ({result.phrase}) "
         f"reseeds={len(notes)}",
         flush=True,
     )

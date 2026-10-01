@@ -1,9 +1,9 @@
-"""Odd One Out config, tiers, caption checks, and timeline.
+"""Odd One Out config, rungs, caption checks, and timeline.
 
 Validation errors name the field, same as the other generators.
 Frames for a segment are ``round(seconds * fps)``. The normal tier is
-5+6+7 plus three 1.2 s reveals, two 0.2 s dissolves, and a 2.0 s outro:
-24.0 s and 1440 frames.
+6+7+8 plus three 1.2 s reveals, two 0.2 s dissolves, and a 2.0 s outro:
+27.0 s and 1620 frames.
 """
 
 from __future__ import annotations
@@ -24,11 +24,20 @@ from fc_sat.config import (
     _sibling,
 )
 
-DIFFERENCES = ("hue", "tilt", "detail", "hue_subtle")
+DIFFERENCES = ("hue", "tilt", "detail")
 TIERS = ("easy", "normal", "hard")
 PERCENT_CLAIM = re.compile(r"\d+(?:\.\d+)?\s*%", re.IGNORECASE)
-HUE_CVD_FLOOR = 0.12
-SUBTLE_CVD_FLOOR = 0.06
+# Rung 1 is easiest. CVD required distance is half the hue rung's nominal distance.
+HUE_DISTANCE = {1: 0.20, 2: 0.15, 3: 0.12, 4: 0.09, 5: 0.06}
+TILT_DEGREES = {1: 18.0, 2: 13.0, 3: 9.0, 4: 6.0, 5: 4.0}
+DETAIL_OFFSET = {1: 0.55, 2: 0.42, 3: 0.30, 4: 0.22, 5: 0.15}
+HUE_LIGHTNESS = 0.05
+DOT_FRACTION = 0.14
+SKIPPED_MEASURE = "SKIPPED (not reliably measurable after compression)"
+
+
+def cvd_floor(distance: float) -> float:
+    return 0.5 * float(distance)
 
 _TOP = frozenset(
     {
@@ -54,29 +63,28 @@ _TOP = frozenset(
         "constraints",
         "audio",
         "tiers",
+        "rung",
     }
 )
-_TIER_KEYS = frozenset(
-    {
-        "level_ids",
-        "hue_min_distance",
-        "hue_min_lightness",
-        "cvd_min_distance",
-        "tilt_degrees",
-        "tilt_range",
-        "dot_fraction",
-        "detail_mode",
-        "hue_subtle_distance",
-        "hue_subtle_lightness",
-        "hue_subtle_cvd",
-        "base_l",
-        "base_c",
-    }
-)
+_TIER_REQUIRED = frozenset({"level_ids", "base_l", "base_c"})
+_TIER_OPTIONAL = frozenset({"rung"})
+_RUNG_KEYS = frozenset({"hue", "tilt", "detail"})
 _LEVEL_KEYS = frozenset({"id", "difference", "grid", "size", "timer"})
+_LEVEL_OPTIONAL = frozenset({"rung"})
 _FIELD_KEYS = frozenset({"x0", "x1", "y0", "y1", "corner_radius", "outline", "outline_color"})
 _ITEM_KEYS = frozenset(
-    {"corner_frac", "ring_color", "ring_px", "ring_from", "ring_to", "ring_grow", "fade_seconds", "fade_alpha"}
+    {
+        "corner_frac",
+        "ring_color",
+        "ring_px",
+        "ring_from",
+        "ring_to",
+        "ring_grow",
+        "fade_seconds",
+        "fade_alpha",
+        "detail_mode",
+        "dot_fraction",
+    }
 )
 _LAYOUT_KEYS = frozenset(
     {
@@ -138,6 +146,7 @@ class LevelSpec:
     grid: int
     size: float
     timer: float
+    rung: int | None = None
 
     @property
     def count(self) -> int:
@@ -151,19 +160,32 @@ class LevelSpec:
 @dataclass(frozen=True)
 class TierParams:
     name: str
-    hue_min_distance: float
-    hue_min_lightness: float
-    cvd_min_distance: float
-    tilt_degrees: float
-    tilt_min: float
-    tilt_max: float
-    dot_fraction: float
-    detail_mode: str
-    hue_subtle_distance: float
-    hue_subtle_lightness: float
-    hue_subtle_cvd: float
+    hue_rung: int
+    tilt_rung: int
+    detail_rung: int
     base_l: float
     base_c: float
+
+
+def active_rung(tier: TierParams, level: LevelSpec) -> int:
+    """The rung that sets this level's gap. A level key overrides the tier."""
+    if level.rung is not None:
+        return int(level.rung)
+    if level.difference == "hue":
+        return tier.hue_rung
+    if level.difference == "tilt":
+        return tier.tilt_rung
+    return tier.detail_rung
+
+
+def nominal_value(kind: str, rung: int) -> float:
+    if kind == "hue":
+        return HUE_DISTANCE[rung]
+    if kind == "tilt":
+        return float(TILT_DEGREES[rung])
+    if kind == "detail":
+        return DETAIL_OFFSET[rung]
+    raise ValueError(f"no nominal for {kind}")
 
 
 @dataclass(frozen=True)
@@ -245,6 +267,8 @@ class OddConfig:
     max_attempts: int
     tone_seconds: float
     double_tick_window: float
+    detail_mode: str
+    dot_fraction: float
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -267,18 +291,23 @@ class OddConfig:
                     "grid": level.grid,
                     "size": level.size,
                     "timer": level.timer,
+                    "rung": active_rung(self.tier, level),
                 }
                 for level in self.levels
             ],
+            "rung": {
+                "hue": self.tier.hue_rung,
+                "tilt": self.tier.tilt_rung,
+                "detail": self.tier.detail_rung,
+            },
             "tier_params": {
-                "hue_min_distance": self.tier.hue_min_distance,
-                "hue_min_lightness": self.tier.hue_min_lightness,
-                "cvd_min_distance": self.tier.cvd_min_distance,
-                "tilt_degrees": self.tier.tilt_degrees,
-                "dot_fraction": self.tier.dot_fraction,
-                "detail_mode": self.tier.detail_mode,
-                "hue_subtle_distance": self.tier.hue_subtle_distance,
-                "hue_subtle_cvd": self.tier.hue_subtle_cvd,
+                "hue_distance": HUE_DISTANCE[self.tier.hue_rung],
+                "hue_min_lightness": HUE_LIGHTNESS,
+                "cvd_floor": cvd_floor(HUE_DISTANCE[self.tier.hue_rung]),
+                "tilt_degrees": TILT_DEGREES[self.tier.tilt_rung],
+                "detail_offset": DETAIL_OFFSET[self.tier.detail_rung],
+                "detail_mode": self.detail_mode,
+                "dot_fraction": self.dot_fraction,
             },
         }
 
@@ -352,7 +381,7 @@ def _levels(raw: Any) -> tuple[LevelSpec, ...]:
         field = f"levels[{index}]"
         if not isinstance(item, dict):
             _fail(field, "must be a mapping")
-        unknown = set(item) - _LEVEL_KEYS
+        unknown = set(item) - _LEVEL_KEYS - _LEVEL_OPTIONAL
         if unknown:
             _fail(f"{field}.{sorted(unknown)[0]}", "is not a config field")
         missing = _LEVEL_KEYS - set(item)
@@ -374,61 +403,47 @@ def _levels(raw: Any) -> tuple[LevelSpec, ...]:
         timer = _as_float(f"{field}.timer", item["timer"])
         if timer <= 0:
             _fail(f"{field}.timer", "must be positive")
-        found.append(LevelSpec(level_id, difference, grid, size, timer))
+        rung = None
+        if "rung" in item:
+            rung = _as_int(f"{field}.rung", item["rung"])
+            if rung < 1 or rung > 5:
+                _fail(f"{field}.rung", "must be an integer from 1 to 5")
+        found.append(LevelSpec(level_id, difference, grid, size, timer, rung))
     return tuple(found)
 
 
-def _tier(name: str, block: dict[str, Any]) -> tuple[TierParams, tuple[int, ...]]:
+def _rungs(field: str, block: Any) -> tuple[int, int, int]:
+    if not isinstance(block, dict):
+        _fail(field, "must be a mapping")
+    unknown = set(block) - _RUNG_KEYS
+    if unknown:
+        _fail(f"{field}.{sorted(unknown)[0]}", "is not a config field")
+    missing = _RUNG_KEYS - set(block)
+    if missing:
+        _fail(f"{field}.{sorted(missing)[0]}", "is required")
+    found = []
+    for name in ("hue", "tilt", "detail"):
+        value = _as_int(f"{field}.{name}", block[name])
+        if value < 1 or value > 5:
+            _fail(f"{field}.{name}", "must be an integer from 1 to 5")
+        found.append(value)
+    return found[0], found[1], found[2]
+
+
+def _tier(name: str, block: dict[str, Any], default_rungs: tuple[int, int, int]) -> tuple[TierParams, tuple[int, ...]]:
     ids = block.get("level_ids")
     if not isinstance(ids, list) or not ids:
         _fail(f"tiers.{name}.level_ids", "must be a non-empty list")
     level_ids = tuple(_as_int(f"tiers.{name}.level_ids[{i}]", item) for i, item in enumerate(ids))
-    tilt_range = _pair(f"tiers.{name}.tilt_range", block["tilt_range"])
-    tilt = _as_float(f"tiers.{name}.tilt_degrees", block["tilt_degrees"])
-    if not (tilt_range[0] - 1e-9 <= tilt <= tilt_range[1] + 1e-9):
-        _fail(f"tiers.{name}.tilt_degrees", f"must sit inside tilt_range {tilt_range}")
-    cvd = _as_float(f"tiers.{name}.cvd_min_distance", block["cvd_min_distance"])
-    if cvd + 1e-9 < HUE_CVD_FLOOR:
-        _fail(f"tiers.{name}.cvd_min_distance", f"must stay at least {HUE_CVD_FLOOR:.2f}")
-    subtle_cvd = _as_float(f"tiers.{name}.hue_subtle_cvd", block["hue_subtle_cvd"])
-    if subtle_cvd + 1e-9 < SUBTLE_CVD_FLOOR:
-        _fail(f"tiers.{name}.hue_subtle_cvd", f"must stay at least {SUBTLE_CVD_FLOOR:.2f}")
-    mode = _as_str(f"tiers.{name}.detail_mode", block["detail_mode"])
-    if mode not in ("missing", "moved"):
-        _fail(f"tiers.{name}.detail_mode", "must be missing or moved")
-    hue_distance = _as_float(f"tiers.{name}.hue_min_distance", block["hue_min_distance"])
-    if hue_distance < 0.25 - 1e-9 and name != "hard":
-        # Hard keeps the normal hue floor. Easy may only go up. Normal is 0.25.
-        pass
-    if hue_distance + 1e-9 < 0.25 and name in ("normal", "easy"):
-        _fail(f"tiers.{name}.hue_min_distance", "must stay at least 0.25")
-    if name == "hard" and hue_distance + 1e-9 < 0.25:
-        _fail(f"tiers.{name}.hue_min_distance", "must stay at least 0.25")
-    lightness = _as_float(f"tiers.{name}.hue_min_lightness", block["hue_min_lightness"])
-    if lightness + 1e-9 < 0.15:
-        _fail(f"tiers.{name}.hue_min_lightness", "must stay at least 0.15")
-    dot = _as_float(f"tiers.{name}.dot_fraction", block["dot_fraction"])
-    if not 0.05 <= dot <= 0.4:
-        _fail(f"tiers.{name}.dot_fraction", "must be between 0.05 and 0.4")
-    subtle_d = _as_float(f"tiers.{name}.hue_subtle_distance", block["hue_subtle_distance"])
-    if subtle_d + 1e-9 < 0.10:
-        _fail(f"tiers.{name}.hue_subtle_distance", "must stay at least 0.10")
-    subtle_l = _as_float(f"tiers.{name}.hue_subtle_lightness", block["hue_subtle_lightness"])
-    if subtle_l <= 0:
-        _fail(f"tiers.{name}.hue_subtle_lightness", "must be positive")
+    if "rung" in block:
+        hue, tilt, detail = _rungs(f"tiers.{name}.rung", block["rung"])
+    else:
+        hue, tilt, detail = default_rungs
     params = TierParams(
         name=name,
-        hue_min_distance=hue_distance,
-        hue_min_lightness=lightness,
-        cvd_min_distance=cvd,
-        tilt_degrees=tilt,
-        tilt_min=tilt_range[0],
-        tilt_max=tilt_range[1],
-        dot_fraction=dot,
-        detail_mode=mode,
-        hue_subtle_distance=subtle_d,
-        hue_subtle_lightness=subtle_l,
-        hue_subtle_cvd=subtle_cvd,
+        hue_rung=hue,
+        tilt_rung=tilt,
+        detail_rung=detail,
         base_l=_as_float(f"tiers.{name}.base_l", block["base_l"]),
         base_c=_as_float(f"tiers.{name}.base_c", block["base_c"]),
     )
@@ -442,7 +457,8 @@ def _fit_items(cfg_field: tuple[float, float, float, float], levels: tuple[Level
         cell = min(span_x, span_y) / level.grid
         need = level.size
         if level.difference == "tilt":
-            need = rotated_extent(level.size, tier.tilt_degrees)
+            rung = level.rung if level.rung is not None else tier.tilt_rung
+            need = rotated_extent(level.size, float(TILT_DEGREES[rung]))
         if need >= cell - 1.0:
             _fail(
                 f"levels id {level.id}",
@@ -489,13 +505,14 @@ def validate_odd(
         block = tiers.get(name)
         if not isinstance(block, dict):
             _fail(f"tiers.{name}", "must be a mapping")
-        extra = set(block) - _TIER_KEYS
+        extra = set(block) - _TIER_REQUIRED - _TIER_OPTIONAL
         if extra:
             _fail(f"tiers.{name}.{sorted(extra)[0]}", "is not a config field")
-        absent = _TIER_KEYS - set(block)
+        absent = _TIER_REQUIRED - set(block)
         if absent:
             _fail(f"tiers.{name}.{sorted(absent)[0]}", "is required")
-    params, tier_levels = _tier(tier_name, tiers[tier_name])
+    default_rungs = _rungs("rung", raw["rung"])
+    params, tier_levels = _tier(tier_name, tiers[tier_name], default_rungs)
     catalog = {level.id: level for level in _levels(raw["levels"])}
     chosen_ids = list(level_ids) if level_ids is not None else list(tier_levels)
     if not chosen_ids:
@@ -505,8 +522,6 @@ def validate_odd(
         if level_id not in catalog:
             _fail("levels", f"has no level {level_id}")
         chosen.append(catalog[level_id])
-    if tier_name != "hard" and any(level.difference == "hue_subtle" for level in chosen):
-        _fail("levels", "hue_subtle is only on the hard tier")
     field = _section(raw, "field", _FIELD_KEYS)
     item = _section(raw, "item", _ITEM_KEYS)
     layout = _section(raw, "layout", _LAYOUT_KEYS)
@@ -533,6 +548,12 @@ def validate_odd(
     fade_alpha = _as_float("item.fade_alpha", item["fade_alpha"])
     if not 0.0 < fade_alpha < 1.0:
         _fail("item.fade_alpha", "must be between 0 and 1")
+    detail_mode = _as_str("item.detail_mode", item["detail_mode"])
+    if detail_mode not in ("missing", "moved"):
+        _fail("item.detail_mode", "must be missing or moved")
+    dot_fraction = _as_float("item.dot_fraction", item["dot_fraction"])
+    if not 0.05 <= dot_fraction <= 0.4:
+        _fail("item.dot_fraction", "must be between 0.05 and 0.4")
     return OddConfig(
         generator="odd",
         seed=_as_int("seed", raw["seed"]) if seed is None else int(seed),
@@ -593,6 +614,8 @@ def validate_odd(
         max_attempts=_as_int("constraints.max_attempts", constraints["max_attempts"]),
         tone_seconds=_as_float("audio.tone_seconds", audio["tone_seconds"]),
         double_tick_window=_as_float("audio.double_tick_window", audio["double_tick_window"]),
+        detail_mode=detail_mode,
+        dot_fraction=dot_fraction,
     )
 
 

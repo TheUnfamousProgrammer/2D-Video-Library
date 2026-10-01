@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fc_sat.odd_config import OddConfig
-from fc_sat.odd_diff import REVEAL_LABELS
+from fc_sat.odd_config import SKIPPED_MEASURE, OddConfig
+from fc_sat.odd_diff import DIR_NAMES, reveal_label
 from fc_sat.odd_sim import Show
 
 
@@ -18,25 +18,29 @@ def mmss(seconds: float) -> str:
 def magnitude_line(cfg: OddConfig, sim) -> str:
     size = sim.level.size
     kind = sim.level.difference
-    if kind in ("hue", "hue_subtle"):
+    rung = int(sim.diff_params.get("rung", 0))
+    nominal = float(sim.diff_params.get("nominal", 0.0))
+    if kind == "hue":
         distance = float(sim.diff_params.get("distance", 0.0))
         light = float(sim.diff_params.get("lightness_delta", 0.0))
         return (
-            f"OKLab distance {distance:.3f}, lightness delta {light:.3f}. "
-            f"This is a color gap on a {size:.0f}px item, not a size fraction."
+            f"rung {rung}, OKLab distance {distance:.3f} (nominal {nominal:.2f}), "
+            f"lightness delta {light:.3f}. This is a color gap on a {size:.0f}px item, not a size fraction."
         )
     if kind == "tilt":
-        degrees = float(cfg.tier.tilt_degrees)
         import math
 
+        degrees = float(sim.diff_params.get("tilt_degrees", nominal))
         angle = math.radians(degrees)
         corner = 0.5 * math.hypot(math.cos(angle) - 1.0, math.sin(angle))
-        return f"tilt {degrees:.0f} deg, corner shift {corner:.2f} of the {size:.0f}px side"
-    dot = float(sim.diff_params.get("dot_radius", cfg.tier.dot_fraction * size / 2.0))
-    mode = cfg.tier.detail_mode
+        return f"rung {rung}, tilt {degrees:.0f} deg, corner shift {corner:.2f} of the {size:.0f}px side"
+    dot = float(sim.diff_params.get("dot_radius", cfg.dot_fraction * size / 2.0))
+    mode = str(sim.diff_params.get("detail_mode", cfg.detail_mode))
+    direction = int(sim.diff_params.get("direction", 0)) % 8
+    offset = float(sim.diff_params.get("offset", nominal))
     return (
-        f"dot diameter {2 * dot:.1f}px is {2 * dot / size:.2f} of the {size:.0f}px item; "
-        f"the odd item's dot is {mode}"
+        f"rung {rung}, dot offset {offset:.2f} of the radius toward {DIR_NAMES[direction]}; "
+        f"dot diameter {2 * dot:.1f}px is {2 * dot / size:.2f} of the {size:.0f}px item; mode {mode}"
     )
 
 
@@ -48,7 +52,7 @@ def answer_lines(cfg: OddConfig, show: Show) -> list[str]:
         reveal = next(segment for segment in show.timeline if segment.kind == "reveal" and segment.level_id == level.id)
         lines.append(
             f"L{level.id}: starts {mmss(play.start_s)}, reveal {mmss(reveal.start_s)}, "
-            f"row {sim.row + 1} column {sim.col + 1} ({sim.phrase}). {REVEAL_LABELS[level.difference]}"
+            f"row {sim.row + 1} column {sim.col + 1} ({sim.phrase}). {reveal_label(level.difference, cfg.detail_mode)}"
         )
     return lines
 
@@ -80,6 +84,7 @@ def write_report(
     timings: list[tuple[str, float]],
     critique: str,
     measured: dict | None = None,
+    ladder_paths: list | None = None,
 ) -> None:
     lines = [
         "# Odd One Out report",
@@ -99,7 +104,9 @@ def write_report(
         lines.append(f"- Items: {level.count} on a {level.grid}x{level.grid} grid, {level.size:.0f}px")
         lines.append(f"- Odd item: index {sim.odd_index}, row {sim.row + 1}, column {sim.col + 1}, {sim.phrase}")
         lines.append(f"- Difference: {magnitude_line(cfg, sim)}")
-        lines.append(f"- Reveal label: {REVEAL_LABELS[level.difference]}")
+        lines.append(f"- Reveal label: {reveal_label(level.difference, cfg.detail_mode)}")
+        if int(sim.diff_params.get("rung", 0)) >= 5:
+            lines.append(f"- Flag: {SKIPPED_MEASURE}")
         if sim.reseeds:
             lines.append(f"- Reseeds: {len(sim.reseeds)} ({'; '.join(sim.reseeds)})")
         else:
@@ -115,6 +122,14 @@ def write_report(
             f"- Drivers: {level.count} items share cell centers and one base color. "
             f"Odd cell only changes {level.difference}."
         )
+        lines.append("")
+    if ladder_paths:
+        lines.append("## Ladder")
+        lines.append("")
+        lines.append("Stills only. No video. Open `ladder/index.html` to time yourself.")
+        lines.append("")
+        for item in ladder_paths:
+            lines.append(f"- `{item}`")
         lines.append("")
     if timings:
         lines.append("## Timings")

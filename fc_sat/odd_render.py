@@ -9,7 +9,7 @@ import numpy as np
 
 from fc_sat.color import hex_to_rgb
 from fc_sat.odd_config import OddConfig, Segment, build_timeline
-from fc_sat.odd_diff import REVEAL_LABELS, apply_look, paint_item
+from fc_sat.odd_diff import apply_look, paint_item, reveal_label
 from fc_sat.odd_layout import hud_boxes
 from fc_sat.odd_sim import Show
 from fc_sat.visual import composite_rgba, find_font, raster_text_flat
@@ -80,7 +80,7 @@ class OddRenderer:
             level = self.show.levels[segment.level_id]
             local = t - segment.start_s
             self._draw_level(frame, level, pop=1.0, reveal_u=local)
-            self._draw_hud(frame, level.level.id, REVEAL_LABELS[level.level.difference], 0.0)
+            self._draw_hud(frame, level.level.id, reveal_label(level.level.difference, self.cfg.detail_mode), 0.0)
         elif segment.kind == "dissolve":
             outgoing = self.show.levels[segment.level_id]
             incoming_id = self._next_level(segment.level_id)
@@ -117,7 +117,7 @@ class OddRenderer:
     def _caption(self, level_id: int, local: float, *, reveal: bool) -> str:
         if reveal:
             level = self.show.levels[level_id]
-            return REVEAL_LABELS[level.level.difference]
+            return reveal_label(level.level.difference, self.cfg.detail_mode)
         if level_id == self.cfg.levels[0].id and local < self.cfg.hook_seconds:
             return self.cfg.hook
         return ""
@@ -139,6 +139,7 @@ class OddRenderer:
                 base_lab=sim.base_lab,
                 odd_lab=sim.odd_lab,
                 size=sim.level.size,
+                params=sim.diff_params,
             )
             if uniform or reveal_u is None or index == sim.odd_index:
                 alpha = pop
@@ -312,3 +313,54 @@ def contact_sheet(renderer: OddRenderer, path) -> None:
         sheet[row * 480 : (row + 1) * 480, col * 270 : (col + 1) * 270] = cell
     cv2.imwrite(str(path), sheet)
     print(f"contact {path}", flush=True)
+
+
+def write_ladder(cfg: OddConfig, dest) -> list:
+    """Clean puzzle stills for every type and rung. No highlight and no video."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    from fc_sat.odd_sim import simulate_show
+
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    by_id = {level.id: level for level in cfg.levels}
+    kinds = []
+    for kind, level_id in (("hue", 1), ("tilt", 2), ("detail", 3)):
+        level = by_id.get(level_id)
+        if level is None or level.difference != kind:
+            raise RuntimeError(f"ladder needs level {level_id} ({kind})")
+        kinds.append((kind, level))
+    written = []
+    answers = ["# Ladder answers", ""]
+    figures = []
+    for kind, template in kinds:
+        for rung in range(1, 6):
+            level = replace(template, rung=rung)
+            one = replace(cfg, levels=(level,), seed=cfg.seed + 100 * rung + level.id)
+            show = simulate_show(one)
+            renderer = OddRenderer(one, show, preview=False)
+            frame = renderer.render_time(_settled_time(one, level.id))
+            name = f"{kind}_rung{rung}_{level.count}items.png"
+            path = dest / name
+            cv2.imwrite(str(path), frame)
+            sim = show.levels[level.id]
+            answers.append(f"- {name}: row {sim.row + 1}, column {sim.col + 1} ({sim.phrase})")
+            figures.append(f'<figure><img src="{name}" alt=""><figcaption>{name}</figcaption></figure>')
+            written.append(path)
+            print(f"ladder {name} row {sim.row + 1} col {sim.col + 1}", flush=True)
+    answers.append("")
+    (dest / "ANSWERS.md").write_text("\n".join(answers), encoding="utf-8")
+    html = (
+        '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        "<title>Odd One Out ladder</title>\n<style>\n"
+        "body { margin: 24px; background: #14171F; color: #fff; font-family: sans-serif; }\n"
+        ".grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }\n"
+        "figure { margin: 0; }\nimg { width: 100%; height: auto; }\n"
+        "figcaption { font-size: 13px; margin-top: 4px; }\n"
+        "</style>\n</head>\n<body>\n<h1>Odd One Out ladder</h1>\n<div class=\"grid\">\n"
+        + "\n".join(figures)
+        + "\n</div>\n</body>\n</html>\n"
+    )
+    (dest / "index.html").write_text(html, encoding="utf-8")
+    return written

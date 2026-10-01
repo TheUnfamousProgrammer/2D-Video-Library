@@ -96,7 +96,7 @@ def math_layout_failures(cfg: OddConfig, scale: float = 1.0) -> list[str]:
         ("", "8", False),
         ("It was a different color", "0", False),
         ("It was tilted", "1", False),
-        ("It had no dot", "2", False),
+        ("The dot was off center", "2", False),
         ("", "", True),
     ]
     for caption, seconds, outro in samples:
