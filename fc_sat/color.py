@@ -68,6 +68,29 @@ def oklab_to_rgb_u8(lab: np.ndarray) -> np.ndarray:
     return (srgb * 255.0 + 0.5).astype(np.uint8)
 
 
+def dominant_colors(rgb: np.ndarray, k: int = 3, seed: int = 0) -> np.ndarray:
+    """Seeded k-means. Returns ``(k, 3)`` uint8 RGB centers."""
+    flat = np.asarray(rgb, dtype=np.float64).reshape(-1, 3)
+    if flat.shape[0] == 0:
+        return np.zeros((k, 3), dtype=np.uint8)
+    rng = np.random.Generator(np.random.PCG64(seed))
+    if flat.shape[0] > 2500:
+        flat = flat[rng.choice(flat.shape[0], 2500, replace=False)]
+    centers = flat[rng.choice(flat.shape[0], size=min(k, flat.shape[0]), replace=False)].copy()
+    if len(centers) < k:
+        extra = np.repeat(centers[:1], k - len(centers), axis=0)
+        centers = np.vstack([centers, extra])
+    labels = np.zeros(flat.shape[0], dtype=np.int32)
+    for _ in range(8):
+        dist = ((flat[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+        labels = dist.argmin(axis=1)
+        for index in range(k):
+            group = flat[labels == index]
+            if len(group):
+                centers[index] = group.mean(axis=0)
+    return np.clip(np.rint(centers), 0, 255).astype(np.uint8)
+
+
 def palette_bgr(stops: tuple[str, ...], count: int) -> np.ndarray:
     """Return (count, 3) uint8 BGR colors, smoothly spaced across the stops."""
     rgb = np.stack([_srgb_to_linear(hex_to_rgb(stop)) for stop in stops], axis=0)

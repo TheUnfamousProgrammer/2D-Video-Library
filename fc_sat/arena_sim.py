@@ -641,6 +641,7 @@ def _integrate(
     trace_xy = [] if record_trace else None
     trace_ang = [] if record_trace else None
     trace_alive = [] if record_trace else None
+    trace_cameo = [] if record_trace else None
     country_count = len(cfg.countries)
     for step in range(steps):
         time = step * dt
@@ -785,15 +786,22 @@ def _integrate(
             trace_xy.append(xy)
             trace_ang.append(ang)
             trace_alive.append(alive)
+            if cameo is None:
+                trace_cameo.append((0.0, 0.0, 0.0))
+            else:
+                trace_cameo.append((cameo.x, cameo.y, 1.0 if cameo.alive else 0.0))
         if t_win is not None and time > t_win + 1.0 and time > cfg.win_window[1]:
             break
     elims.sort(key=lambda item: (item.time, item.index))
     trace = None
     if record_trace:
+        cameo_rows = np.asarray(trace_cameo, dtype=np.float64)
         trace = {
             "xy": np.stack(trace_xy),
             "angle": np.stack(trace_ang),
             "alive": np.stack(trace_alive),
+            "cameo_xy": cameo_rows[:, :2],
+            "cameo_alive": cameo_rows[:, 2] > 0.5,
         }
     return SimResult(
         seed=seed,
