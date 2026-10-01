@@ -391,6 +391,16 @@ def loudness_loop(
     )
 
 
+def finish_broadcast(audio: np.ndarray, sr: int = SR) -> tuple[np.ndarray, float, float]:
+    """DC removal, 5 ms edge fades, then the shared loudness loop. The ending stays audible."""
+    x = np.array(audio, dtype=np.float64, copy=True)
+    if x.ndim != 2 or x.shape[1] != 2:
+        raise RuntimeError("finish_broadcast expects stereo audio shaped (samples, 2)")
+    x -= np.mean(x, axis=0, keepdims=True)
+    _fade_edges(x, sr, 0.005)
+    return loudness_loop(x, sr, peak_fn=true_peak_linear, zero_tail=0)
+
+
 def master(audio: np.ndarray, sr: int = SR) -> tuple[np.ndarray, float, float]:
     """Fades and the zero tail happen before the loudness loop. See module docstring."""
     x = np.array(audio, dtype=np.float64, copy=True)
