@@ -83,7 +83,7 @@ layout:
   outro_px: 48
   # 1450 collides with pips at 1440, so the CTA sits on the right of that row.
   cta_y: 1450
-  cta_px: 40
+  cta_px: 36
   cta_x: [560, 940]
   hook_seconds: 3.0
   pause_caption_seconds: 2.5

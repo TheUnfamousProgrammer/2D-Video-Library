@@ -68,6 +68,61 @@ def oklab_to_rgb_u8(lab: np.ndarray) -> np.ndarray:
     return (srgb * 255.0 + 0.5).astype(np.uint8)
 
 
+def lch_to_oklab(lightness: float, chroma: float, hue: float) -> np.ndarray:
+    """OKLab LCh (hue in radians) to an OKLab vector."""
+    return np.array(
+        [lightness, chroma * np.cos(hue), chroma * np.sin(hue)],
+        dtype=np.float64,
+    )
+
+
+def oklab_delta(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.linalg.norm(np.asarray(a, dtype=np.float64) - np.asarray(b, dtype=np.float64)))
+
+
+# Machado, Oliveira, Fernandes 2009, severity 1.0, applied to linear RGB.
+# Each row sums to 1, so a neutral stays neutral.
+CVD_MATRICES = {
+    "protan": np.array(
+        [
+            [0.152286, 1.052583, -0.204868],
+            [0.114503, 0.786281, 0.099216],
+            [-0.003882, -0.048116, 1.051998],
+        ],
+        dtype=np.float64,
+    ),
+    "deutan": np.array(
+        [
+            [0.367322, 0.860646, -0.227968],
+            [0.280085, 0.672501, 0.047413],
+            [-0.011820, 0.042940, 0.968881],
+        ],
+        dtype=np.float64,
+    ),
+    "tritan": np.array(
+        [
+            [1.255528, -0.076749, -0.178779],
+            [-0.078411, 0.930809, 0.147602],
+            [0.004733, 0.691367, 0.303900],
+        ],
+        dtype=np.float64,
+    ),
+}
+
+
+def cvd_oklab(lab: np.ndarray, kind: str) -> np.ndarray:
+    """Simulate one CVD matrix and return the OKLab of the simulated linear RGB."""
+    if kind not in CVD_MATRICES:
+        raise ValueError(f"unknown CVD kind {kind!r}")
+    linear = _oklab_to_linear(np.asarray(lab, dtype=np.float64))
+    simulated = np.clip(CVD_MATRICES[kind] @ linear, 0.0, None)
+    return _linear_to_oklab(simulated)
+
+
+def cvd_distance(lab_a: np.ndarray, lab_b: np.ndarray, kind: str) -> float:
+    return oklab_delta(cvd_oklab(lab_a, kind), cvd_oklab(lab_b, kind))
+
+
 def dominant_colors(rgb: np.ndarray, k: int = 3, seed: int = 0) -> np.ndarray:
     """Seeded k-means. Returns ``(k, 3)`` uint8 RGB centers."""
     flat = np.asarray(rgb, dtype=np.float64).reshape(-1, 3)
