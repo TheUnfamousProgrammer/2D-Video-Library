@@ -1,0 +1,14 @@
+hook: A
+seed: 1000
+reply_commitment: true
+takes: 3
+concurrency: 2
+timeout_s: 60
+language_code: en
+apply_text_normalization: "off"
+stability: 0.5
+similarity_boost: 0.75
+atempo_max: 1.06
+atempo_exempt: [L8]
+output: out/collatz.mp4
+voice_settings_note: "style and speed are not sent. v4 rejects them on some plans."
