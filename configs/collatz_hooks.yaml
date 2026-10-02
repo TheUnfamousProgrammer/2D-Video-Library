@@ -1,0 +1,23 @@
+variants:
+  A:
+    name: Always
+    captions:
+      - {t: 0.00, text: "PICK ANY NUMBER", claims: []}
+      - {t: 1.10, text: "IT ALWAYS ENDS AT 1", claims: [ends_at_one]}
+    lines: [L1, L2]
+  B:
+    name: Mystery
+    captions:
+      - {t: 0.00, text: "ONE RULE. NOBODY KNOWS WHY.", claims: [c_unproven, ends_at_one]}
+    vo: "One rule. Every number ends at one. And nobody knows why."
+    claims: [c_unproven, ends_at_one]
+    offset: 0.10
+    slot_max_s: 2.30
+  C:
+    name: Challenge
+    captions:
+      - {t: 0.00, text: "CAN YOU BREAK THIS RULE?", claims: []}
+    vo: "Pick any number. Try to break this rule."
+    claims: []
+    offset: 0.10
+    slot_max_s: 2.20
