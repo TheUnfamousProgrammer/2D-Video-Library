@@ -360,11 +360,13 @@ def loudness_loop(
     *,
     peak_fn=true_peak_linear,
     zero_tail: int = 0,
+    ceiling: float = CEILING,
 ) -> tuple[np.ndarray, float, float]:
-    """At most 5 iterations: gain toward -14 LUFS, soft-knee, -1 dBTP, re-measure.
+    """At most 5 iterations: gain toward -14 LUFS, soft-knee, then the ceiling, re-measure.
 
     ``peak_fn`` returns a linear true-peak. ``zero_tail`` samples are forced to
     zero after every limiter pass so a silent ending stays part of the measurement.
+    ``ceiling`` defaults to -1 dBTP. A lower ceiling leaves room for an AAC encode.
     """
     x = np.array(audio, dtype=np.float64, copy=True)
     if x.ndim != 2 or x.shape[1] != 2:
@@ -373,18 +375,19 @@ def loudness_loop(
     last_lufs = float("nan")
     last_tp = float("nan")
     tail = min(int(zero_tail), len(x))
+    limit_db = 20.0 * math.log10(ceiling)
     for _ in range(5):
         lufs = float(meter.integrated_loudness(x))
         if not math.isfinite(lufs):
             raise RuntimeError("integrated loudness is not finite; the mix is silent or invalid")
         gain = 10.0 ** ((-14.0 - lufs) / 20.0)
         x *= gain
-        x = _soft_limit(x, CEILING, peak_fn)
+        x = _soft_limit(x, ceiling, peak_fn)
         if tail:
             x[-tail:] = 0.0
         last_lufs = float(meter.integrated_loudness(x))
         last_tp = peak_db(x, peak_fn)
-        if math.isfinite(last_lufs) and abs(last_lufs + 14.0) <= 0.5 and last_tp <= -1.0 + 1e-6:
+        if math.isfinite(last_lufs) and abs(last_lufs + 14.0) <= 0.5 and last_tp <= limit_db + 1e-6:
             return x, last_lufs, last_tp
     raise RuntimeError(
         f"loudness loop failed after 5 iterations: LUFS={last_lufs:.3f} true_peak={last_tp:.3f} dBTP"

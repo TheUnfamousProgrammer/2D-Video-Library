@@ -129,7 +129,8 @@ def master(audio: np.ndarray, sr: int = SR, tail_frames: int = 18) -> tuple[np.n
     tail = tail_frames * (sr // 60)
     if tail:
         x[-tail:] = 0.0
-    return loudness_loop(x, sr)
+    # -2.3 dBTP on the wav leaves room for the AAC encode to stay at or under -1 dBTP.
+    return loudness_loop(x, sr, ceiling=10.0 ** (-2.3 / 20.0))
 
 
 def _arp_freq(events: dict, frame: int) -> float:

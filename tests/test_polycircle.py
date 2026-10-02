@@ -201,3 +201,51 @@ def test_timeline_event_counts():
     payload = timeline.to_json()
     assert payload["adds"][0]["frame"] == 24
     assert payload["doublings"][-1]["n_after"] == 6_291_456
+
+
+@pytest.fixture(scope="module")
+def mixed():
+    from fc_sat.polycircle_audio import mix
+    from fc_sat.polycircle_timeline import build_timeline
+
+    timeline = build_timeline()
+    audio, sfx, lufs, peak = mix(timeline.to_json(), seed=timeline.config.seed, n_frames=timeline.n_frames)
+    return timeline, audio, sfx, lufs, peak
+
+
+def test_mix_length_loudness_onset_and_tail(mixed):
+    import numpy as np
+
+    from fc_sat.polycircle_audio import events_aligned, onset_sample
+
+    timeline, audio, _sfx, lufs, peak = mixed
+    assert len(audio) == 1824 * 800
+    assert abs(float(lufs) + 14) <= 0.5
+    assert float(peak) <= -1.0
+    assert float(np.max(np.abs(audio))) <= 1.0
+    assert onset_sample(audio) <= 48
+    assert float(np.max(np.abs(audio[-18 * 800 :]))) == 0.0
+    missing = events_aligned(audio, timeline.kicks + timeline.arp + timeline.bells)
+    assert missing == []
+
+
+def test_sidechain_ducks_and_releases():
+    import numpy as np
+
+    from fc_sat.polycircle_audio import sidechain
+
+    bus = np.ones((48000, 2), dtype=np.float64)
+    ducked = sidechain(bus, [0], start=0, end=24)
+    assert ducked[0, 0] == pytest.approx(10 ** (-8 / 20), rel=1e-3)
+    assert ducked[int(0.12 * 48000), 0] == pytest.approx(1.0, abs=0.02)
+
+
+def test_postkit_lints_clean():
+    from fc_sat.polycircle_claims import load_claims
+    from fc_sat.polycircle_post import lint_post, titles
+
+    book = load_claims()
+    assert lint_post(book) == []
+    for title, _claims in titles(book):
+        assert len(title) <= 60
+        assert not title.isupper()

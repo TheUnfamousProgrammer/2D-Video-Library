@@ -16,11 +16,15 @@ from pathlib import Path
 
 from PIL import Image
 
+from fc_sat.audio import write_wav
 from fc_sat.encode import pipe_raw_bgr
+from fc_sat.polycircle_audio import master, mix, onset_sample, sync_rows
 from fc_sat.polycircle_claims import evaluate, load_claims, render_report
 from fc_sat.polycircle_doctor import doctor
+from fc_sat.polycircle_post import lint_post, render_postkit
 from fc_sat.polycircle_render import PolyRenderer
 from fc_sat.polycircle_text import lint_script, load_script
+from fc_sat.polycircle_verify import verify
 from fc_sat.polycircle_timeline import (
     build_timeline,
     facts_markdown,
@@ -74,6 +78,27 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "hooks":
         code = _hooks()
         log.mark("hooks")
+        return code
+    if args.mode == "audio":
+        code = _audio()
+        log.mark("audio")
+        return code
+    if args.mode == "preview":
+        code = _preview(args.hook, Path(args.out or "out/polycircle_preview.mp4"))
+        log.mark("preview")
+        return code
+    if args.mode == "postkit":
+        code = _postkit()
+        log.mark("postkit")
+        return code
+    if args.mode == "verify":
+        target = Path(args.out) if args.out else None
+        code = verify(target)
+        log.mark("verify")
+        return code
+    if args.mode == "full":
+        code = _full(args.hook, Path(args.out or "out/polycircle.mp4"))
+        log.mark("full")
         return code
     print(f"{args.mode} is not built yet", file=sys.stderr)
     return 2
@@ -156,27 +181,111 @@ def _animatic(hook: str, output: Path) -> int:
     return 0
 
 
+def _mix_files() -> tuple[Path, Path, float, float]:
+    timeline = build_timeline()
+    full, sfx, lufs, peak = mix(timeline.to_json(), seed=timeline.config.seed, n_frames=timeline.n_frames)
+    folder = ROOT / "out"
+    folder.mkdir(parents=True, exist_ok=True)
+    music = folder / "polycircle.wav"
+    off_audio, off_lufs, off_peak = master(sfx)
+    music_off = folder / "polycircle.music_off.wav"
+    write_wav(str(music), full)
+    write_wav(str(music_off), off_audio)
+    rows = sync_rows(timeline.to_json())
+    (folder / "sync.md").write_text("# Sync\n\n" + "\n".join(rows) + "\n")
+    onset = onset_sample(full)
+    print(f"loudness {lufs:.2f} LUFS, true peak {peak:.2f} dBTP, onset sample {onset}")
+    print(f"music-off {off_lufs:.2f} LUFS, true peak {off_peak:.2f} dBTP")
+    print(f"wrote {music}")
+    print(f"wrote {music_off}")
+    print(f"wrote {folder / 'sync.md'}")
+    return music, music_off, lufs, peak
+
+
+def _audio() -> int:
+    _mix_files()
+    return 0
+
+
+def _encode(renderer: PolyRenderer, indices: list[int], output: Path, audio: Path | None, fps: int, label: str) -> None:
+    def frames():
+        for index, frame in enumerate(indices):
+            if index % 60 == 0:
+                print(f"{label} {index}/{len(indices)}", flush=True)
+            yield renderer.render(frame)
+
+    with Heartbeat(f"{label} still rendering"):
+        pipe_raw_bgr(
+            frames(),
+            output,
+            width=renderer.width,
+            height=renderer.height,
+            fps=fps,
+            audio_path=audio,
+            preset="veryfast" if renderer.width < 1080 else "slow",
+            n_frames=len(indices),
+        )
+    print(f"wrote {output}")
+
+
 def _hooks() -> int:
     timeline = build_timeline()
+    music, _off, _lufs, _peak = _mix_files()
     folder = ROOT / "out" / "hooks"
     folder.mkdir(parents=True, exist_ok=True)
     count = 105
     indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
     for hook in ("A", "B", "C"):
         renderer = PolyRenderer(timeline, width=540, height=960, hook=hook)
-        output = folder / f"hook_{hook}.mp4"
-
-        def frames(renderer=renderer):
-            for index, frame in enumerate(indices):
-                if index % 30 == 0:
-                    print(f"hook {hook} {index}/{count}", flush=True)
-                yield renderer.render(frame)
-
-        pipe_raw_bgr(frames(), output, width=540, height=960, fps=30, audio_path=None, preset="veryfast", n_frames=count)
-        print(f"wrote {output} (silent; audio is muxed after the mix exists)")
+        _encode(renderer, indices, folder / f"hook_{hook}.mp4", music, 30, f"hook {hook}")
     strip = PolyRenderer(timeline, width=360, height=640, hook="A")
     _sheet(strip, [0, 30, 60, 120], folder / "thumb_strip.png")
     return 0
+
+
+def _preview(hook: str, output: Path) -> int:
+    timeline = build_timeline()
+    music, music_off, _lufs, _peak = _mix_files()
+    renderer = PolyRenderer(timeline, width=540, height=960, hook=hook)
+    count = 912
+    indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
+    _encode(renderer, indices, output, music, 30, "preview")
+    off = output.with_name(output.stem + ".music_off.mp4")
+    _encode(renderer, indices, off, music_off, 30, "preview music-off")
+    return 0
+
+
+def _full(hook: str, output: Path) -> int:
+    timeline = build_timeline()
+    music, music_off, _lufs, _peak = _mix_files()
+    renderer = PolyRenderer(timeline, width=1080, height=1920, hook=hook)
+    heavy = renderer.profile_ms()
+    print(f"profile: {heavy:.0f} ms; eta {heavy * timeline.n_frames / 60000:.1f} min", flush=True)
+    indices = list(range(timeline.n_frames))
+    _encode(renderer, indices, output, music, 60, "full")
+    _encode(renderer, indices, output.with_name(output.stem + ".music_off.mp4"), music_off, 60, "full music-off")
+    return 0
+
+
+def _postkit() -> int:
+    book = load_claims()
+    errors = lint_post(book)
+    for error in errors:
+        print(error)
+    folder = ROOT / "out"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "postkit.md"
+    path.write_text(render_postkit(book))
+    print(f"wrote {path}")
+    timeline = build_timeline()
+    renderer = PolyRenderer(timeline, width=1080, height=1920)
+    thumbs = folder / "thumbs"
+    thumbs.mkdir(parents=True, exist_ok=True)
+    for name, frame in (("drop", 768), ("zoom", 954), ("sixtyone", 1488)):
+        image = Image.fromarray(renderer.render(frame)[:, :, ::-1])
+        image.save(thumbs / f"{name}.png")
+        print(f"wrote {thumbs / f'{name}.png'}")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

@@ -457,3 +457,52 @@ Mute the first 2 seconds and watch it at thumb distance. `hooks` writes a 540x96
 - The promise is clear in the first 2 seconds.
 - The voiceover is intelligible on a phone speaker.
 - The ending stays open: the chord has no third, and the last line is "Pick another number."
+
+## Polycircle
+
+A 30.4 s vertical Short. A square gains one side on each beat, then faster, until it looks like a circle. A zoom shows it is still a polygon. The sides then double until the gap is gone, and the last beat snaps back to the square so the video loops. The picture is drawn with skia (pycairo if skia is missing, otherwise Pillow at 2x) and piped through the shared BT.709 ffmpeg command. Other generators are not part of this pipeline.
+
+```bash
+python make_polycircle.py doctor
+python make_polycircle.py facts
+python make_polycircle.py timeline
+python make_polycircle.py animatic
+python make_polycircle.py hooks
+python make_polycircle.py audio
+python make_polycircle.py preview --hook A --out out/polycircle_preview.mp4
+python make_polycircle.py postkit
+python make_polycircle.py verify --out out/polycircle_preview.mp4
+python make_polycircle.py full --approved --hook A --out out/polycircle.mp4
+```
+
+`full` is refused without `--approved`. Draft encodes (animatic, hooks, preview) use ffmpeg preset `veryfast`. The full file uses `slow`. The shared pipe writes `.{stem}.partial.mp4` and renames it into place only after ffmpeg exits 0. Ctrl+C deletes the partial file.
+
+### Defaults
+
+Claims live in `configs/polycircle_claims.yaml`. `configs/claims.yaml` belongs to Collatz, so this film does not use it. On-screen text is `configs/polycircle_text.yaml`. The default hook is A. Tempo is 150 bpm, which lands on exact frames (24 per beat, 96 per bar). Other tempos snap to the nearest frame and `facts` prints the maximum snap error, which must stay at or under half a frame.
+
+Bar colors are the eight hues in the config, shifted in OKLab so their lightness stays within 0.03. The camera's "screen center" is the anchor at (540, 910), the polygon center, not the canvas midline at y=960. At 36x zoom the top of the circle sits on that anchor. The gold dimension line is drawn 36 px to the right of the center column so the gap measurement stays clean. Gap labels always use the 1080 px frame numbers, including in the half-resolution preview. The line "THE GAP KEEPS SHRINKING" is wrapped so each line stays at or under 22 characters.
+
+Rotation speed rises from about 30 deg/s to about 150 deg/s and then eases to a stop at frame 864. A single scale (printed by `facts`) makes the freeze angle exact and makes frame 0 match that angle modulo a quarter turn, which is the square's symmetry. The opening shape is a diamond, a vertex near the top, and frame 1823 matches frame 0.
+
+"NEVER" is at frame 1632, which is 27.2 s, because bar 18 starts there. The retention map uses that computed time. The infinity sign is the font glyph when JetBrains Mono has it, and a vector lemniscate otherwise. The music-off file is the sound-effects bus only (impacts, whoosh, risers, bells, ticks, the chime, the tape stop, and the reverse cymbal), mastered the same way as the full mix. A 10 metre circle needs 158 sides before the gap is under 1 millimetre; that reply is in the post kit.
+
+### Claims
+
+Every number on screen, in a title, or in the description comes from the claims file and is recomputed on each `facts` run. A digit sequence that does not map to a claim fails the lint. The report is `out/claims_report.md`.
+
+### Hook lab
+
+Mute the video, watch the first 2 seconds at thumb distance, and pick the clearest promise. `hooks` writes the first 3.5 s of variants A, B, and C at 540x960 and 30 fps, with the kick on the first frame, plus a muted 360 px strip of frames at 0.0, 0.5, 1.0, and 2.0 s. The first new side arrives at 0.4 s. The final render takes `--hook A|B|C`.
+
+### Posting
+
+`postkit` writes `out/postkit.md` from the claims, and stills of the drop, the zoom hold, and the 61 frame in `out/thumbs/`. Upload with #Shorts. Set the audience. On the copyright and altered-content questions, the music is original and there is no third-party footage. Pin comment A. In YouTube Studio, read Viewed vs Swiped away and the retention graph against `out/retention_map.md`. If swipe-away is high, post the next hook variant as its own upload at least a day later.
+
+### Phone checklist
+
+- The hook is readable on a phone with the sound off.
+- The fast add phases, including the 3-frame steps, stay readable.
+- The sub-bass is audible on a phone speaker.
+- The loop feels seamless.
+- The ending lands: the square returns, and the next kick would fall on the seam.
