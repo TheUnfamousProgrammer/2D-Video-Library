@@ -1,0 +1,13 @@
+# User picks. Defaults are plain spellings until an audition choice is stored.
+# `python make_collatz.py vo-select Collatz=respell` writes the pick and does not touch the others.
+picks:
+  Collatz: plain
+  sextillion: plain
+variants:
+  Collatz:
+    - {id: plain, text: "Collatz"}
+    - {id: respell, text: "Koll-ahts"}
+    - {id: ipa, text: "/ˈkɒlæts/"}
+  sextillion:
+    - {id: plain, text: "sextillion"}
+    - {id: respell, text: "sek-STILL-yun"}

@@ -1,0 +1,3 @@
+# Line takes chosen with `vo-select`. Empty until the user picks.
+# Generation never overwrites a key that is already set.
+picks: {}
