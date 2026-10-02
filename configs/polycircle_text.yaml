@@ -1,0 +1,66 @@
+# On-screen copy. Top lines are at most 22 characters after claim substitution.
+# Digits survive only when the card names the claim that computed them.
+# B15 is wrapped so "THE GAP KEEPS SHRINKING" stays inside the 22-character line.
+hooks:
+  A:
+    - "HOW MANY SIDES"
+    - "BEFORE A SQUARE"
+    - "BECOMES A CIRCLE?"
+  B:
+    - "SQUARE TO CIRCLE:"
+    - "HOW MANY SIDES?"
+  C:
+    - "KEEP ADDING SIDES."
+    - "WHEN IS IT A CIRCLE?"
+cards:
+  - id: looks
+    start: 768
+    end: 876
+    lines: ["IT LOOKS", "LIKE A CIRCLE"]
+  - id: zoom
+    start: 876
+    end: 948
+    lines: ["ZOOM IN"]
+  - id: still
+    start: 948
+    end: 960
+    lines: ["STILL A POLYGON"]
+  - id: double
+    start: 960
+    end: 1344
+    lines: ["DOUBLE THE SIDES"]
+  - id: shrink
+    start: 1344
+    end: 1440
+    lines: ["THE GAP KEEPS", "SHRINKING"]
+  - id: tell
+    start: 1440
+    end: 1632
+    lines: ["AT {n_fool} SIDES", "YOU CAN'T TELL"]
+    gold: ["{n_fool}"]
+    claims: [n_fool]
+  - id: never
+    start: 1632
+    end: 1728
+    lines: ["IN MATH:", "NEVER."]
+  - id: closer
+    start: 1728
+    end: 1800
+    lines: ["ONLY CLOSER."]
+subs:
+  - id: gap_zoom
+    start: 948
+    end: 1176
+    fade: [1152, 1176]
+    template: "GAP {gap} PX AT {zoom}x"
+    dynamic: zoom_gap
+  - id: gap_end
+    start: 1344
+    end: 1440
+    template: "GAP {gap_end} PX"
+    claims: [gap_end]
+  - id: gap_61
+    start: 1440
+    end: 1632
+    template: "GAP {gap_61} PX ON THIS {screen_px} PX SCREEN"
+    claims: [gap_61, screen_px]

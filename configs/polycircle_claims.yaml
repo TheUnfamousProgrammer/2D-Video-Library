@@ -1,0 +1,217 @@
+# Numbers the polycircle short is allowed to say.
+# configs/claims.yaml belongs to the Collatz generator, so this book has its own file.
+# Computed values are checked again on every facts run.
+whitelist: []
+claims:
+  n_fool:
+    type: computed
+    text: "61 sides is the first count whose gap is at most half a pixel"
+    value: 61
+    source: "smallest n with R*(1-cos(pi/n)) <= 0.5 at R=370"
+    surfaces: ["61"]
+    used_in: [b16, titles, description, comment]
+    fn: first_n
+    args: [370, 0.5]
+  gap_60:
+    type: computed
+    text: "60 sides still leave more than half a pixel of gap"
+    value: 0.5070721408076817
+    source: "gap(60, 370)"
+    surfaces: ["0.5071"]
+    used_in: [facts]
+    fn: gap
+    args: [60, 370]
+  gap_61:
+    type: computed
+    text: "the gap at 61 sides on this circle"
+    value: 0.4905867426127042
+    source: "gap(61, 370)"
+    surfaces: ["0.49", "0.4906"]
+    used_in: [b16, description]
+    fn: gap
+    args: [61, 370]
+  gap_96:
+    type: computed
+    text: "the gap of a 96-gon at this radius"
+    value: 0.19810263374469672
+    source: "gap(96, 370)"
+    surfaces: ["0.1981"]
+    used_in: [facts]
+    fn: gap
+    args: [96, 370]
+  gap_96_zoom:
+    type: computed
+    text: "that same gap seen at 36x"
+    value: 7.131694814809082
+    source: "gap(96, 370) * 36"
+    surfaces: ["7.13", "7.1"]
+    used_in: [b10, facts]
+    fn: gap_zoom
+    args: [96, 370, 36]
+  edge_96:
+    type: computed
+    text: "edge length of the 96-gon"
+    value: 24.212121288114343
+    source: "2*370*sin(pi/96)"
+    surfaces: ["24.21"]
+    used_in: [facts]
+    fn: edge
+    args: [96, 370]
+  edge_96_zoom:
+    type: computed
+    text: "that edge at 36x"
+    value: 871.6363663721163
+    source: "edge(96, 370) * 36"
+    surfaces: ["871.6"]
+    used_in: [facts]
+    fn: edge_zoom
+    args: [96, 370, 36]
+  zoom_gaps:
+    type: computed
+    text: "gap at 36x for n = 96, 192, ... 24576"
+    value: [7.131694814809082, 1.783043044636785, 0.4457682202174773, 0.11144252124997145, 0.02786065944888616, 0.006965166683015056, 0.0017412917853620868, 0.0004353229533649028, 0.0001088307383412257]
+    source: "gap(96*2^k, 370)*36 for k=0..8"
+    surfaces: ["7.13", "1.783", "0.4458", "0.1114", "0.02786", "0.00697", "0.00174", "0.00044", "0.00011"]
+    used_in: [facts, zoom_label]
+    fn: zoom_gaps
+    args: [370, 36]
+  n_end:
+    type: computed
+    text: "side count after 16 doublings of the 96-gon"
+    value: 6291456
+    source: "96 * 2^16"
+    surfaces: ["6,291,456"]
+    used_in: [counter, facts]
+    fn: scaled_n
+    args: [96, 16]
+  gap_end:
+    type: computed
+    text: "gap of that polygon at zoom 1"
+    value: 4.613087689619988e-11
+    source: "gap(6291456, 370)"
+    surfaces: ["0.000000000046"]
+    used_in: [b15, facts]
+    fn: gap
+    args: [6291456, 370]
+  n_drop:
+    type: computed
+    text: "sides at the drop"
+    value: 96
+    source: "schedule n at frame 768"
+    surfaces: ["96"]
+    used_in: [facts]
+    fn: schedule_n
+    args: [768]
+  n_61_frame:
+    type: computed
+    text: "first frame whose side count is 61"
+    value: 579
+    source: "first frame where the schedule reaches 61"
+    surfaces: ["579"]
+    used_in: [facts]
+    fn: first_frame
+    args: [61]
+  n_adds:
+    type: computed
+    text: "how many times a side is added"
+    value: 92
+    source: "add schedule"
+    surfaces: ["92"]
+    used_in: [facts]
+    fn: schedule_count
+    args: ["adds"]
+  n_doubles:
+    type: computed
+    text: "how many times the polygon is doubled"
+    value: 16
+    source: "doubling schedule"
+    surfaces: ["16"]
+    used_in: [facts]
+    fn: schedule_count
+    args: ["doubles"]
+  radius_px:
+    type: computed
+    text: "circle radius on the 1080-wide frame"
+    value: 370
+    source: "config radius"
+    surfaces: ["370"]
+    used_in: [description, facts]
+    fn: config_number
+    args: ["radius"]
+  screen_px:
+    type: computed
+    text: "frame width"
+    value: 1080
+    source: "config width"
+    surfaces: ["1080"]
+    used_in: [b16, description]
+    fn: config_number
+    args: ["width"]
+  zoom_max:
+    type: computed
+    text: "peak camera zoom"
+    value: 36
+    source: "config zoom_max"
+    surfaces: ["36"]
+    used_in: [zoom_label, facts]
+    fn: config_number
+    args: ["zoom_max"]
+  tolerance_px:
+    type: computed
+    text: "half a pixel, the gap that counts as invisible on this frame"
+    value: 0.5
+    source: "config gap_px"
+    surfaces: ["0.5"]
+    used_in: [description, facts]
+    fn: config_number
+    args: ["gap_px"]
+  diameter_m:
+    type: computed
+    text: "the circle in the pinned-comment question"
+    value: 10
+    source: "question diameter"
+    surfaces: ["10"]
+    used_in: [comment]
+    fn: identity
+    args: [10]
+  radius_m:
+    type: computed
+    text: "half of that diameter, in metres, which is the circumradius"
+    value: 5
+    source: "10/2"
+    surfaces: ["5"]
+    used_in: [reply]
+    fn: half
+    args: [10]
+  tol_mm:
+    type: computed
+    text: "the gap the question asks to get under"
+    value: 1
+    source: "1 millimetre"
+    surfaces: ["1"]
+    used_in: [comment, reply]
+    fn: identity
+    args: [1]
+  n_metre:
+    type: computed
+    text: "sides needed before a 10 metre circle has a gap under 1 millimetre"
+    value: 158
+    source: "smallest n with gap(n, 5000 mm) <= 1 mm"
+    surfaces: ["158"]
+    used_in: [reply]
+    fn: sides_for_gap
+    args: [5000, 1]
+  limit_circle:
+    type: definitional
+    text: "a circle is the limit of regular polygons as the number of sides grows without bound"
+    value: null
+    source: "definition of a circle as that limit"
+    surfaces: []
+    used_in: [title, comment_b]
+  finite_not_circle:
+    type: definitional
+    text: "no regular polygon with finitely many sides is a circle"
+    value: null
+    source: "a finite side count leaves a positive sagitta"
+    surfaces: []
+    used_in: [b18, title]
