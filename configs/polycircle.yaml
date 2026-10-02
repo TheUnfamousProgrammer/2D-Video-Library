@@ -1,0 +1,28 @@
+# Polycircle short. These defaults are the 30.4 s, 150 bpm, 1080x1920 cut.
+# Bar hues are equalized to one OKLab lightness at load time; the hex values
+# below are the hues from the brief, not the bytes that land on screen.
+bpm: 150
+fps: 60
+width: 1080
+height: 1920
+frames: 1824
+sample_rate: 48000
+radius: 370
+center: [540, 910]
+zoom_max: 36
+gap_px: 0.5
+hook: A
+seed: 7
+background: "#0E1117"
+text: "#F2F4F8"
+muted: "#8A93A6"
+gold: "#FFD166"
+bar_colors:
+  - "#FF6B6B"
+  - "#FF9F43"
+  - "#FECA57"
+  - "#1DD1A1"
+  - "#48DBFB"
+  - "#5F7CFF"
+  - "#A55EEA"
+  - "#FF6BCB"
