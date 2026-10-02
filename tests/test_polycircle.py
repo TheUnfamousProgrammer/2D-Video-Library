@@ -163,6 +163,29 @@ def test_hook_variants_share_the_schedule():
         assert top_lines(script, 0, hook) == top_lines(script, 1823, hook)
 
 
+def test_layout_stays_in_the_safe_zone():
+    from fc_sat.polycircle_render import PolyRenderer, inside_safe, overlaps
+
+    renderer = PolyRenderer(width=540, height=960, hook="A")
+    for frame in range(0, 1824, 3):
+        boxes = renderer.plan(frame)
+        assert len(boxes) <= 4
+        for box in boxes:
+            assert inside_safe(box, renderer.scale), (frame, box.text)
+        for index, left in enumerate(boxes):
+            for right in boxes[index + 1 :]:
+                assert not overlaps(left, right), (frame, left.text, right.text)
+
+
+def test_style_law_source():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    forbidden = ("blur", "bloom", "glow", "gradient", "shadow")
+    for name in ("fc_sat/polycircle_render.py", "fc_sat/polycircle_draw.py"):
+        text = (root / name).read_text().lower()
+        for word in forbidden:
+            assert word not in text, f"{name} contains {word}"
+
+
 def test_timeline_event_counts():
     from fc_sat.polycircle_timeline import build_timeline
 

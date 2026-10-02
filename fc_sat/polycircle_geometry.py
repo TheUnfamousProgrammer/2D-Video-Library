@@ -306,6 +306,43 @@ class MorphSpec:
     edge: int = 0
 
 
+def _double_in_window(
+    n_before: int,
+    phi: float,
+    radius: float,
+    u: float,
+    window: tuple[float, float],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Doubling vertices inside the visible arc. Old vertices stay; new ones grow outward."""
+    n = int(n_before)
+    t0, t1 = window
+    step = 2.0 * math.pi / n
+    k0 = int(math.floor((t0 - phi) / step)) - 1
+    k1 = int(math.ceil((t1 - phi) / step)) + 1
+    r_mid = (1.0 - u) * radius * math.cos(math.pi / n) + u * radius
+    angles = []
+    radii = []
+    for k in range(k0, k1 + 1):
+        old = phi + step * k
+        mid = old + step * 0.5
+        if t0 <= old <= t1:
+            angles.append(old)
+            radii.append(radius)
+        if t0 <= mid <= t1:
+            angles.append(mid)
+            radii.append(r_mid)
+    if len(angles) < 2:
+        return double_morph(min(n, 64), phi, radius, u)
+    order = np.argsort(np.asarray(angles, dtype=np.float64))
+    got_a = np.asarray(angles, dtype=np.float64)[order]
+    got_r = np.asarray(radii, dtype=np.float64)[order]
+    if len(got_a) > DRAW_CAP:
+        stride = int(math.ceil(len(got_a) / DRAW_CAP))
+        got_a = got_a[::stride]
+        got_r = got_r[::stride]
+    return got_a, got_r
+
+
 def polygon_arrays(
     n_settled: int,
     phi: float,
@@ -320,24 +357,14 @@ def polygon_arrays(
         return add_morph(morph.n_before, phi, radius, morph.edge, u)
     if morph is not None and morph.kind == "double":
         u = _ease(frame, morph.frame, morph.duration)
-        angles, radii = double_morph(morph.n_before, phi, radius, u)
-        if window is None and len(angles) <= DRAW_CAP:
-            return angles, radii
+        if window is None and morph.n_before * 2 <= DRAW_CAP:
+            return double_morph(morph.n_before, phi, radius, u)
         if window is None:
-            err = cap_error_px(radius, len(angles), DRAW_CAP)
+            err = cap_error_px(radius, morph.n_before * 2, DRAW_CAP)
             if err >= 0.001:
                 raise AssertionError(f"cap error {err:.6f} px is not under 0.001")
-            idx = np.linspace(0, len(angles) - 1, DRAW_CAP).astype(np.int64)
-            return angles[idx], radii[idx]
-        mask_lo, mask_hi = window
-        keep = (angles >= mask_lo) & (angles <= mask_hi)
-        if int(keep.sum()) > DRAW_CAP:
-            idx = np.flatnonzero(keep)
-            idx = idx[:: max(1, int(math.ceil(len(idx) / DRAW_CAP)))]
-            return angles[idx], radii[idx]
-        if int(keep.sum()) >= 2:
-            return angles[keep], radii[keep]
-        return angles, radii
+            return vertices_in_window(DRAW_CAP, phi, radius, None, cap=DRAW_CAP)
+        return _double_in_window(morph.n_before, phi, radius, u, window)
     return vertices_in_window(n_settled, phi, radius, window)
 
 

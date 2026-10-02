@@ -14,8 +14,12 @@ import argparse
 import sys
 from pathlib import Path
 
+from PIL import Image
+
+from fc_sat.encode import pipe_raw_bgr
 from fc_sat.polycircle_claims import evaluate, load_claims, render_report
 from fc_sat.polycircle_doctor import doctor
+from fc_sat.polycircle_render import PolyRenderer
 from fc_sat.polycircle_text import lint_script, load_script
 from fc_sat.polycircle_timeline import (
     build_timeline,
@@ -23,7 +27,7 @@ from fc_sat.polycircle_timeline import (
     retention_markdown,
     write_timeline,
 )
-from fc_sat.stage_log import StageLog
+from fc_sat.stage_log import Heartbeat, StageLog
 
 ROOT = Path(__file__).resolve().parent
 
@@ -62,6 +66,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "timeline":
         code = _timeline()
         log.mark("timeline")
+        return code
+    if args.mode == "animatic":
+        code = _animatic(args.hook, Path(args.out or "out/polycircle_animatic.mp4"))
+        log.mark("animatic")
+        return code
+    if args.mode == "hooks":
+        code = _hooks()
+        log.mark("hooks")
         return code
     print(f"{args.mode} is not built yet", file=sys.stderr)
     return 2
@@ -102,6 +114,68 @@ def _timeline() -> int:
         f"kicks {len(payload['kicks'])} impacts {len(payload['impacts'])}"
     )
     print(f"retention {report}")
+    return 0
+
+
+def _sheet(renderer: PolyRenderer, frames: list[int], path: Path) -> None:
+    tiles = [Image.fromarray(renderer.render(frame)[:, :, ::-1]) for frame in frames]
+    width, height = tiles[0].size
+    sheet = Image.new("RGB", (width * len(tiles), height))
+    for index, tile in enumerate(tiles):
+        sheet.paste(tile, (index * width, 0))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(path)
+    print(f"wrote {path}")
+
+
+def _animatic(hook: str, output: Path) -> int:
+    timeline = build_timeline()
+    renderer = PolyRenderer(timeline, width=540, height=960, hook=hook)
+    ms = renderer.profile_ms()
+    full = PolyRenderer(timeline, width=1080, height=1920, hook=hook)
+    heavy = full.profile_ms()
+    print(
+        f"profile: {heavy:.0f} ms heavy frame at 1080x1920; "
+        f"sequential full-render eta {heavy * timeline.n_frames / 60000:.1f} min",
+        flush=True,
+    )
+    count = 912
+    indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
+
+    def frames():
+        for index, frame in enumerate(indices):
+            if index % 60 == 0:
+                print(f"animatic {index}/{count}", flush=True)
+            yield renderer.render(frame)
+
+    with Heartbeat("animatic still rendering"):
+        pipe_raw_bgr(frames(), output, width=540, height=960, fps=30, audio_path=None, preset="veryfast", n_frames=count)
+    _sheet(renderer, [0, 192, 768, 954, 1128, 1488, 1632, 1823], ROOT / "out" / "polycircle_contact.png")
+    _sheet(renderer, [876, 912, 948, 960, 1128], ROOT / "out" / "polycircle_zoom_strip.png")
+    print(f"draft profile {ms:.0f} ms/frame")
+    return 0
+
+
+def _hooks() -> int:
+    timeline = build_timeline()
+    folder = ROOT / "out" / "hooks"
+    folder.mkdir(parents=True, exist_ok=True)
+    count = 105
+    indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
+    for hook in ("A", "B", "C"):
+        renderer = PolyRenderer(timeline, width=540, height=960, hook=hook)
+        output = folder / f"hook_{hook}.mp4"
+
+        def frames(renderer=renderer):
+            for index, frame in enumerate(indices):
+                if index % 30 == 0:
+                    print(f"hook {hook} {index}/{count}", flush=True)
+                yield renderer.render(frame)
+
+        pipe_raw_bgr(frames(), output, width=540, height=960, fps=30, audio_path=None, preset="veryfast", n_frames=count)
+        print(f"wrote {output} (silent; audio is muxed after the mix exists)")
+    strip = PolyRenderer(timeline, width=360, height=640, hook="A")
+    _sheet(strip, [0, 30, 60, 120], folder / "thumb_strip.png")
     return 0
 
 
