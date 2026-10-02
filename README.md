@@ -407,3 +407,53 @@ A failure prints the measured value and writes `{stem}.L{n}.worst.png`. Threshol
 - Open `ladder/index.html` and time each still before trusting a rung.
 - The blip, the ticks, and the reveal ding balance on a phone speaker.
 - Level label, caption, timer, and the outro lines stay clear of each other and of the field. At most four text elements are on screen.
+
+## Collatz
+
+A vertical Short about the Collatz conjecture. The picture is drawn with skia (Pillow 2x supersampling if skia is missing) and piped through the same BT.709 ffmpeg command as the other films. Other generators are not part of this pipeline.
+
+```bash
+python make_collatz.py doctor
+python make_collatz.py facts
+python make_collatz.py vo
+python make_collatz.py animatic --out out/collatz_animatic.mp4
+python make_collatz.py hooks
+python make_collatz.py audio --out out/collatz.mp4
+python make_collatz.py preview --hook A --out out/collatz_preview.mp4
+python make_collatz.py full --approved --out out/collatz.mp4
+```
+
+`full` is refused without `--approved`. The partial file is `{stem}.partial.mp4` and is renamed into place only after ffmpeg exits 0. Ctrl+C deletes it.
+
+### Defaults
+
+Hook A ("Always"). `reply_commitment` is true, so the description asks for a number. Voice stability is 0.5 and similarity is 0.75, except L8 and L10 which use stability 0.35. Seeds are `1000+0..2`. Pronunciation stays plain (`Collatz`, `sextillion`) until `configs/collatz_pronunciation.yaml` says otherwise. Take picks live in `configs/vo_picks.yaml`. There is no ElevenLabs key in the repo; `vo` writes `out/script_for_manual_tts.md` and accepts `L1.wav` ... `L14.wav` via `--vo-dir`. Style and speed are not sent. If a setting is rejected, the client retries without it.
+
+The verification bound is whatever https://pcbarina.fit.vutbr.cz/ states as already verified. On 2026-10-02 that was 2075×2^60 (2.39 sextillion), ahead of the paper's 2^71 (2.36 sextillion). "Over two sextillion" stays true while the bound is at least 2^71. `facts` prints the diff when the page moves. c_1937 is included because Wikipedia and the MacTutor biography both say Collatz proposed it in 1937.
+
+Step 36 of 27, at 5 frames per step from 13.30s, is 16.30s. The outline's 17.30s does not match that clock, so the retention map uses 16.30s.
+
+Text is capped at 4 elements. Width is fitted down to 60% of the asked size so the ink stays inside x [130, 950] and y [200, 1536]. On the 111-step chart the node radius shrinks with the step spacing so the line stays readable. The counter draws the integer short-scale prefix and its name (`2.39 sextillion`), never a binary float. The wav is held to -2 dBTP so the AAC file stays at or under -1 dBTP.
+
+### Claims
+
+`configs/claims.yaml` is the only place a number is allowed to come from. Computed claims are re-run on every `facts` build. A digit or a spelled number in the voiceover, captions, titles, or description must name a claim or sit on the whitelist (`1`, `30`). The report is `out/claims_report.md`.
+
+### Voice
+
+Confirm the ElevenLabs plan allows commercial use. The voice is synthetic. YouTube's altered-content toggle is for realistic altered content; a plainly animated explainer with an AI narrator is probably outside it, but check the current Studio question before publishing. No SSML breaks. One bracket tag per line, at the start, and not on the hook. Numbers in the spoken line are spelled out.
+
+### Hook lab
+
+Mute the first 2 seconds and watch it at thumb distance. `hooks` writes a 540x960 clip and a 360px-wide strip for A, B, and C. Pick the variant whose promise is obvious with the sound off. The final render takes `--hook A|B|C`.
+
+### Posting
+
+`postkit` writes `out/postkit.md` from the claims. Pin comment A. Reply to a number with `python tools/collatz_reply.py N`. Read Viewed vs Swiped away against `out/retention_map.md`. If the first 2 seconds lose about 70% to swipes, change the hook and upload the next variant at least a day later.
+
+### Phone checklist
+
+- The hook line is readable on a phone with the sound off, at arm's length.
+- The promise is clear in the first 2 seconds.
+- The voiceover is intelligible on a phone speaker.
+- The ending stays open: the chord has no third, and the last line is "Pick another number."
