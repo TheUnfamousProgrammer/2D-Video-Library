@@ -1,0 +1,291 @@
+# Every factual statement in the voiceover, captions, description, and comments.
+# Computed claims are re-checked against fc_sat.collatz_math on every build.
+# The live verification bound was updated from the brief's 2^71 after reading
+# https://pcbarina.fit.vutbr.cz/ on 2026-10-02 (2075×2^60, about 2^71.02).
+
+whitelist: ["1", "30"]
+
+claims:
+  ends_at_one:
+    type: computed
+    fn: steps
+    args: [1]
+    value: 0
+    text: "The trajectory stops at 1."
+    surfaces: ["1", "one"]
+    source: "collatz_math.steps(1) == 0, so 1 is the terminus"
+    used_in: [vo, captions, titles, description, reply]
+
+  rule_mul:
+    type: computed
+    fn: identity
+    args: [3]
+    value: 3
+    text: "An odd number is sent to 3n+1."
+    surfaces: ["3", "3n+1"]
+    source: "the odd branch is 3n+1"
+    used_in: [description]
+
+  rule_addend:
+    type: computed
+    fn: identity
+    args: [1]
+    value: 1
+    text: "The odd branch adds 1."
+    surfaces: ["1", "one"]
+    source: "the odd branch is 3n+1"
+    used_in: [vo, description]
+
+  start_6:
+    type: computed
+    fn: identity
+    args: [6]
+    value: 6
+    text: "The walk starts at 6."
+    surfaces: ["6", "six"]
+    source: "chosen example"
+    used_in: [scene]
+
+  steps_6:
+    type: computed
+    fn: steps
+    args: [6]
+    value: 8
+    text: "6 takes 8 steps to reach 1."
+    surfaces: ["8", "eight"]
+    source: "collatz_math.steps(6)"
+    used_in: [scene]
+
+  start_7:
+    type: computed
+    fn: identity
+    args: [7]
+    value: 7
+    text: "The next example starts at 7."
+    surfaces: ["7", "seven"]
+    source: "chosen example"
+    used_in: [vo]
+
+  steps_7:
+    type: computed
+    fn: steps
+    args: [7]
+    value: 16
+    text: "7 takes 16 steps to reach 1."
+    surfaces: ["16", "sixteen", "16 STEPS"]
+    source: "collatz_math.steps(7)"
+    used_in: [vo, captions]
+
+  start_9:
+    type: computed
+    fn: identity
+    args: [9]
+    value: 9
+    text: "The next example starts at 9."
+    surfaces: ["9", "nine"]
+    source: "chosen example"
+    used_in: [vo]
+
+  steps_9:
+    type: computed
+    fn: steps
+    args: [9]
+    value: 19
+    text: "9 takes 19 steps to reach 1."
+    surfaces: ["19", "nineteen", "19 STEPS"]
+    source: "collatz_math.steps(9)"
+    used_in: [vo, captions]
+
+  steps_3:
+    type: computed
+    fn: steps
+    args: [3]
+    value: 7
+    text: "3 takes 7 steps to reach 1."
+    surfaces: ["7"]
+    source: "collatz_math.steps(3)"
+    used_in: [tests]
+
+  steps_2:
+    type: computed
+    fn: steps
+    args: [2]
+    value: 1
+    text: "2 takes 1 step to reach 1."
+    surfaces: ["1"]
+    source: "collatz_math.steps(2)"
+    used_in: [tests]
+
+  steps_12:
+    type: computed
+    fn: steps
+    args: [12]
+    value: 9
+    text: "12 takes 9 steps to reach 1."
+    surfaces: ["9", "12"]
+    source: "collatz_math.steps(12)"
+    used_in: [tests]
+
+  steps_19:
+    type: computed
+    fn: steps
+    args: [19]
+    value: 20
+    text: "19 takes 20 steps to reach 1."
+    surfaces: ["19", "20"]
+    source: "collatz_math.steps(19)"
+    used_in: [tests]
+
+  start_27:
+    type: computed
+    fn: identity
+    args: [27]
+    value: 27
+    text: "The twist starts at 27."
+    surfaces: ["27", "twenty-seven"]
+    source: "chosen example"
+    used_in: [vo, captions, titles, description, reply]
+
+  steps_27:
+    type: computed
+    fn: steps
+    args: [27]
+    value: 111
+    text: "27 takes 111 steps to reach 1."
+    surfaces: ["111", "a hundred and eleven", "111 STEPS"]
+    source: "collatz_math.steps(27)"
+    used_in: [vo, captions, titles, description, reply]
+
+  peak_27:
+    type: computed
+    fn: peak
+    args: [27]
+    value: 9232
+    text: "27 peaks at 9232."
+    surfaces: ["9232", "9,232", "nine thousand", "PEAK 9,232"]
+    source: "collatz_math.peak(27)"
+    used_in: [vo, captions, description, reply]
+
+  peak_index_27:
+    type: computed
+    fn: peak_index
+    args: [27]
+    value: 77
+    text: "27 reaches its peak at step 77."
+    surfaces: ["77"]
+    source: "collatz_math.peak_index(27)"
+    used_in: [scene, retention]
+
+  cross_1000_27:
+    type: computed
+    fn: first_above
+    args: [27, 1000]
+    value: 36
+    text: "27 first exceeds 1000 at step 36."
+    surfaces: ["36", "1000", "1,000"]
+    source: "collatz_math.first_step_above(27, 1000)"
+    used_in: [scene, retention]
+
+  drop_100_27:
+    type: computed
+    fn: first_below_after_peak
+    args: [27, 100]
+    value: 92
+    text: "After the peak, 27 first drops below 100 at step 92."
+    surfaces: ["92", "100"]
+    source: "collatz_math.first_step_below_after_peak(27, 100)"
+    used_in: [facts]
+
+  steps_97:
+    type: computed
+    fn: steps
+    args: [97]
+    value: 118
+    text: "97 takes 118 steps to reach 1."
+    surfaces: ["118", "97"]
+    source: "collatz_math.steps(97)"
+    used_in: [comment]
+
+  start_97:
+    type: computed
+    fn: identity
+    args: [97]
+    value: 97
+    text: "97 is the longest start below 100."
+    surfaces: ["97"]
+    source: "collatz_math longest start below 100"
+    used_in: [comment]
+
+  longest_below_1000:
+    type: computed
+    fn: longest_below
+    args: [1000]
+    value: [871, 178]
+    text: "Below 1000 the longest start is 871 with 178 steps."
+    surfaces: ["871", "178", "1000"]
+    source: "collatz_math.longest_below(1000)"
+    used_in: [facts, funnel]
+
+  highest_peak_below_1000:
+    type: computed
+    fn: highest_peak_below
+    args: [1000]
+    value: [250504, 703]
+    text: "Below 1000 the highest peak is 250504, from 703."
+    surfaces: ["250504", "250,504", "703"]
+    source: "collatz_math.highest_peak_below(1000)"
+    used_in: [facts, funnel]
+
+  below_100_long:
+    type: computed
+    fn: at_least
+    args: [100, 111]
+    value: [[27, 111], [54, 112], [55, 112], [73, 115], [97, 118]]
+    text: "Below 100, the starts with at least 111 steps are 27, 54, 55, 73, and 97."
+    surfaces: ["27", "54", "55", "73", "97", "111", "112", "115", "118", "100"]
+    source: "collatz_math.at_least_steps_below(100, 111)"
+    used_in: [facts, comment]
+
+  pow2_71:
+    type: computed
+    fn: pow2
+    args: [71]
+    value: 2361183241434822606848
+    text: "2^71 is 2361183241434822606848."
+    surfaces: ["71", "2361183241434822606848", "2.36 sextillion", "2.36"]
+    source: "integer power"
+    used_in: [facts]
+
+  c_verified:
+    type: cited
+    fn: mul_pow2
+    args: [2075, 60]
+    value: 2392312122059207475200
+    text: "All numbers below 2075×2^60 converge to 1."
+    surfaces: ["2075", "60", "2.39 sextillion", "2.39", "two sextillion", "over two sextillion"]
+    source: "D. Barina, Improved verification limit for the convergence of the Collatz conjecture, J. Supercomput. 81, 810 (2025), doi 10.1007/s11227-025-07337-0; project page https://pcbarina.fit.vutbr.cz/ checked 2026-10-02 (headline 2075×2^60, log 2^71 on 2025-01-15)."
+    used_in: [vo, description, counter]
+    recheck_page: true
+
+  c_unproven:
+    type: cited
+    text: "No accepted proof of the Collatz conjecture is known."
+    surfaces: []
+    source: "Wikipedia, Collatz conjecture (the problem is unsolved); Barina 2025 introduction. Say still can't prove. Do not say impossible. Do not say nobody has tried."
+    used_in: [vo, captions, description]
+    language: "still can't prove"
+
+  c_1937:
+    type: cited
+    verified: true
+    text: "Lothar Collatz introduced the idea in 1937."
+    surfaces: ["1937"]
+    source: "Wikipedia, Collatz conjecture, citing the MacTutor biography of Lothar Collatz, which says he proposed it in 1937. Checked 2026-10-02."
+    used_in: [captions]
+
+  c_erdos:
+    type: cited
+    text: "Mathematics may not be ready for such problems."
+    surfaces: []
+    source: "Wikipedia, Collatz conjecture, citing Richard K. Guy, Unsolved Problems in Number Theory (3rd ed., 2004)."
+    used_in: [comment]

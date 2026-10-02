@@ -1,0 +1,144 @@
+# Hook A absolute offsets. Tags are prepended at request time and are not part of tts_text.
+lines:
+  - id: L1
+    scene: S1
+    offset: 0.10
+    slot_max_s: 1.00
+    tts_text: "Pick any number."
+    caption_text: "PICK ANY NUMBER"
+    claims: []
+    alt_text: "Pick a number."
+    tag: ""
+    tag_candidates: ["", "[curious]"]
+  - id: L2
+    scene: S1
+    offset: 1.15
+    slot_max_s: 1.40
+    tts_text: "It ALWAYS ends at one."
+    caption_text: "IT ALWAYS ENDS AT 1"
+    claims: [ends_at_one]
+    alt_text: "It ends at one."
+    tag: ""
+    tag_candidates: ["", "[confident]"]
+  - id: L3
+    scene: S2
+    offset: 2.75
+    slot_max_s: 0.85
+    tts_text: "Even? Halve it."
+    caption_text: "EVEN? HALVE IT."
+    claims: []
+    alt_text: "Even? Halve it."
+    tag: ""
+    tag_candidates: [""]
+  - id: L4
+    scene: S2
+    offset: 3.65
+    slot_max_s: 2.10
+    tts_text: "Odd? Triple it... and add one."
+    caption_text: "ODD? TRIPLE IT AND ADD 1"
+    claims: [rule_addend]
+    alt_text: "Odd? Triple it and add one."
+    tag: ""
+    tag_candidates: [""]
+  - id: L5
+    scene: S3
+    offset: 7.05
+    slot_max_s: 1.40
+    tts_text: "Seven? Sixteen steps."
+    caption_text: "SEVEN? 16 STEPS."
+    claims: [start_7, steps_7]
+    alt_text: "Seven. Sixteen steps."
+    tag: ""
+    tag_candidates: [""]
+  - id: L6
+    scene: S3
+    offset: 8.55
+    slot_max_s: 1.20
+    tts_text: "Nine? Nineteen."
+    caption_text: "NINE? 19 STEPS."
+    claims: [start_9, steps_9]
+    alt_text: "Nine. Nineteen."
+    tag: ""
+    tag_candidates: [""]
+  - id: L7
+    scene: S3
+    offset: 10.00
+    slot_max_s: 0.80
+    tts_text: "Always one."
+    caption_text: "ALWAYS 1"
+    claims: [ends_at_one]
+    alt_text: "Always one."
+    tag: ""
+    tag_candidates: [""]
+  - id: L8
+    scene: S4
+    offset: 11.35
+    slot_max_s: 1.90
+    tts_text: "Now... try twenty-seven."
+    caption_text: "NOW TRY 27"
+    claims: [start_27]
+    alt_text: "Try twenty-seven."
+    tag: "[quietly]"
+    tag_candidates: ["[quietly]", "[whispering]", ""]
+    stability: 0.35
+  - id: L9
+    scene: S5
+    offset: 14.90
+    slot_max_s: 1.90
+    tts_text: "A hundred and eleven steps."
+    caption_text: "111 STEPS"
+    claims: [steps_27]
+    alt_text: "A hundred and eleven steps."
+    tag: ""
+    tag_candidates: [""]
+  - id: L10
+    scene: S5
+    offset: 18.80
+    slot_max_s: 1.40
+    tts_text: "Past nine thousand..."
+    caption_text: "PEAK 9,232"
+    claims: [peak_27]
+    alt_text: "Past nine thousand."
+    tag: "[excited]"
+    tag_candidates: ["[excited]", ""]
+    stability: 0.35
+  - id: L11
+    scene: S5
+    offset: 20.45
+    slot_max_s: 1.95
+    tts_text: "Then crashes back to one."
+    caption_text: "BACK TO 1"
+    claims: [ends_at_one]
+    alt_text: "Then back to one."
+    tag: ""
+    tag_candidates: [""]
+  - id: L12
+    scene: S6
+    offset: 23.10
+    slot_max_s: 2.80
+    tts_text: "Computers have tested over two sextillion numbers."
+    caption_text: "OVER TWO SEXTILLION"
+    claims: [c_verified]
+    alt_text: "Over two sextillion numbers tested."
+    tag: ""
+    tag_candidates: [""]
+  - id: L13
+    scene: S7
+    offset: 26.15
+    slot_max_s: 2.00
+    tts_text: "Every single one ends at one."
+    caption_text: "ALL END AT 1"
+    claims: [ends_at_one]
+    alt_text: "Each one ends at one."
+    tag: ""
+    tag_candidates: [""]
+  - id: L14
+    scene: S8
+    offset: 28.60
+    slot_max_s: 3.00
+    tts_text: "Mathematicians still can't prove the Collatz conjecture."
+    caption_text: "STILL UNPROVEN"
+    claims: [c_unproven]
+    alt_text: "Still can't prove the Collatz conjecture."
+    tag: ""
+    tag_candidates: ["", "[thoughtful]", "[serious]"]
