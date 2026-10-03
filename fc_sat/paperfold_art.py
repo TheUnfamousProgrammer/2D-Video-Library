@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import yaml
 
+from fc_sat.paperfold_math import BURJ_M, PERSON_M
 from fc_sat.paperfold_scenes import FRAME_H, FRAME_W, GROUND, LIMIT, align_translate
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +44,7 @@ BUSY_REGIONS = (
     ),
     (
         "p07_deep_space_moon",
-        "Stars in the center lane. The Moon is on the right and Earth is below the ground line, so neither sits behind the stack.",
+        "The teal cap is now near-black sky. The Moon stays on the right. Earth's apex is at y = 0.58, so the cap shows above the bottom band.",
     ),
 )
 
@@ -117,8 +118,14 @@ def aspect_note(width: int, height: int) -> str | None:
     return None
 
 
-def place_plate(bgr: np.ndarray, ground_y: float) -> tuple[np.ndarray, list[str]]:
-    """Scale to cover, align the ground line to y = 0.68, and crop to 1080x1920."""
+def place_plate(
+    bgr: np.ndarray, ground_y: float, screen_ground: float = GROUND
+) -> tuple[np.ndarray, list[str]]:
+    """Scale to cover, align the ground line, and crop to 1080x1920.
+
+    Empty rows left by the shift are the source edge, repeated. p06 and p07
+    pass screen_ground 0.58 so the Earth's apex sits higher than 0.68.
+    """
     src_h, src_w = bgr.shape[:2]
     notes = []
     wrong = aspect_note(src_w, src_h)
@@ -126,8 +133,8 @@ def place_plate(bgr: np.ndarray, ground_y: float) -> tuple[np.ndarray, list[str]
         notes.append(wrong)
     if src_w < FRAME_W or src_h < FRAME_H:
         notes.append("UPSCALED")
-    scale, tx, ty = align_translate(ground_y, src_w, src_h)
-    notes.append(f"scale {scale:.4f} tx {tx:.1f} ty {ty:.1f}")
+    scale, tx, ty = align_translate(ground_y, src_w, src_h, screen_ground=screen_ground)
+    notes.append(f"scale {scale:.4f} tx {tx:.1f} ty {ty:.1f} ground {screen_ground:.2f}")
     matrix = np.array([[scale, 0.0, tx], [0.0, scale, ty]], dtype=np.float32)
     placed = cv2.warpAffine(
         bgr.astype(np.float32),
@@ -251,6 +258,89 @@ def detect_circle(
     return float(x) / width, float(y) / height, float(radius) / width
 
 
+def restyle_deep_space_sky(
+    bgr: np.ndarray, moon_cx: float, moon_cy: float, moon_radius: float
+) -> int:
+    """Replace the flat teal cap with near-black sky and a few stars. The Moon disc stays."""
+    height, width = bgr.shape[:2]
+    band = np.median(bgr[:8, :48], axis=(0, 1))
+    distance = np.linalg.norm(bgr.astype(np.float32) - band, axis=2)
+    yy, xx = np.mgrid[0:height, 0:width]
+    moon = (xx - moon_cx * width) ** 2 + (yy - moon_cy * height) ** 2 <= (moon_radius * width) ** 2
+    replace = (distance < 22) & ~moon
+    count = int(replace.sum())
+    if count == 0:
+        return 0
+    painted = bgr.copy()
+    painted[replace] = (8, 10, 12)
+    ys, xs = np.nonzero(replace)
+    rng = np.random.default_rng(7)
+    picks = rng.choice(len(ys), size=min(12, len(ys)), replace=False)
+    for index in picks:
+        radius = int(rng.integers(1, 3))
+        cv2.circle(painted, (int(xs[index]), int(ys[index])), radius, (242, 244, 248), -1, cv2.LINE_AA)
+    bgr[:] = painted
+    return count
+
+
+def mask_moon_circle(bgra: np.ndarray) -> tuple[np.ndarray, tuple[float, float, float]]:
+    """Keep a perfect circle. Everything outside it, including the teal field, goes clear."""
+    color = bgra[:, :, :3]
+    alpha = bgra[:, :, 3]
+    opaque = alpha > 16
+    border = np.zeros(opaque.shape, dtype=bool)
+    border[:12, :] = True
+    border[-12:, :] = True
+    border[:, :12] = True
+    border[:, -12:] = True
+    samples = color[border & opaque]
+    if len(samples) == 0:
+        samples = color[opaque]
+    background = np.median(samples, axis=0)
+    distance = np.linalg.norm(color.astype(np.float32) - background, axis=2)
+    content = opaque & (distance > 28)
+    ys, xs = np.nonzero(content)
+    if len(xs) < 30:
+        raise SystemExit("o06_moon has no disc to mask")
+    points = np.ascontiguousarray(np.stack([xs, ys], axis=1).astype(np.float32))
+    (cx, cy), radius = cv2.minEnclosingCircle(points)
+    yy, xx = np.mgrid[0:bgra.shape[0], 0:bgra.shape[1]]
+    inside = (xx - cx) ** 2 + (yy - cy) ** 2 <= (radius + 0.5) ** 2
+    out = bgra.copy()
+    out[:, :, 3] = np.where(inside, alpha, 0).astype(np.uint8)
+    leftover = (out[:, :, 3] > 16) & ~inside
+    if leftover.any():
+        raise SystemExit(f"non-moon pixels remain outside the circle: {int(leftover.sum())}")
+    return out, (float(cx), float(cy), float(radius))
+
+
+# Tallest on-plate reference the decorative towers are checked against.
+STRUCTURE_REFERENCES = {
+    "street": ("person", PERSON_M),
+    "city": ("Burj Khalifa", BURJ_M),
+}
+
+
+def tallest_structure_m(bgr: np.ndarray, screen_ground: float, world_m: float) -> float:
+    """Height of the tallest ground-rooted shape, in metres at this plate's scale."""
+    height, width = bgr.shape[:2]
+    ground = int(round(screen_ground * height))
+    sky_y = max(0, int(0.16 * height))
+    sky = np.median(bgr[sky_y : sky_y + 16, width // 2 - 24 : width // 2 + 24], axis=(0, 1))
+    diff = np.abs(bgr.astype(np.int16) - sky.astype(np.int16)).sum(axis=2)
+    floor = int(0.08 * height)
+    tallest = 0
+    for x in range(16, width - 16, 3):
+        y = ground - 1
+        while y > floor and diff[y, x] > 48:
+            y -= 1
+        tallest = max(tallest, ground - y)
+    ppm = (screen_ground * height) / world_m
+    if ppm <= 0:
+        return 0.0
+    return tallest / ppm
+
+
 def placeholder(label: str, width: int, height: int) -> np.ndarray:
     image = np.zeros((height, width, 3), dtype=np.uint8)
     image[:] = (23, 17, 14)
@@ -344,7 +434,26 @@ def run_ingest(root: Path | None = None, out_dir: Path | None = None, manifest_p
             plate_tiles.append((asset_id, image))
             continue
         raw = cv2.imread(str(source), cv2.IMREAD_COLOR)
-        image, notes = place_plate(raw, float(item["ground_y"]))
+        screen = float(item.get("screen_ground", GROUND))
+        extra: list[str] = []
+        if asset_id == "p07_deep_space_moon":
+            replaced = restyle_deep_space_sky(
+                raw, float(item["moon_cx"]), float(item["moon_cy"]), float(item["moon_radius"])
+            )
+            extra.append(f"teal cap replaced with near-black sky ({replaced} px)")
+        image, notes = place_plate(raw, float(item["ground_y"]), screen)
+        notes = extra + notes
+        reference = STRUCTURE_REFERENCES.get(str(item.get("scene")))
+        if reference and item.get("world_m"):
+            meters = tallest_structure_m(image, screen, float(item["world_m"]))
+            name, limit_m = reference
+            scale_note = f"tallest structure {meters:.0f} m"
+            if meters > limit_m:
+                shown = f"{limit_m:.0f}" if limit_m >= 10 else f"{limit_m:.1f}"
+                scale_note += f" SCALE WARN taller than {name} {shown} m"
+                if item.get("scene") == "city":
+                    scale_note += "; using the current p03 until a replacement arrives"
+            notes.append(scale_note)
         if asset_id == "p06_low_orbit_limb":
             rows = recolor_grey_cap(image)
             notes.append(f"grey cap recolored {rows} rows")
@@ -376,8 +485,13 @@ def run_ingest(root: Path | None = None, out_dir: Path | None = None, manifest_p
             continue
         raw = cv2.imread(str(source), cv2.IMREAD_COLOR)
         keyed_image, fraction, box = key_magenta(raw)
-        cv2.imwrite(str(keyed / f"{asset_id}.png"), keyed_image)
         mark = "" if fraction >= 0.90 else " FLAG border under 90%"
+        if asset_id == "o06_moon":
+            keyed_image, circle = mask_moon_circle(keyed_image)
+            ys, xs = np.nonzero(keyed_image[:, :, 3] > 16)
+            box = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
+            mark += f", circle r {circle[2]:.0f} px, teal field removed"
+        cv2.imwrite(str(keyed / f"{asset_id}.png"), keyed_image)
         lines.append(f"- {asset_id}: border magenta {fraction:.1%}, alpha box {box}{mark}")
         object_tiles.append((asset_id, keyed_image))
     lines += ["", "## Busy regions behind the stack", ""]

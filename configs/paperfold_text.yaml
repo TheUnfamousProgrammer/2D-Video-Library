@@ -1,27 +1,23 @@
 # On-screen copy. Top lines are at most 14 characters after claim substitution.
 # Digits survive only when the card names the claim that computed them.
-# Variant B is three lines because "REACH THE MOON?" is 15 characters.
+# A, C and D are two lines in the dark band above the Moon.
+# B stays three lines because "REACH THE MOON?" is 15 characters.
 # "AS THE MILKY WAY" and "THE REAL RECORD:" are split the same way.
 # Variant D uses A's words. The hard cut is a picture change, not new copy.
 hooks:
   A:
-    lines: ["{pass_moon} FOLDS.", "ONE PAPER.", "THE MOON?"]
+    lines: ["{pass_moon} FOLDS.", "THE MOON?"]
     claims: [pass_moon]
   B:
     lines: ["CAN PAPER", "REACH THE", "MOON?"]
     claims: []
   C:
-    lines: ["FOLD IT", "{pass_moon} TIMES.", "WHERE IS IT?"]
+    lines: ["FOLD IT", "{pass_moon} TIMES."]
     claims: [pass_moon]
   D:
-    lines: ["{pass_moon} FOLDS.", "ONE PAPER.", "THE MOON?"]
+    lines: ["{pass_moon} FOLDS.", "THE MOON?"]
     claims: [pass_moon]
 cards:
-  - id: doubling
-    start: 192
-    end: 576
-    lines: ["DOUBLING."]
-    claims: []
   - id: space
     start: 576
     end: 672

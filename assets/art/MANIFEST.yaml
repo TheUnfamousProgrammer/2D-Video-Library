@@ -5,6 +5,7 @@ frame:
   width: 1080
   height: 1920
   ground_screen: 0.68
+  # p06 and p07 put the Earth's apex at 0.58 so the curve shows above the bottom band.
   limit_screen: 0.30
 plates:
   - id: p01_hook_night_desk_moon
@@ -31,9 +32,11 @@ plates:
     scene: orbit
     ground_y: 0.668
     world_m: 900000
+    screen_ground: 0.58
   - id: p07_deep_space_moon
     scene: deep_space
     ground_y: 0.665
+    screen_ground: 0.58
     moon_cx: 0.845
     moon_cy: 0.275
     moon_radius: 0.307

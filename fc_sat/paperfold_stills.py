@@ -1,10 +1,7 @@
-"""Hero stills for the paper diorama.
+"""Hero stills. The stack is an oblique paper prism on the plate. No slate strip.
 
-Plates are the ingested PNGs. This module never rewrites them. A 240 px slate
-strip sits behind the stack on the low-contrast plates, and on the atmosphere
-plate because its cream horizon fails the same test. The opening card is about
-700 px wide, so that still widens the same slate past the card. Tower stills
-keep the 240 px strip.
+p06 and p07 put the Earth's apex at y = 0.58. Every other plate keeps 0.68.
+The bottom band is the plate's own ground. The counter sits on a small plate.
 """
 
 from __future__ import annotations
@@ -18,8 +15,10 @@ import numpy as np
 
 from fc_sat.paperfold_art import ART_ROOT, _relative_luma
 from fc_sat.paperfold_draw import PaperCanvas, bgr, text_width
+from fc_sat.polycircle_draw import measure
 from fc_sat.paperfold_math import (
     BURJ_M,
+    ISS_M,
     KARMAN_M,
     MILESTONES,
     MOON_M,
@@ -29,63 +28,54 @@ from fc_sat.paperfold_math import (
     height_m,
     milestone_fold,
 )
-from fc_sat.paperfold_render import folds_done, height_label, sub_line
+from fc_sat.paperfold_render import folds_done, height_label, length_sub
 from fc_sat.paperfold_scenes import (
     FRAME_H,
     FRAME_W,
     GROUND,
     HANDOFF_FRAMES,
-    LIMIT,
     Scene,
+    align_translate,
     break_fold,
     handoff_start_frame,
     px_per_m,
     scenes_from_manifest,
-    stack_top_y,
 )
 from fc_sat.paperfold_schedule import fold_frame
 from fc_sat.paperfold_text import Script, load_script, top_lines
 
 ROOT = Path(__file__).resolve().parents[1]
-PANEL_Y = int(round(GROUND * FRAME_H))
-BACKING = "#2B3A4D"
 OUTLINE = "#1B2030"
 PAPER = "#F2F4F8"
 PAPER_RGB = (242, 244, 248)
 SEAM_RGB = (228, 232, 240)
+SIDE = "#B8C1D4"
+TOP_FACE = "#D5DCE8"
 SHADOW = "#0E1117"
-STACK_W = 120.0
-OUTLINE_PX = 12.0
-BACKING_W = 240.0
-# 4% of the frame above the y = 0.30 limit, so slate shows above a maxed stack.
-BACKING_TOP = LIMIT - 0.04
-CARD_W = 700.0
-CARD_H = 640.0
+STACK_W = 150.0
+SIDE_W = 28.0
+TOP_H = 12.0
+OUTLINE_PX = 10.0
+CARD_W = 520.0
+CARD_H = 700.0
+CARD_BASE = 1306.0
 HOOK_PROGRESS = 0.35
+HOOK_SIZE = 100.0
+HOOK_Y = 190.0
+HOOK_Y_MAX = 420.0
 SAFE_L = 130.0
 SAFE_R = 950.0
-
-# p01-p04 are the brief's low-contrast plates. p05's center lane clears 3:1,
-# but the cream horizon beside the lower stack does not, so it gets the same strip.
-BACKING_PLATES = frozenset(
-    {
-        "p01_hook_night_desk_moon",
-        "p02_street_day",
-        "p03_city_day",
-        "p04_mountains_clouds",
-        "p05_upper_atmosphere",
-    }
-)
+PLATE_ALPHA = 0.92
 
 HEROES = (
     ("hook", 0),
     ("fold_15", 15),
     ("fold_23", 23),
     ("fold_30", 30),
+    ("fold_32", 32),
     ("fold_42", 42),
 )
 
-# (object id, x as a fraction of the frame, height in metres)
 SCENE_OBJECTS: dict[str, tuple[tuple[str, float, float], ...]] = {
     "desk": (("o02_mug", 0.24, MUG_M), ("o03_smartphone", 0.76, PHONE_M)),
     "street": (("o01_person", 0.24, PERSON_M),),
@@ -95,8 +85,6 @@ SCENE_OBJECTS: dict[str, tuple[tuple[str, float, float], ...]] = {
 
 @dataclass(frozen=True)
 class PaperBox:
-    """White fill, not including the outline."""
-
     x: float
     y: float
     w: float
@@ -116,20 +104,11 @@ class StillFrame:
     notes: tuple[str, ...]
 
 
-def backing_box(frame_w: int = FRAME_W, frame_h: int = FRAME_H) -> tuple[float, float, float, float]:
-    """Slate strip: 240 px, centered, from the ground line up to 4% above the limit."""
-    x = frame_w / 2.0 - BACKING_W / 2.0
-    y = BACKING_TOP * frame_h
-    ground = GROUND * frame_h
-    return x, y, BACKING_W, ground - y
-
-
 def scene_at(frame: int, rows: tuple[Scene, ...] | None = None) -> Scene:
-    """Settled plate at this frame. During a hand-off the incoming plate is used after 60%."""
     rows = rows or scenes_from_manifest()
     current = rows[0]
     for cur, nxt in zip(rows, rows[1:]):
-        start = handoff_start_frame(break_fold(cur.world_m))
+        start = handoff_start_frame(break_fold(cur.world_m, screen_ground=cur.screen_ground))
         if frame < start:
             return cur
         if frame < start + HANDOFF_FRAMES:
@@ -147,20 +126,14 @@ def _contrast(foreground: np.ndarray, background: np.ndarray) -> float:
 
 
 def edge_contrast(image_bgr: np.ndarray, paper: PaperBox, outline: float = OUTLINE_PX) -> tuple[float, float, float]:
-    """White paper against the local background just outside the outline, at three heights.
-
-    Samples sit 6 px inside the fill and 6 px outside the outline, so the 12 px
-    stroke itself is not the background and not the paper.
-    """
+    """White front face against the plate just outside the outline, at three heights."""
     height, width = image_bgr.shape[:2]
     ratios = []
     for frac in (0.25, 0.50, 0.75):
         sy = int(round(paper.y + paper.h * frac))
         sy = min(height - 3, max(2, sy))
-        inside_x = int(round(paper.x + 6))
-        outside_x = int(round(paper.x - outline - 6))
-        inside_x = min(width - 3, max(2, inside_x))
-        outside_x = min(width - 3, max(2, outside_x))
+        inside_x = min(width - 3, max(2, int(round(paper.x + 8))))
+        outside_x = min(width - 3, max(2, int(round(paper.x - outline - 8))))
         paper_rgb = np.median(image_bgr[sy - 2 : sy + 3, inside_x - 2 : inside_x + 3, ::-1], axis=(0, 1))
         back_rgb = np.median(image_bgr[sy - 2 : sy + 3, outside_x - 2 : outside_x + 3, ::-1], axis=(0, 1))
         ratios.append(_contrast(paper_rgb, back_rgb))
@@ -168,19 +141,18 @@ def edge_contrast(image_bgr: np.ndarray, paper: PaperBox, outline: float = OUTLI
 
 
 def _paper_texture(width: int, height: int, folds: int, seed: int) -> np.ndarray:
-    """Flat paper, a little grain, and up to six doubled bands. RGBA."""
     rng = np.random.default_rng(seed)
     bands = min(6, max(1, folds))
-    image = np.empty((height, width, 4), np.float32)
+    image = np.empty((max(1, height), max(1, width), 4), np.float32)
     image[:, :, 3] = 255
     for index in range(bands):
-        y0 = int(round(index * height / bands))
-        y1 = int(round((index + 1) * height / bands))
+        y0 = int(round(index * image.shape[0] / bands))
+        y1 = int(round((index + 1) * image.shape[0] / bands))
         tone = PAPER_RGB if index % 2 == 0 else SEAM_RGB
         image[y0:y1, :, 0] = tone[0]
         image[y0:y1, :, 1] = tone[1]
         image[y0:y1, :, 2] = tone[2]
-    noise = rng.normal(0.0, 2.5, size=(height, width, 1))
+    noise = rng.normal(0.0, 2.5, size=(image.shape[0], image.shape[1], 1))
     image[:, :, :3] = np.clip(image[:, :, :3] + noise, 0, 255)
     return image.astype(np.uint8)
 
@@ -190,12 +162,10 @@ def _load_plate(plate_id: str) -> np.ndarray:
     image = cv2.imread(str(path), cv2.IMREAD_COLOR)
     if image is None:
         raise SystemExit(f"missing normalized plate {path}. Run ingest first.")
-    if image.shape[0] != FRAME_H or image.shape[1] != FRAME_W:
-        raise SystemExit(f"{path} is {image.shape[1]}x{image.shape[0]}, expected {FRAME_W}x{FRAME_H}")
     return image
 
 
-def _scaled_cutout(object_id: str, height_px: float) -> np.ndarray:
+def _scaled_cutout(object_id: str, height_px: float | None = None, width_px: float | None = None) -> np.ndarray:
     path = ART_ROOT / "keyed" / f"{object_id}.png"
     image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if image is None or image.ndim != 3 or image.shape[2] != 4:
@@ -205,12 +175,17 @@ def _scaled_cutout(object_id: str, height_px: float) -> np.ndarray:
     if len(ys) == 0:
         raise SystemExit(f"{object_id} has no opaque pixels")
     crop = image[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
-    dest_h = max(1, int(round(height_px)))
-    dest_w = max(1, int(round(crop.shape[1] * (dest_h / crop.shape[0]))))
+    if width_px is not None:
+        dest_w = max(1, int(round(width_px)))
+        dest_h = max(1, int(round(crop.shape[0] * (dest_w / crop.shape[1]))))
+    else:
+        dest_h = max(1, int(round(height_px or 1)))
+        dest_w = max(1, int(round(crop.shape[1] * (dest_h / crop.shape[0]))))
     scaled = cv2.resize(crop.astype(np.float32), (dest_w, dest_h), interpolation=cv2.INTER_LANCZOS4)
     rgb = np.clip(scaled[:, :, :3], 0, 255).astype(np.uint8)
-    # cv2 is BGRA. skia wants RGBA.
-    return np.dstack([rgb[:, :, 2], rgb[:, :, 1], rgb[:, :, 0], np.clip(scaled[:, :, 3], 0, 255).astype(np.uint8)])
+    return np.dstack(
+        [rgb[:, :, 2], rgb[:, :, 1], rgb[:, :, 0], np.clip(scaled[:, :, 3], 0, 255).astype(np.uint8)]
+    )
 
 
 def _stamp(fold: int) -> str:
@@ -220,11 +195,50 @@ def _stamp(fold: int) -> str:
     return ""
 
 
-def _fit_size(kind: str, text: str, max_width: float, hi: float, lo: float) -> float:
-    size = hi
-    while size > lo and text_width(kind, size, text) > max_width:
-        size -= 2
-    return size
+def context_sub(script: Script, frame: int, fold: int) -> str:
+    """Context under the counter. The stack label owns the height, so this never repeats it."""
+    for sub in script.subs:
+        if sub.start <= frame < sub.end and sub.id not in {"space_km", "h6"}:
+            return sub.text
+    if frame >= 96 and fold > 0:
+        text = length_sub(fold)
+        if not text.startswith("PAPER NEEDED"):
+            text = f"PAPER NEEDED {text}"
+        return text
+    return ""
+
+
+def _moon_on_plate(scene: Scene) -> tuple[float, float, float] | None:
+    if scene.moon_cx is None or scene.moon_cy is None or scene.moon_radius is None:
+        return None
+    scale, tx, ty = align_translate(scene.ground_y, 768, 1376, screen_ground=scene.screen_ground)
+    return (
+        scene.moon_cx * 768 * scale + tx,
+        scene.moon_cy * 1376 * scale + ty,
+        scene.moon_radius * 768 * scale,
+    )
+
+
+def _moon_face_overlap(image_bgr: np.ndarray, rects: list[tuple[float, float, float, float]]) -> float:
+    """Share of the text ink boxes that sit on the cream Moon face."""
+    rgb = image_bgr[:, :, ::-1].astype(np.int16)
+    bright = (rgb[:, :, 0] > 180) & (rgb[:, :, 1] > 170) & (rgb[:, :, 2] > 150)
+    covered = 0
+    total = 0
+    height, width = bright.shape
+    for x, y, w, h in rects:
+        x0 = max(0, int(x))
+        y0 = max(0, int(y))
+        x1 = min(width, int(round(x + w)))
+        y1 = min(height, int(round(y + h)))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        patch = bright[y0:y1, x0:x1]
+        total += patch.size
+        covered += int(patch.sum())
+    if total == 0:
+        return 0.0
+    return covered / total
 
 
 class DioramaStill:
@@ -246,187 +260,282 @@ class DioramaStill:
         rgb = cv2.cvtColor(self.plate(scene.plate), cv2.COLOR_BGR2RGB)
         canvas.image(rgb, 0, 0)
         notes: list[str] = []
-        if scene.plate in BACKING_PLATES and frame >= 84:
-            self._backing(canvas)
-            notes.append("slate strip 240 px")
-        elif scene.plate in BACKING_PLATES and frame < 84:
-            self._card_mat(canvas)
-            notes.append("slate mat behind the 700 px card")
-        scale = px_per_m(scene.world_m)
+        scale = px_per_m(scene.world_m, screen_ground=scene.screen_ground)
         self._objects(canvas, scene, scale, notes)
         if frame < 84:
             paper = self._card(canvas)
+            notes.append(f"card {CARD_W:.0f}x{CARD_H:.0f} base {CARD_BASE:.0f}")
         else:
-            paper = self._stack(canvas, fold, scale)
+            paper = self._stack(canvas, fold, scale, scene)
             self._altitude(canvas, scene, scale, fold)
-        self._stamp(canvas, frame, fold, scene)
-        canvas.rect(0, PANEL_Y, FRAME_W, FRAME_H - PANEL_Y, OUTLINE)
-        self._top(canvas, frame)
+        self._stamp(canvas, frame, fold, scene, scale)
+        self._top(canvas, frame, scene, notes)
         self._bottom(canvas, frame, fold)
         image = bgr(canvas)
         ratios = edge_contrast(image, paper)
         name = "hook" if frame == 0 else f"fold_{fold}"
         return StillFrame(name, frame, fold, scene.plate, scene.name, image, paper, ratios, tuple(notes))
 
-    def _backing(self, canvas: PaperCanvas) -> None:
-        x, y, w, h = backing_box()
-        canvas.soft_rect(x, y, w, h, SHADOW, 0.35, 10, dx=10, dy=14)
-        canvas.rect(x, y, w, h, BACKING)
-
-    def _card_mat(self, canvas: PaperCanvas) -> None:
-        """Slate behind the opening card, 40 px past each side, same vertical span as the strip.
-
-        A 240 px strip sits entirely behind a 700 px card, so the card edge would
-        still land on the moon. The mat uses the same cardstock and shadow.
-        """
-        _x, y, _w, h = backing_box()
-        w = CARD_W + 80.0
-        x = FRAME_W / 2.0 - w / 2.0
-        canvas.soft_rect(x, y, w, h, SHADOW, 0.35, 10, dx=10, dy=14)
-        canvas.rect(x, y, w, h, BACKING)
-
     def _objects(self, canvas: PaperCanvas, scene: Scene, scale: float, notes: list[str]) -> None:
-        ground = GROUND * FRAME_H
+        ground = scene.screen_ground * FRAME_H
         for object_id, x_frac, meters in SCENE_OBJECTS.get(scene.name, ()):
             height_px = meters * scale
-            cutout = _scaled_cutout(object_id, height_px)
+            cutout = _scaled_cutout(object_id, height_px=height_px)
             left = FRAME_W * x_frac - cutout.shape[1] / 2.0
             top = ground - cutout.shape[0]
             canvas.image(cutout, left, top)
-            drawn = cutout.shape[0]
-            error = abs(drawn - height_px) / height_px if height_px else 0.0
-            notes.append(f"{object_id} {meters:g} m -> {drawn} px (scale error {error:.2%})")
+            error = abs(cutout.shape[0] - height_px) / height_px if height_px else 0.0
+            notes.append(f"{object_id} {meters:g} m -> {cutout.shape[0]} px (scale error {error:.2%})")
+        if scene.name == "orbit":
+            cutout = _scaled_cutout("o05_iss", width_px=0.18 * FRAME_W)
+            altitude = ground - ISS_M * scale
+            left = 0.76 * FRAME_W - cutout.shape[1] / 2.0
+            top = altitude - cutout.shape[0] / 2.0
+            canvas.image(cutout, left, top)
+            notes.append(f"o05_iss width {cutout.shape[1]} px (18% of the frame) at {ISS_M/1000:.0f} km")
 
-    def _stack(self, canvas: PaperCanvas, fold: int, scale: float) -> PaperBox:
-        meters = height_m(fold)
-        height_px = max(8.0, meters * scale)
-        ground = GROUND * FRAME_H
-        top = ground - height_px
+    def _stack(self, canvas: PaperCanvas, fold: int, scale: float, scene: Scene) -> PaperBox:
+        base = scene.screen_ground * FRAME_H
+        height_px = max(24.0, height_m(fold) * scale)
+        top = base - height_px
         x = FRAME_W / 2.0 - STACK_W / 2.0
-        canvas.soft_rect(x - 10, PANEL_Y - 20, STACK_W + 20, 16, SHADOW, 0.35, 10)
-        canvas.rect(x - OUTLINE_PX, top - OUTLINE_PX, STACK_W + OUTLINE_PX * 2, height_px + OUTLINE_PX, OUTLINE)
-        texture = _paper_texture(int(STACK_W), max(1, int(round(height_px))), fold, seed=7)
+        silhouette = self._silhouette(x, top, base)
+        canvas.soft_polygon(silhouette, SHADOW, 0.30, 8, dx=20)
+        canvas.stroke_polygon(silhouette, OUTLINE, OUTLINE_PX * 2)
+        front = [(x, top), (x + STACK_W, top), (x + STACK_W, base), (x, base)]
+        cap = [
+            (x, top),
+            (x + STACK_W, top),
+            (x + STACK_W + SIDE_W, top - TOP_H),
+            (x + SIDE_W, top - TOP_H),
+        ]
+        side = [
+            (x + STACK_W, top),
+            (x + STACK_W + SIDE_W, top - TOP_H),
+            (x + STACK_W + SIDE_W, base - TOP_H),
+            (x + STACK_W, base),
+        ]
+        canvas.polygon(side, SIDE)
+        canvas.polygon(cap, TOP_FACE)
+        texture = _paper_texture(int(STACK_W), int(round(height_px)), fold, seed=7)
         canvas.image(texture, x, top)
         label = height_label(fold)
-        self._chip(canvas, label, FRAME_W / 2.0, top - 56, "mono")
+        label_cx = FRAME_W / 2.0
+        if scene.name == "deep_space":
+            label_cx = self._left_of_moon(scene, label, "mono", 36.0, top - TOP_H - 56 + 18)
+        self._chip(canvas, label, label_cx, top - TOP_H - 56, "mono")
         return PaperBox(x, top, STACK_W, height_px)
 
+    def _silhouette(self, x: float, top: float, base: float) -> list[tuple[float, float]]:
+        return [
+            (x, base),
+            (x, top),
+            (x + SIDE_W, top - TOP_H),
+            (x + STACK_W + SIDE_W, top - TOP_H),
+            (x + STACK_W + SIDE_W, base - TOP_H),
+            (x + STACK_W, base),
+        ]
+
     def _card(self, canvas: PaperCanvas) -> PaperBox:
-        ground = GROUND * FRAME_H
-        top = ground - CARD_H
+        top = CARD_BASE - CARD_H
         half = CARD_W / 2.0
         left = FRAME_W / 2.0 - half
-        angle = HOOK_PROGRESS * math.pi
-        right_w = half * abs(math.cos(angle))
-        canvas.soft_rect(left, ground - 12, CARD_W, 20, SHADOW, 0.35, 10)
+        right_w = half * abs(math.cos(HOOK_PROGRESS * math.pi))
+        canvas.soft_polygon(
+            [(left, CARD_BASE), (left, top), (left + half + right_w, top), (left + half + right_w, CARD_BASE)],
+            SHADOW,
+            0.30,
+            8,
+            dx=20,
+        )
         canvas.rect(left - OUTLINE_PX, top - OUTLINE_PX, half + OUTLINE_PX, CARD_H + OUTLINE_PX, OUTLINE)
         canvas.rect(FRAME_W / 2.0, top - OUTLINE_PX, right_w + OUTLINE_PX, CARD_H + OUTLINE_PX, OUTLINE)
-        left_tex = _paper_texture(int(half), int(CARD_H), folds=1, seed=7)
-        canvas.image(left_tex, left, top)
-        right_tex = _paper_texture(max(1, int(round(right_w))), int(CARD_H), folds=1, seed=11)
-        # The lifted half is still the front face, a little darker so the turn reads.
-        right_tex = right_tex.astype(np.float32)
-        right_tex[:, :, :3] *= 0.86
-        canvas.image(np.clip(right_tex, 0, 255).astype(np.uint8), FRAME_W / 2.0, top)
+        canvas.image(_paper_texture(int(half), int(CARD_H), 1, 7), left, top)
+        right = _paper_texture(max(1, int(round(right_w))), int(CARD_H), 1, 11).astype(np.float32)
+        right[:, :, :3] *= 0.86
+        canvas.image(np.clip(right, 0, 255).astype(np.uint8), FRAME_W / 2.0, top)
         return PaperBox(left, top, half, CARD_H)
 
     def _altitude(self, canvas: PaperCanvas, scene: Scene, scale: float, fold: int) -> None:
-        ground = GROUND * FRAME_H
+        ground = scene.screen_ground * FRAME_H
         if scene.name == "atmosphere":
             y = ground - KARMAN_M * scale
-            self._dashed(canvas, y, STACK_W)
-            self._chip(canvas, "SPACE", SAFE_L + 80, y - 46, "word")
+            self._dashed(canvas, y)
+            self._chip(canvas, "SPACE", SAFE_L + 90, y - 52, "word")
         if scene.name == "deep_space":
             y = ground - MOON_M * scale
-            self._dashed(canvas, y, STACK_W)
+            moon = _moon_on_plate(scene)
+            right = SAFE_R
+            if moon is not None:
+                right = min(right, self._chord_left(moon, y) - 8)
+            self._dashed(canvas, y, right=right)
 
-    def _dashed(self, canvas: PaperCanvas, y: float, gap_w: float) -> None:
-        gap_l = FRAME_W / 2.0 - gap_w / 2.0 - OUTLINE_PX - 8
-        gap_r = FRAME_W / 2.0 + gap_w / 2.0 + OUTLINE_PX + 8
-        for x0, x1 in ((SAFE_L, gap_l), (gap_r, SAFE_R)):
+    def _dashed(self, canvas: PaperCanvas, y: float, right: float = SAFE_R) -> None:
+        gap_l = FRAME_W / 2.0 - STACK_W / 2.0 - OUTLINE_PX - 10
+        gap_r = FRAME_W / 2.0 + STACK_W / 2.0 + SIDE_W + OUTLINE_PX + 10
+        runs = [(SAFE_L, gap_l)]
+        if gap_r < right:
+            runs.append((gap_r, right))
+        for x0, x1 in runs:
             x = x0
             while x < x1:
-                canvas.rect(x, y - 3, min(16.0, x1 - x), 6, "#F2F4F8")
+                canvas.rect(x, y - 3, min(16.0, x1 - x), 6, PAPER)
                 x += 28
 
-    def _stamp(self, canvas: PaperCanvas, frame: int, fold: int, scene: Scene) -> None:
-        # The top slot already says THE MOON at fold 42, and SPACE is on the Karman line.
+    def _chord_left(self, moon: tuple[float, float, float], y: float) -> float:
+        cx, cy, radius = moon
+        dy = y - cy
+        if abs(dy) >= radius:
+            return cx - radius
+        return cx - math.sqrt(radius * radius - dy * dy)
+
+    def _left_of_moon(self, scene: Scene, text: str, kind: str, size: float, mid_y: float) -> float:
+        """Center a label so its plate stays left of the Moon disc."""
+        moon = _moon_on_plate(scene)
+        width = text_width(kind, size, text)
+        center = FRAME_W / 2.0
+        if moon is None:
+            return center
+        limit = self._chord_left(moon, mid_y) - 16 - 12 - width / 2.0
+        return min(center, limit)
+
+    def _stamp(self, canvas: PaperCanvas, frame: int, fold: int, scene: Scene, scale: float) -> None:
         if fold in (30, 42):
             return
         text = _stamp(fold)
         if not text or frame != fold_frame(fold):
             return
+        ground = scene.screen_ground * FRAME_H
         if scene.name == "street":
-            head = GROUND * FRAME_H - PERSON_M * px_per_m(scene.world_m)
-            self._chip(canvas, text, 250, head - 64, "word")
+            self._chip(canvas, text, 250, ground - PERSON_M * scale - 64, "word")
         elif scene.name == "city":
-            # Beside the tower, below the height chip so the two labels do not join.
-            tip = GROUND * FRAME_H - BURJ_M * px_per_m(scene.world_m)
-            self._chip(canvas, text, 900, tip + 150, "word")
+            self._chip(canvas, text, 900, ground - BURJ_M * scale + 160, "word")
+        elif scene.name == "orbit":
+            self._chip(canvas, text, 0.76 * FRAME_W, ground - ISS_M * scale - 80, "word")
 
     def _chip(self, canvas: PaperCanvas, text: str, cx: float, top: float, kind: str) -> None:
-        size = _fit_size(kind, text, 420, 36, 22)
+        size = 36.0
+        while size > 22 and text_width(kind, size, text) > 460:
+            size -= 2
         width = text_width(kind, size, text)
-        x = min(SAFE_R - width - 12, max(SAFE_L, cx - width / 2.0))
-        canvas.rect(x - 12, top - 6, width + 24, size + 16, OUTLINE)
+        x = min(SAFE_R - width - 16, max(SAFE_L, cx - width / 2.0))
+        canvas.round_rect(x - 16, top - 8, width + 32, size + 20, 16, OUTLINE, PLATE_ALPHA)
         canvas.text(text, x, top, kind, size, PAPER)
 
-    def _top(self, canvas: PaperCanvas, frame: int) -> None:
+    def _top(self, canvas: PaperCanvas, frame: int, scene: Scene, notes: list[str]) -> None:
         lines = top_lines(self.script, frame, self.hook)
         if not lines:
             return
-        size = 110.0
-        while size > 72 and max(text_width("mono" if any(ch.isdigit() for ch in line) else "word", size, line) for line in lines) > (SAFE_R - SAFE_L):
-            size -= 2
-        block_h = len(lines) * (size + 8)
-        block_w = max(text_width("mono" if any(ch.isdigit() for ch in line) else "word", size, line) for line in lines)
+        if frame <= 180 or frame >= 1800:
+            self._hook_title(canvas, lines, notes)
+            return
+        if scene.name == "deep_space":
+            self._clear_of_moon(canvas, lines, scene)
+            return
+        self._centered_title(canvas, lines, 210.0)
+
+    def _hook_title(self, canvas: PaperCanvas, lines: tuple[str, ...], notes: list[str]) -> None:
+        size = HOOK_SIZE
+        ink_h = max(measure("word", size, line).height for line in lines)
+        gap = 8.0
+        widths = [text_width("word", size, line) for line in lines]
+        block_w = max(widths)
         x = FRAME_W / 2.0 - block_w / 2.0
-        y = 220.0
-        # Flat plate when the art behind the words is bright.
+        y = HOOK_Y
+        rects = []
+        cursor = y
+        for line, width in zip(lines, widths):
+            rects.append((FRAME_W / 2.0 - width / 2.0, cursor, width, ink_h))
+            cursor += ink_h + gap
+        if cursor - gap > HOOK_Y_MAX:
+            notes.append(f"hook text extends to {cursor - gap:.0f}, past y {HOOK_Y_MAX:.0f}")
+        plate = bgr(canvas)
+        worst = 99.0
+        for rx, ry, rw, rh in rects:
+            patch = plate[int(ry) : int(ry + rh), int(rx) : int(rx + rw)]
+            if patch.size == 0:
+                continue
+            median = np.median(patch.reshape(-1, 3)[:, ::-1], axis=0)
+            worst = min(worst, _contrast(np.array(PAPER_RGB, dtype=np.float32), median))
+        if worst < 4.5:
+            canvas.round_rect(x - 24, y - 16, block_w + 48, (cursor - y) + 8, 16, OUTLINE, PLATE_ALPHA)
+            notes.append(f"hook plate on, worst contrast {worst:.2f}:1")
+        else:
+            notes.append(f"hook plate off, worst contrast {worst:.2f}:1")
+        overlap = _moon_face_overlap(plate, rects)
+        notes.append(f"moon overlap {overlap:.1%} of the text")
+        cursor = y
+        for line, width in zip(lines, widths):
+            canvas.text(line, FRAME_W / 2.0 - width / 2.0, cursor, "word", size, PAPER)
+            cursor += ink_h + gap
+
+    def _centered_title(self, canvas: PaperCanvas, lines: tuple[str, ...], y: float) -> None:
+        size = 100.0
+        while size > 72 and max(text_width("word", size, line) for line in lines) > (SAFE_R - SAFE_L):
+            size -= 2
+        block_w = max(text_width("word", size, line) for line in lines)
+        block_h = len(lines) * (size + 8)
+        x = FRAME_W / 2.0 - block_w / 2.0
         patch = bgr(canvas)[int(y) : int(y + block_h), int(x) : int(x + block_w)]
         if patch.size:
             median = np.median(patch.reshape(-1, 3)[:, ::-1], axis=0)
-            if _contrast(np.array(PAPER_RGB, dtype=np.float32), median) < 3.0:
-                canvas.rect(x - 24, y - 16, block_w + 48, block_h + 16, "#0E1117", 0.55)
+            if _contrast(np.array(PAPER_RGB, dtype=np.float32), median) < 4.5:
+                canvas.round_rect(x - 24, y - 16, block_w + 48, block_h + 8, 16, OUTLINE, PLATE_ALPHA)
         cursor = y
         for line in lines:
-            kind = "mono" if any(ch.isdigit() for ch in line) else "word"
-            width = text_width(kind, size, line)
-            canvas.text(line, FRAME_W / 2.0 - width / 2.0, cursor, kind, size, PAPER)
+            width = text_width("word", size, line)
+            canvas.text(line, FRAME_W / 2.0 - width / 2.0, cursor, "word", size, PAPER)
+            cursor += size + 8
+
+    def _clear_of_moon(self, canvas: PaperCanvas, lines: tuple[str, ...], scene: Scene) -> None:
+        moon = _moon_on_plate(scene)
+        size = 88.0
+        text = lines[0] if len(lines) == 1 else " ".join(lines)
+        # One line in the dark band, left of the Moon.
+        if len(lines) > 1:
+            # Keep the scripted breaks, stacked on the left.
+            pass
+        width = max(text_width("word", size, line) for line in lines)
+        x = SAFE_L
+        # Above the stack label. The Moon occupies the upper right, so the words stay on the left.
+        y = 78.0
+        if moon is not None:
+            cx, _cy, radius = moon
+            x = min(x, cx - radius - width - 24)
+            x = max(40.0, x)
+        block_h = len(lines) * (size + 8)
+        canvas.round_rect(x - 20, y - 12, width + 40, block_h + 8, 16, OUTLINE, PLATE_ALPHA)
+        cursor = y
+        for line in lines:
+            canvas.text(line, x, cursor, "word", size, PAPER)
             cursor += size + 8
 
     def _bottom(self, canvas: PaperCanvas, frame: int, fold: int) -> None:
-        label = "FOLDS"
-        label_w = text_width("word", 36, label)
-        canvas.text(label, FRAME_W / 2.0 - label_w / 2.0, 1340, "word", 36, "#8A93A6")
+        sub = context_sub(self.script, frame, fold)
+        label_w = text_width("word", 36, "FOLDS")
         number = str(fold)
         num_w = text_width("mono", 130, number)
-        canvas.text(number, FRAME_W / 2.0 - num_w / 2.0, 1380, "mono", 130, PAPER)
-        sub = sub_line(self.script, frame, fold)
+        sub_size = 34.0
+        sub_kind = "word"
+        sub_w = 0.0
         if sub:
-            kind = "mono" if any(ch.isdigit() for ch in sub) else "word"
-            sub_w = text_width(kind, 34, sub)
-            canvas.text(sub, FRAME_W / 2.0 - sub_w / 2.0, 1496, kind, 34, "#8A93A6")
-
-
-CRITIQUE = """## Critique
-
-All five stills clear 3:1 at the three edge samples. The samples are the white paper against the colour 6 px outside the 12 px outline.
-
-The hook card is about 700 px wide, so a 240 px strip would sit entirely behind it and the card edge would still land on the moon. The opening still uses the same slate and the same shadow, widened to 780 px (40 px of slate past each side). The moon stays visible above that mat. The mug (0.095 m, 138 px) is hidden behind the card. The phone (0.15 m, 218 px) stands to the right at desk scale. The card itself is not true scale. A real sheet is 0.1 mm, and the pose is fold progress 0.35: the right half is foreshortened and darker.
-
-Fold 15: the white stack is 3.3 m and about twice the person (168 px against 306 px). The slate column is much taller than that stack, because the strip runs up to the limit line. Compare the person to the white paper, not to the slate. The illustrated buildings are not to scale. The cream sky is the busy region, and the strip covers the center of it.
-
-Fold 23: the stack is 838.9 m and the Burj cutout is 828 m, drawn at 601 px. They read as the same height, with the stack a little taller. The plate's cream tower is still visible beside the strip. The small red patch on the Burj is in the source art. The stack is 120 px wide on purpose. That width is not the building's width.
-
-Fold 30: the atmosphere plate's center lane was already above 3:1, but the cream horizon beside the lower stack was about 1.2:1. The same 240 px strip is drawn there so the three edge samples pass. The stack top sits just above the 100 km line. The layered clouds are busy; the strip keeps the paper readable.
-
-Fold 42: no strip. The background is the star field, and the edge samples are about 16:1. The stack is 439,805 km, past the dashed line at the Moon's center (384,400 km). The title crosses the plate's Moon at about 4.8:1. The bottom line is the paper length, 107,000 light-years, not the height.
-
-p04 (mountains) uses the same 240 px strip in the compositor. None of these five frames lands on it.
-
-Stills are the settled plate at zoom 1.0. There is no mid-scene drift.
-"""
+            sub_kind = "mono" if any(ch.isdigit() for ch in sub) else "word"
+            while sub_size > 22 and text_width(sub_kind, sub_size, sub) > (SAFE_R - SAFE_L):
+                sub_size -= 2
+            sub_w = text_width(sub_kind, sub_size, sub)
+        block_w = max(label_w, num_w, sub_w)
+        block_h = 36 + 8 + 130 + (8 + sub_size if sub else 0)
+        pad = 24.0
+        x = FRAME_W / 2.0 - (block_w + pad * 2) / 2.0
+        y = 1316.0
+        canvas.round_rect(x, y, block_w + pad * 2, block_h + pad * 2, 16, OUTLINE, PLATE_ALPHA)
+        cursor = y + pad
+        canvas.text("FOLDS", FRAME_W / 2.0 - label_w / 2.0, cursor, "word", 36, "#8A93A6")
+        cursor += 36 + 8
+        canvas.text(number, FRAME_W / 2.0 - num_w / 2.0, cursor, "mono", 130, PAPER)
+        if sub:
+            cursor += 130 + 8
+            canvas.text(sub, FRAME_W / 2.0 - sub_w / 2.0, cursor, sub_kind, sub_size, "#C5CDD8")
 
 
 def render_heroes(hook: str = "A", out_dir: Path | None = None) -> list[StillFrame]:
@@ -434,14 +543,20 @@ def render_heroes(hook: str = "A", out_dir: Path | None = None) -> list[StillFra
     out_dir.mkdir(parents=True, exist_ok=True)
     drawer = DioramaStill(hook)
     frames = []
-    lines = ["# Hero stills", "", "Stack-edge contrast is white paper against the local background 6 px outside the 12 px outline, at 25%, 50% and 75% of the paper height.", ""]
+    lines = [
+        "# Hero stills",
+        "",
+        "Stack-edge contrast is the white front face against the plate 8 px outside the 10 px outline, at 25%, 50% and 75% of the face.",
+        "The slate strip is gone. p03 is the current plate; a replacement has not arrived.",
+        "",
+    ]
     for name, fold in HEROES:
         frame = 0 if fold == 0 else fold_frame(fold)
         still = drawer.render(frame)
         path = out_dir / f"{name}.png"
         cv2.imwrite(str(path), still.image)
         ratios = still.ratios
-        flag = " PASS" if min(ratios) >= 3.0 else " FAIL"
+        flag = " PASS" if min(ratios) >= 3.0 else " under 3:1"
         print(
             f"{name} frame {still.frame} {still.scene} {still.plate} "
             f"contrast {ratios[0]:.2f} {ratios[1]:.2f} {ratios[2]:.2f}{flag}"
@@ -455,8 +570,22 @@ def render_heroes(hook: str = "A", out_dir: Path | None = None) -> list[StillFra
         for note in still.notes:
             lines.append(f"  - {note}")
         frames.append(still)
+    lines += ["", CRITIQUE]
     report = ROOT / "out" / "stills_contrast.md"
-    report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text("\n".join(lines) + "\n\n" + CRITIQUE)
+    report.write_text("\n".join(lines) + "\n")
     print(f"wrote {report}")
     return frames
+
+
+CRITIQUE = """## Critique
+
+The stack is a 150 px oblique prism: white front, #B8C1D4 side 28 px, top face 12 px, 10 px outline, shadow 20 px to the right. There is no slate strip. Where the front face sits on cream (the street sky, the city, the atmosphere horizon), the edge contrast can fall under 3:1. Those numbers are the measured ones.
+
+The hook card is 520 by 700, base at y = 1306, in front of the lower Moon. The title is two lines of Montserrat ExtraBold at 100 px in y 190-420. Variant B is still three lines because "REACH THE MOON?" does not fit in 14 characters.
+
+p06 and p07 put the Earth's apex at y = 0.58. The bottom of the frame is the plate's own ground, with the last row repeated where the shift runs out. p05 is unchanged. p07's flat teal cap is near-black sky with a few stars; the Moon circle is masked so the disc is untouched.
+
+The counter is a #1B2030 plate at 92% opacity, sized to the words. The stack label is the height. The sub-line is context (0.1 MM PAPER, or PAPER NEEDED). Fold 15 and fold 23 have no top caption. Fold 42's title sits in the dark band to the left of the Moon.
+
+p03 is still the current city plate. Its tallest decorative tower is taller than the 828 m Burj, which the ingest warns about. A replacement plate has not arrived.
+"""

@@ -160,6 +160,7 @@ def test_edge_turn_and_scene_handoffs():
     assert px_per_m_at(start + 24, rows) == pytest.approx(new)
     assert aligned_ground_y(0.683, 768, 1376) == pytest.approx(0.68 * 1920)
     assert aligned_ground_y(0.665, 768, 1376) == pytest.approx(0.68 * 1920)
+    assert aligned_ground_y(0.665, 768, 1376, screen_ground=0.58) == pytest.approx(0.58 * 1920)
     text = retention_markdown(build_timeline())
     assert "frame 96" in text
     assert "frame 146" in text

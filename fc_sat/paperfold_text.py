@@ -59,7 +59,8 @@ def _fill(template: str, book: ClaimBook) -> str:
             return text
         return str(value)
 
-    return _SLOT.sub(replace, template)
+    text = _SLOT.sub(replace, template)
+    return re.sub(r"[ \t]+([.!?])", r"\1", text)
 
 
 def load_script(path: Path | None = None, book: ClaimBook | None = None) -> Script:

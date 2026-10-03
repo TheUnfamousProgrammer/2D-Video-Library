@@ -106,6 +106,48 @@ class PaperCanvas:
         paint.setMaskFilter(skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, blur))
         self.canvas.drawRect(skia.Rect.MakeXYWH(x + dx, y + dy, w, h), paint)
 
+    def round_rect(
+        self, x: float, y: float, w: float, h: float, radius: float, hex_color: str, alpha: float = 1.0
+    ) -> None:
+        if alpha <= 0 or w <= 0 or h <= 0:
+            return
+        rect = skia.Rect.MakeXYWH(x, y, w, h)
+        self.canvas.drawRoundRect(rect, radius, radius, self._paint(hex_color, alpha))
+
+    def soft_polygon(
+        self,
+        pts: list[tuple[float, float]],
+        hex_color: str,
+        alpha: float,
+        blur: float,
+        dx: float = 0.0,
+        dy: float = 0.0,
+    ) -> None:
+        if alpha <= 0 or len(pts) < 3 or blur <= 0:
+            return
+        path = skia.Path()
+        path.moveTo(pts[0][0] + dx, pts[0][1] + dy)
+        for x, y in pts[1:]:
+            path.lineTo(x + dx, y + dy)
+        path.close()
+        paint = self._paint(hex_color, alpha)
+        paint.setMaskFilter(skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, blur))
+        self.canvas.drawPath(path, paint)
+
+    def stroke_polygon(self, pts: list[tuple[float, float]], hex_color: str, width: float) -> None:
+        if len(pts) < 3 or width <= 0:
+            return
+        path = skia.Path()
+        path.moveTo(pts[0][0], pts[0][1])
+        for x, y in pts[1:]:
+            path.lineTo(x, y)
+        path.close()
+        paint = self._paint(hex_color, 1.0)
+        paint.setStyle(skia.Paint.kStroke_Style)
+        paint.setStrokeWidth(width)
+        paint.setStrokeJoin(skia.Paint.kMiter_Join)
+        self.canvas.drawPath(path, paint)
+
     def text(self, text: str, x: float, y: float, kind: str, size: float, hex_color: str, alpha: float = 1.0) -> None:
         if not text or alpha <= 0 or size <= 0:
             return
