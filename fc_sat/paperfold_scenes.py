@@ -12,7 +12,6 @@ import math
 from dataclasses import dataclass
 
 from fc_sat.easing import ease_in_out_cubic
-from fc_sat.paperfold_art import load_manifest
 from fc_sat.paperfold_math import MOON_M, height_m
 from fc_sat.paperfold_schedule import fold_frame
 
@@ -36,7 +35,10 @@ class Scene:
 
 
 def scenes_from_manifest(manifest: dict | None = None, deep_space_m: float | None = None) -> tuple[Scene, ...]:
-    manifest = manifest or load_manifest()
+    if manifest is None:
+        from fc_sat.paperfold_art import load_manifest
+
+        manifest = load_manifest()
     rows = []
     for item in manifest["plates"]:
         world = item.get("world_m")

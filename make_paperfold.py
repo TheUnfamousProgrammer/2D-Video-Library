@@ -20,6 +20,7 @@ from PIL import Image
 
 from fc_sat.beatkit.delivery import frame_indices, require_delivery
 from fc_sat.encode import pipe_raw_bgr
+from fc_sat.paperfold_art import run_ingest
 from fc_sat.paperfold_claims import evaluate, load_claims, render_report
 from fc_sat.paperfold_copy import lint_copy
 from fc_sat.paperfold_doctor import doctor
@@ -32,6 +33,7 @@ ROOT = Path(__file__).resolve().parent
 
 ROOT_MODES = (
     "doctor",
+    "ingest",
     "facts",
     "timeline",
     "animatic",
@@ -53,7 +55,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.mode == "full" and not args.approved:
         raise SystemExit("full render refused without --approved")
+    report = ROOT / "out" / "art_report.md"
+    if args.mode == "full" and report.exists() and "UNAPPROVED" in report.read_text():
+        raise SystemExit("full render refused: art is UNAPPROVED")
     log = StageLog()
+    if args.mode == "ingest":
+        code = run_ingest()
+        log.mark("ingest")
+        return code
     if args.mode == "doctor":
         code = doctor()
         log.mark("doctor")
