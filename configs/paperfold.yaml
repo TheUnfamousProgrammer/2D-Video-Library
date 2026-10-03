@@ -9,6 +9,8 @@ frames: 1824
 sample_rate: 48000
 hook: A
 seed: 7
+# The counter panel starts here. Plates are aligned so their ground line lands on it.
+panel_y: 0.68
 background: "#0E1117"
 panel: "#1B2030"
 paper: "#F2F4F8"

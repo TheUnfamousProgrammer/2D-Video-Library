@@ -5,6 +5,7 @@ from __future__ import annotations
 from fc_sat.encode import assert_encoders, find_ffmpeg
 from fc_sat.fonts import font_file, glyph_present, load_font
 from fc_sat.beatkit.palette import lightness_spread
+from fc_sat.paperfold_art import load_manifest, missing_assets
 from fc_sat.paperfold_config import load_config
 
 
@@ -57,10 +58,23 @@ def doctor() -> int:
     try:
         cfg = load_config()
         spread = lightness_spread(cfg.bar_colors)
-        print(f"config: {cfg.bpm:g} bpm, {cfg.frames} frames, hook {cfg.hook}")
+        print(f"config: {cfg.bpm:g} bpm, {cfg.frames} frames, hook {cfg.hook}, panel y {cfg.panel_y:.2f}")
         print(f"bar lightness spread: {spread:.4f} OKLab L")
         print("bar colors:", " ".join(cfg.bar_colors))
     except SystemExit as exc:
         print(f"config: FAIL {exc}")
+        failed = True
+    try:
+        manifest = load_manifest()
+        missing = missing_assets()
+        plates = len(manifest["plates"])
+        objects = len(manifest["objects"])
+        if missing:
+            print(f"art: FAIL missing {', '.join(missing)}")
+            failed = True
+        else:
+            print(f"art: {plates} plates, {objects} objects")
+    except SystemExit as exc:
+        print(f"art: FAIL {exc}")
         failed = True
     return 1 if failed else 0

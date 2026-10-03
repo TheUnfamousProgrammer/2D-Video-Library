@@ -27,6 +27,7 @@ class PaperConfig:
     sample_rate: int
     hook: str
     seed: int
+    panel_y: float
     background: str
     panel: str
     paper: str
@@ -59,6 +60,7 @@ def load_config(path: Path | None = None) -> PaperConfig:
         sample_rate=int(raw["sample_rate"]),
         hook=str(raw.get("hook", "A")),
         seed=int(raw.get("seed", 7)),
+        panel_y=float(raw.get("panel_y", 0.68)),
         background=str(raw["background"]),
         panel=str(raw["panel"]),
         paper=str(raw["paper"]),
@@ -90,3 +92,5 @@ def validate_config(cfg: PaperConfig) -> None:
         raise ConfigError("hook must be A, B, C, or D")
     if lightness_spread(cfg.bar_colors) > 0.03:
         raise ConfigError("equalized bar colors exceed 0.03 OKLab L")
+    if abs(cfg.panel_y - 0.68) > 1e-6:
+        raise ConfigError("the ground panel starts at 0.68 of the frame")

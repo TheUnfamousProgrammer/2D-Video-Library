@@ -1,0 +1,47 @@
+# Supplied plates and cutouts for the paperfold diorama.
+# A file matches an id when that id is the prefix before ".png_" or "_png_".
+# Originals stay in plates/ and objects/. Ingest writes normalized/ and keyed/.
+frame:
+  width: 1080
+  height: 1920
+  ground_screen: 0.68
+  limit_screen: 0.30
+plates:
+  - id: p01_hook_night_desk_moon
+    scene: desk
+    ground_y: 0.683
+    world_m: 0.9
+  - id: p02_street_day
+    scene: street
+    ground_y: 0.760
+    world_m: 14
+  - id: p03_city_day
+    scene: city
+    ground_y: 0.789
+    world_m: 1800
+  - id: p04_mountains_clouds
+    scene: mountains
+    ground_y: 0.730
+    world_m: 28000
+  - id: p05_upper_atmosphere
+    scene: atmosphere
+    ground_y: 0.827
+    world_m: 240000
+  - id: p06_low_orbit_limb
+    scene: orbit
+    ground_y: 0.668
+    world_m: 900000
+  - id: p07_deep_space_moon
+    scene: deep_space
+    ground_y: 0.665
+    moon_cx: 0.845
+    moon_cy: 0.275
+    moon_radius: 0.307
+objects:
+  - id: o01_person
+  - id: o02_mug
+  - id: o03_smartphone
+  - id: o04_burj_khalifa
+  - id: o05_iss
+  - id: o06_moon
+  - id: o07_earth
