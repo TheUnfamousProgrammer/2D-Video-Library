@@ -292,6 +292,51 @@ claims:
     usage: [facts, climax]
     fn: length
     args: [42]
+  mug_m:
+    type: computed
+    text: "a mug on the desk, used as a scale reference"
+    value: 0.095
+    source: "assumption, a typical mug about 9.5 cm tall"
+    surfaces: ["0.095"]
+    usage: [stamp]
+    fn: const
+    args: ["mug_m"]
+  phone_m:
+    type: computed
+    text: "a smartphone on the desk, used as a scale reference"
+    value: 0.15
+    source: "assumption, a phone about 15 cm tall"
+    surfaces: ["0.15"]
+    usage: [stamp]
+    fn: const
+    args: ["phone_m"]
+  iss_km:
+    type: computed
+    text: "ISS orbit altitude"
+    value: 408
+    source: "NASA, International Space Station, orbit altitude about 408 km"
+    surfaces: ["408"]
+    usage: [stamp]
+    fn: const
+    args: ["iss_km"]
+  pass_mug:
+    type: computed
+    text: "first fold whose stack passes a mug"
+    value: 10
+    source: "smallest n with h(n) >= 0.095 m"
+    surfaces: ["10"]
+    usage: [stamp]
+    fn: pass_fold
+    args: ["mug"]
+  pass_phone:
+    type: computed
+    text: "first fold whose stack passes a smartphone"
+    value: 11
+    source: "smallest n with h(n) >= 0.15 m"
+    surfaces: ["11"]
+    usage: [stamp]
+    fn: pass_fold
+    args: ["phone"]
   pass_person:
     type: computed
     text: "first fold whose stack passes 1.8 m"
@@ -328,6 +373,15 @@ claims:
     usage: [drop, stamp]
     fn: pass_fold
     args: ["karman"]
+  pass_iss:
+    type: computed
+    text: "first fold whose stack passes the ISS altitude"
+    value: 32
+    source: "smallest n with h(n) >= 408 km"
+    surfaces: ["32"]
+    usage: [stamp]
+    fn: pass_fold
+    args: ["iss"]
   pass_moon:
     type: computed
     text: "first fold whose stack passes the Moon, in theory"

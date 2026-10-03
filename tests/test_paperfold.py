@@ -36,10 +36,13 @@ def test_heights_lengths_and_pass_folds():
     assert height_km(41) == pytest.approx(219_902, abs=0.5)
     assert height_km(42) == pytest.approx(439_805, abs=0.5)
     assert height_m(12) == pytest.approx(0.4096, abs=1e-6)
+    assert milestone_fold("mug") == 10
+    assert milestone_fold("phone") == 11
     assert milestone_fold("person") == 15
     assert milestone_fold("burj") == 23
     assert milestone_fold("everest") == 27
     assert milestone_fold("karman") == 30
+    assert milestone_fold("iss") == 32
     assert milestone_fold("moon") == 42
     assert length_m(7) == pytest.approx(0.878, abs=0.0005)
     assert length_m(12) == pytest.approx(879, abs=0.5)
@@ -122,22 +125,44 @@ def test_hook_variants_share_the_fold_grid():
         assert top_lines(script, 0, hook) == top_lines(script, 1823, hook)
 
 
-def test_tower_transition_is_frames_72_to_84():
-    from fc_sat.paperfold_schedule import TRANSITION_END, TRANSITION_START, camera_at, fold_frame
+def test_edge_turn_and_scene_handoffs():
+    from fc_sat.paperfold_schedule import EDGE_END, EDGE_START, camera_at, fold_frame
+    from fc_sat.paperfold_scenes import (
+        aligned_ground_y,
+        handoff_folds,
+        handoff_start_frame,
+        px_per_m,
+        px_per_m_at,
+        scenes_from_manifest,
+    )
     from fc_sat.paperfold_timeline import build_timeline, retention_markdown
 
-    assert fold_frame(6) == 72
     assert fold_frame(7) == 84
-    assert TRANSITION_START == 72
-    assert TRANSITION_END == 84
-    assert camera_at(71) == "topdown"
-    assert camera_at(72) == "transition"
-    assert camera_at(83) == "transition"
-    assert camera_at(84) == "tower"
+    assert fold_frame(8) == 96
+    assert EDGE_START == 84
+    assert EDGE_END == 96
+    assert camera_at(83) == "topdown"
+    assert camera_at(84) == "transition"
+    assert camera_at(95) == "transition"
+    assert camera_at(96) == "tower"
+    pairs = handoff_folds()
+    assert [fold for _src, _dst, fold in pairs] == [13, 17, 24, 28, 31, 33]
+    assert handoff_start_frame(13) == 146
+    rows = scenes_from_manifest()
+    assert rows[-1].name == "deep_space"
+    # The blend starts on the old scale and arrives on the new one.
+    start = handoff_start_frame(13)
+    old = px_per_m(rows[0].world_m)
+    new = px_per_m(rows[1].world_m)
+    assert px_per_m_at(start - 1, rows) == pytest.approx(old)
+    assert px_per_m_at(start, rows) == pytest.approx(old)
+    assert px_per_m_at(start + 23, rows) == pytest.approx(new)
+    assert px_per_m_at(start + 24, rows) == pytest.approx(new)
+    assert aligned_ground_y(0.683, 768, 1376) == pytest.approx(0.68 * 1920)
+    assert aligned_ground_y(0.665, 768, 1376) == pytest.approx(0.68 * 1920)
     text = retention_markdown(build_timeline())
-    assert "frame 84" in text
-    assert "1.4 s" in text
-    assert "first tower doubling" in text
+    assert "frame 96" in text
+    assert "frame 146" in text
 
 
 def test_copy_says_about_400x_and_credits_only_the_name():
@@ -223,7 +248,7 @@ def test_opening_frame_is_bold_and_the_loop_matches():
     assert renderer.top_size >= 70
     assert not np.array_equal(frame0, renderer.render(1))
     assert np.array_equal(frame0, renderer.render(1823))
-    for frame in (84, 168, 576, 1128):
+    for frame in (96, 168, 576, 1128):
         image = renderer.render(frame)
         assert tower_white_span(image, 1) == pytest.approx(700, abs=2)
         assert renderer.top_size >= 70

@@ -39,6 +39,13 @@ MILKY_WAY_LY = 100_000.0
 # Assumption, shown as a comparison, not a measurement of a particular person.
 PERSON_M = 1.8
 
+# A desk mug and a phone, assumptions used as scale references.
+MUG_M = 0.095
+PHONE_M = 0.15
+
+# NASA: the ISS orbits at about 408 km.
+ISS_M = 408_000.0
+
 # NASA planetary fact sheet, Earth volumetric mean radius.
 EARTH_RADIUS_M = 6_371e3
 
@@ -56,10 +63,13 @@ AXIS_LO_M = 0.1
 AXIS_HI_M = 1.0e21
 
 MILESTONES = (
+    ("mug", MUG_M, "A MUG"),
+    ("phone", PHONE_M, "A PHONE"),
     ("person", PERSON_M, "A PERSON"),
     ("burj", BURJ_M, "BURJ KHALIFA"),
     ("everest", EVEREST_M, "EVEREST"),
     ("karman", KARMAN_M, "SPACE"),
+    ("iss", ISS_M, "THE ISS"),
     ("moon", MOON_M, "THE MOON"),
 )
 

@@ -30,7 +30,8 @@ def description(book: ClaimBook | None = None) -> str:
         f"In theory, {folds} folds of {thick} mm paper, each in a single direction, "
         f"using Gallivan's formula. At 30 folds the paper needed is {about_sun(book)} "
         "the distance from the Earth to the Sun. The real record is "
-        f"{record} folds."
+        f"{record} folds. Assumptions: {thick} mm paper, single-direction folds. "
+        "The stack's width is not to scale."
     )
     return "\n".join(
         [

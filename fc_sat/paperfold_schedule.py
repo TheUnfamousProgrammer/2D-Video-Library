@@ -37,11 +37,13 @@ def max_snap_error(bpm: float = 150.0, fps: int = 60) -> float:
     return error
 
 
-# Fold 6 lands at frame 72. The camera swings from the sheet to the tower across
-# the next 12 frames. Fold 7 lands at frame 84: the ghost copy has doubled the
-# stack, and the tower view is fully up.
-TRANSITION_START = 72
-TRANSITION_END = 84
+# Folds 1-7 are card folds. Frames 84-96 turn the card onto its edge.
+# Fold 8 lands at frame 96 and the stack is a column from there.
+EDGE_START = 84
+EDGE_END = 96
+# The rejected renderer still reads these names. They now mark the edge turn.
+TRANSITION_START = EDGE_START
+TRANSITION_END = EDGE_END
 
 
 def camera_at(frame: int) -> str:
@@ -61,7 +63,8 @@ def camera_at(frame: int) -> str:
 
 
 SEGMENTS = (
-    ("hook", 0, 192),
+    ("hook", 0, 96),
+    ("desk", 96, 192),
     ("rising", 192, 576),
     ("drop", 576, 672),
     ("twist", 672, 864),
