@@ -1,0 +1,704 @@
+# Numbers and sentences the circlesquare short is allowed to say.
+# configs/claims.yaml belongs to Collatz. This film has its own book.
+# Computed values are checked again on every facts run.
+whitelist: []
+claims:
+  half_side:
+    type: computed
+    text: half the side of the on-screen square
+    value: 340.0
+    source: configs/circlesquare.yaml half_side
+    surfaces:
+    - '340'
+    used_in:
+    - facts
+    fn: config_number
+    args:
+    - half_side
+  side_px:
+    type: computed
+    text: the on-screen square is 680 px on a side
+    value: 680.0
+    source: 2 * half_side
+    surfaces:
+    - '680'
+    used_in:
+    - description
+    fn: side
+    args: []
+  center_x:
+    type: computed
+    text: square center x
+    value: 540.0
+    source: design center
+    surfaces:
+    - '540'
+    used_in:
+    - facts
+    fn: center_x
+    args: []
+  center_y:
+    type: computed
+    text: square center y
+    value: 905.0
+    source: design center
+    surfaces:
+    - '905'
+    used_in:
+    - facts
+    fn: center_y
+    args: []
+  r1:
+    type: computed
+    text: radius of the first circle
+    value: 389.74823441051427
+    source: 8*sqrt(2)*a/pi^2
+    surfaces:
+    - '389.7'
+    - '389.748'
+    used_in:
+    - facts
+    - frame0
+    fn: r1
+    args: []
+  corner_px:
+    type: computed
+    text: distance from the center to a corner
+    value: 480.83261120685233
+    source: a*sqrt(2)
+    surfaces:
+    - '480.83'
+    used_in:
+    - facts
+    fn: corner
+    args: []
+  asymptote:
+    type: computed
+    text: gap(K) is about this many px divided by K
+    value: 68.89840487678968
+    source: 2a/pi^2
+    surfaces:
+    - '68.90'
+    used_in:
+    - facts
+    fn: asymptote
+    args: []
+  screen_w:
+    type: computed
+    text: frame width
+    value: 1080
+    source: design width
+    surfaces:
+    - '1080'
+    used_in:
+    - description
+    fn: config_number
+    args:
+    - width
+  screen_h:
+    type: computed
+    text: frame height
+    value: 1920
+    source: design height
+    surfaces:
+    - '1920'
+    used_in:
+    - facts
+    fn: config_number
+    args:
+    - height
+  zoom_max:
+    type: computed
+    text: the corner zoom
+    value: 36
+    source: design zoom
+    surfaces:
+    - '36'
+    used_in:
+    - zoom_label
+    fn: config_number
+    args:
+    - zoom_max
+  gap_px:
+    type: computed
+    text: half a pixel, the tolerance on this screen
+    value: 0.5
+    source: design tolerance
+    surfaces:
+    - '0.5'
+    - '0.50'
+    used_in:
+    - b16
+    - description
+    fn: config_number
+    args:
+    - gap_px
+  k_fool:
+    type: computed
+    text: 138 circles is the first count whose gap is at most half a pixel on this screen
+    value: 138
+    source: smallest K with gap(K) <= 0.5 at a=340
+    surfaces:
+    - '138'
+    used_in:
+    - b16
+    - titles
+    - description
+    - counter
+    fn: first_k
+    args:
+    - 0.5
+  k_drop:
+    type: computed
+    text: 93 circles at the drop
+    value: 93
+    source: schedule at frame 768
+    surfaces:
+    - '93'
+    used_in:
+    - drop
+    fn: schedule_k
+    args:
+    - 768
+  gap_1:
+    type: computed
+    text: gap of one circle
+    value: 64.40638049284121
+    source: gap(1)
+    surfaces:
+    - '64'
+    - '64.41'
+    used_in:
+    - counter
+    fn: gap
+    args:
+    - 1
+  gap_93:
+    type: computed
+    text: gap at 93 circles
+    value: 0.7408359254384322
+    source: gap(93)
+    surfaces:
+    - '0.74'
+    - '0.7408'
+    used_in:
+    - drop
+    fn: gap
+    args:
+    - 93
+  gap_138:
+    type: computed
+    text: gap at 138 circles
+    value: 0.4992616188008583
+    source: gap(138)
+    surfaces:
+    - '0.50'
+    - '0.4993'
+    used_in:
+    - b16
+    fn: gap
+    args:
+    - 138
+  gap_93_zoom:
+    type: computed
+    text: the 93-circle gap seen at 36x
+    value: 26.67009331578356
+    source: gap(93)*36
+    surfaces:
+    - '27'
+    - '26.7'
+    used_in:
+    - zoom_label
+    fn: gap_zoom
+    args:
+    - 93
+    - 36
+  final_k:
+    type: computed
+    text: circle count after 16 doublings of 93
+    value: 6094848
+    source: 93 * 2^16
+    surfaces:
+    - '6094848'
+    - 6,094,848
+    used_in:
+    - facts
+    fn: final_k
+    args: []
+  doubling_ks:
+    type: computed
+    text: circle count after each doubling, starting from 93
+    value:
+    - 93
+    - 186
+    - 372
+    - 744
+    - 1488
+    - 2976
+    - 5952
+    - 11904
+    - 23808
+    - 47616
+    - 95232
+    - 190464
+    - 380928
+    - 761856
+    - 1523712
+    - 3047424
+    - 6094848
+    source: 93 * 2^m for m=0..16
+    surfaces: []
+    used_in:
+    - facts
+    - counter
+    fn: doubling_ks
+    args: []
+  screen_counts:
+    type: computed
+    text: every integer the counter shows
+    value:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+    - 17
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+    - 24
+    - 25
+    - 26
+    - 27
+    - 28
+    - 29
+    - 30
+    - 31
+    - 32
+    - 33
+    - 34
+    - 35
+    - 36
+    - 37
+    - 38
+    - 39
+    - 40
+    - 41
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    - 47
+    - 48
+    - 49
+    - 50
+    - 51
+    - 52
+    - 53
+    - 54
+    - 55
+    - 56
+    - 57
+    - 58
+    - 59
+    - 60
+    - 61
+    - 62
+    - 63
+    - 64
+    - 65
+    - 66
+    - 67
+    - 68
+    - 69
+    - 70
+    - 71
+    - 72
+    - 73
+    - 74
+    - 75
+    - 76
+    - 77
+    - 78
+    - 79
+    - 80
+    - 81
+    - 82
+    - 83
+    - 84
+    - 85
+    - 86
+    - 87
+    - 88
+    - 89
+    - 90
+    - 91
+    - 92
+    - 93
+    - 138
+    - 186
+    - 193
+    - 243
+    - 305
+    - 372
+    - 385
+    - 484
+    - 518
+    - 609
+    - 744
+    - 767
+    - 966
+    - 1216
+    - 1488
+    - 1531
+    - 1927
+    - 2426
+    - 2976
+    - 3055
+    - 3846
+    - 4841
+    - 5952
+    - 6095
+    - 7673
+    - 9660
+    - 11775
+    - 11904
+    - 12161
+    - 15310
+    - 19274
+    - 23808
+    - 24264
+    - 30547
+    - 38456
+    - 47616
+    - 48413
+    - 60948
+    - 76730
+    - 95232
+    - 96597
+    - 121608
+    - 153096
+    - 190464
+    - 192736
+    - 242640
+    - 267899
+    - 305466
+    - 380928
+    - 384559
+    - 484131
+    - 609485
+    - 761856
+    - 767296
+    - 965968
+    - 1216082
+    - 1523712
+    - 1530957
+    - 1927360
+    - 2426403
+    - 3047424
+    - 3054660
+    - 3845589
+    - 4841310
+    - 6094848
+    source: counter_value at each frame
+    surfaces: []
+    used_in:
+    - counter
+    fn: screen_counts
+    args: []
+  screen_gaps:
+    type: computed
+    text: every gap float the sub-line formats
+    value:
+    - 1.1304368029652205e-05
+    - 0.00040695724906747937
+    - 0.0008139144981349587
+    - 0.0016278289962699175
+    - 0.003255657992539835
+    - 0.00651131598507967
+    - 0.01302263197015934
+    - 0.02604526394031868
+    - 0.05209052788063736
+    - 0.10418105576127472
+    - 0.20836211152254944
+    - 0.4167242230450989
+    - 0.7408359254384322
+    - 0.7488883321442472
+    - 0.7571177095370558
+    - 0.7655299564009397
+    - 0.7741312366202351
+    - 0.78292799424122
+    - 0.7919269695720459
+    - 0.8011352164064647
+    - 0.8105601204626964
+    - 0.8202094191394735
+    - 0.8300912227002755
+    - 0.8334484382444316
+    - 0.8402140370072289
+    - 0.8505867879390507
+    - 0.8612188476398615
+    - 0.8721200627621783
+    - 0.8833007848810439
+    - 0.8947719032788655
+    - 0.9065448803178242
+    - 0.9186317896422906
+    - 0.9310453574774442
+    - 0.9437990073227525
+    - 0.9569069083694899
+    - 0.9703840280089366
+    - 0.9842461888412117
+    - 0.9985101306406818
+    - 1.0131935777880017
+    - 1.0283153127403466
+    - 1.0438952561801784
+    - 1.0599545545606475
+    - 1.0765156758578769
+    - 1.0936025144409882
+    - 1.1112405060894162
+    - 1.1294567543217795
+    - 1.1482801693554165
+    - 1.1677416211954892
+    - 1.1878741085581055
+    - 1.2087129455719037
+    - 1.2302959684794814
+    - 1.2526637648845735
+    - 1.2758599284657066
+    - 1.2999313425199261
+    - 1.324928496216728
+    - 1.3509058380498118
+    - 1.3779221716943084
+    - 1.4060411003247282
+    - 1.435331526460061
+    - 1.4658682156021428
+    - 1.4977324333738125
+    - 1.5310126675855145
+    - 1.5658054487378195
+    - 1.602216284978681
+    - 1.6403607305852006
+    - 1.666896829442976
+    - 1.6803656107575193
+    - 1.7223704300697023
+    - 1.7665289975279848
+    - 1.8130113081211903
+    - 1.8620057293668992
+    - 1.9137215521304825
+    - 1.9683919785354078
+    - 2.0262776369070252
+    - 2.0876707354829023
+    - 2.1528999945378473
+    - 2.2223365325845066
+    - 2.2964009291196135
+    - 2.37557174770825
+    - 2.4603958842139946
+    - 2.5515012129767456
+    - 2.649612149077541
+    - 2.7555689424289653
+    - 2.8703517910367395
+    - 2.9951112385274996
+    - 3.131206853098945
+    - 3.2802569447740098
+    - 3.333793282465649
+    - 3.4442031788651093
+    - 3.6253955651288834
+    - 3.8267057327747125
+    - 4.051680116045873
+    - 4.3047504737199915
+    - 4.591528433665019
+    - 4.919225959832829
+    - 5.297269333642419
+    - 5.738219124853856
+    - 6.259190050198185
+    - 6.667583553583199
+    - 6.884118892618062
+    - 7.647536121169708
+    - 8.60114726133287
+    - 9.82600779247582
+    - 11.45673926884956
+    - 13.335143016578058
+    - 13.734372487916971
+    - 17.136762852202878
+    - 22.761122433981654
+    - 26.67009331578356
+    - 33.78486721426799
+    - 64.40638049284121
+    source: gap at the K and zoom on screen
+    surfaces: []
+    used_in:
+    - counter
+    fn: screen_gaps
+    args: []
+  adds:
+    type: computed
+    text: how many circles are added one at a time
+    value: 92
+    source: schedule
+    surfaces:
+    - '92'
+    used_in:
+    - facts
+    fn: schedule_count
+    args:
+    - adds
+  doubles:
+    type: computed
+    text: how many doublings
+    value: 16
+    source: schedule
+    surfaces:
+    - '16'
+    used_in:
+    - facts
+    fn: schedule_count
+    args:
+    - doubles
+  k_bar2:
+    type: computed
+    text: circles at the end of bar 2
+    value: 9
+    source: frame 192
+    surfaces:
+    - '9'
+    used_in:
+    - facts
+    fn: schedule_k
+    args:
+    - 192
+  k_bar4:
+    type: computed
+    text: circles at the end of bar 4
+    value: 25
+    source: frame 384
+    surfaces:
+    - '25'
+    used_in:
+    - facts
+    fn: schedule_k
+    args:
+    - 384
+  k_bar6:
+    type: computed
+    text: circles at the end of bar 6
+    value: 57
+    source: frame 576
+    surfaces:
+    - '57'
+    used_in:
+    - facts
+    fn: schedule_k
+    args:
+    - 576
+  k_672:
+    type: computed
+    text: circles at frame 672
+    value: 89
+    source: frame 672
+    surfaces:
+    - '89'
+    used_in:
+    - facts
+    fn: schedule_k
+    args:
+    - 672
+  k_cap:
+    type: computed
+    text: drawn curve is capped at this many circles
+    value: 23808
+    source: 93 * 2^8
+    surfaces:
+    - '23808'
+    - 23,808
+    used_in:
+    - facts
+    fn: scaled
+    args:
+    - 93
+    - 8
+  square_m:
+    type: computed
+    text: the pinned question uses a 10 metre square
+    value: 10
+    source: pinned comment
+    surfaces:
+    - '10'
+    used_in:
+    - comment
+    fn: identity
+    args:
+    - 10
+  half_m:
+    type: computed
+    text: half-side of that square, in metres
+    value: 5
+    source: 10/2
+    surfaces:
+    - '5'
+    used_in:
+    - comment
+    fn: identity
+    args:
+    - 5
+  tol_mm:
+    type: computed
+    text: the tolerance in the pinned question, in millimetres
+    value: 1
+    source: pinned comment
+    surfaces:
+    - '1'
+    used_in:
+    - comment
+    fn: identity
+    args:
+    - 1
+  metre_k:
+    type: computed
+    text: circles a 10 metre square needs to stay within 1 millimetre
+    value: 1013
+    source: round(2*5/(pi^2*0.001))
+    surfaces:
+    - '1013'
+    - 1,013
+    used_in:
+    - comment
+    fn: metre_k
+    args: []
+  part:
+    type: computed
+    text: this film is the sequel
+    value: 1
+    source: description
+    surfaces:
+    - '1'
+    used_in:
+    - description
+    fn: identity
+    args:
+    - 1
+  smooth_curve:
+    type: definitional
+    text: any finite number of circles traces a smooth curve, and a square has corners, so no finite number draws it exactly
+    source: a corner is not a smooth point; a finite Fourier sum is smooth
+    surfaces: []
+    used_in:
+    - comment
+  corners:
+    type: definitional
+    text: No finite number of circles can draw a square exactly, because it has corners.
+    source: same fact, the sentence used in the description
+    surfaces: []
+    used_in:
+    - description

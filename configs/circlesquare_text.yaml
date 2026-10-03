@@ -1,0 +1,76 @@
+# On-screen copy. Top lines are at most 16 characters. Digits need a claim.
+hooks:
+  A:
+    - "HOW MANY CIRCLES"
+    - "DRAW A SQUARE?"
+  B:
+    - "CAN CIRCLES"
+    - "DRAW A SQUARE?"
+  D:
+    - "HOW MANY CIRCLES"
+    - "DRAW A SQUARE?"
+cards:
+  - id: looks
+    start: 768
+    end: 876
+    lines: ["IT LOOKS", "LIKE A SQUARE"]
+  - id: zoom
+    start: 876
+    end: 948
+    lines: ["ZOOM IN"]
+  - id: not_quite
+    start: 948
+    end: 960
+    lines: ["NOT QUITE", "A SQUARE"]
+  - id: double
+    start: 960
+    end: 1344
+    lines: ["DOUBLE THE", "CIRCLES"]
+  - id: shrink
+    start: 1344
+    end: 1440
+    lines: ["THE GAP KEEPS", "SHRINKING"]
+  - id: tell
+    start: 1440
+    end: 1632
+    lines: ["AT {k_fool} CIRCLES", "YOU CAN'T TELL"]
+    gold: ["{k_fool}"]
+    claims: [k_fool]
+  - id: never
+    start: 1632
+    end: 1728
+    lines: ["IN MATH:", "NEVER EXACT."]
+  - id: closer
+    start: 1728
+    end: 1800
+    lines: ["ONLY CLOSER."]
+subs:
+  - id: gap_live
+    start: 0
+    end: 948
+    template: "GAP {gap} PX"
+    dynamic: live_gap
+    claims: [screen_gaps, screen_counts]
+  - id: gap_zoom
+    start: 948
+    end: 1344
+    template: "GAP {gap} PX AT {zoom_max}x"
+    dynamic: zoom_gap
+    claims: [screen_gaps, zoom_max]
+  - id: gap_hold
+    start: 1344
+    end: 1440
+    template: "GAP {gap} PX"
+    dynamic: live_gap
+    claims: [screen_gaps]
+  - id: gap_tell
+    start: 1440
+    end: 1632
+    template: "GAP UNDER 0.5 PX ON THIS SCREEN"
+    claims: [gap_px]
+  - id: gap_back
+    start: 1806
+    end: 1824
+    template: "GAP {gap} PX"
+    dynamic: live_gap
+    claims: [screen_gaps]
