@@ -418,6 +418,15 @@ claims:
     usage: [twist]
     fn: au_times
     args: [30]
+  au_times_32:
+    type: computed
+    text: "32 folds of paper, in Earth-Sun distances, two significant figures"
+    value: 6500
+    source: "round(L(32) / 1 AU, 2 significant figures)"
+    surfaces: ["6500", "6,500"]
+    usage: [twist]
+    fn: au_times
+    args: [32]
   ly_42:
     type: computed
     text: "42 folds of paper, in light-years, three significant figures"

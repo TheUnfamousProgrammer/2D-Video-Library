@@ -12,16 +12,24 @@ Preview and hooks are 540x960 at 30 fps. The master is 1080x1920 at 60 fps.
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image
 
 from fc_sat.beatkit.delivery import frame_indices, require_delivery
-from fc_sat.encode import pipe_raw_bgr
+from fc_sat.encode import find_ffmpeg, pipe_raw_bgr
 from fc_sat.paperfold_art import run_ingest
+from fc_sat.paperfold_audio import render_audio
+from fc_sat.paperfold_film import Film, downscale
+from fc_sat.paperfold_motion import render_clips
+from fc_sat.paperfold_post import lint_post, write_post
 from fc_sat.paperfold_stills import render_heroes
+from fc_sat.paperfold_verify import verify
 from fc_sat.paperfold_claims import evaluate, load_claims, render_report
 from fc_sat.paperfold_copy import lint_copy
 from fc_sat.paperfold_doctor import doctor
@@ -36,6 +44,7 @@ ROOT_MODES = (
     "doctor",
     "ingest",
     "stills",
+    "motion",
     "facts",
     "timeline",
     "animatic",
@@ -69,6 +78,10 @@ def main(argv: list[str] | None = None) -> int:
         render_heroes(args.hook)
         log.mark("stills")
         return 0
+    if args.mode == "motion":
+        render_clips(Path(args.out) if args.out else None)
+        log.mark("motion")
+        return 0
     if args.mode == "doctor":
         code = doctor()
         log.mark("doctor")
@@ -88,6 +101,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "hooks":
         code = _hooks(Path(args.out) if args.out else ROOT / "out")
         log.mark("hooks")
+        return code
+    if args.mode == "audio":
+        code = _audio(Path(args.out) if args.out else ROOT / "out")
+        log.mark("audio")
+        return code
+    if args.mode == "preview":
+        code = _preview(args.hook, Path(args.out) if args.out else ROOT / "out" / "paperfold_preview.mp4")
+        log.mark("preview")
+        return code
+    if args.mode == "postkit":
+        code = _postkit()
+        log.mark("postkit")
+        return code
+    if args.mode == "verify":
+        code = verify(Path(args.out) if args.out else ROOT / "out" / "paperfold.mp4")
+        log.mark("verify")
+        return code
+    if args.mode == "full":
+        code = _full(args.hook, Path(args.out) if args.out else ROOT / "out" / "paperfold.mp4")
+        log.mark("full")
         return code
     print(f"{args.mode} is not built yet", file=sys.stderr)
     log.mark(args.mode)
@@ -172,12 +205,12 @@ def _hooks(out_dir: Path) -> int:
     indices = frame_indices("hooks", 1824)
     thumbs = []
     for hook in ("A", "B", "C", "D"):
-        renderer = PaperRenderer(spec.width, spec.height, hook)
+        film = Film(hook)
         path = out_dir / f"paperfold_hook_{hook}.mp4"
 
-        def frames(renderer=renderer):
+        def frames(film=film):
             for frame in indices:
-                yield renderer.render(frame)
+                yield downscale(film.render(frame))
 
         pipe_raw_bgr(
             frames(),
@@ -189,17 +222,30 @@ def _hooks(out_dir: Path) -> int:
             preset="veryfast",
             n_frames=spec.frames,
         )
-        _print_style(renderer, hook)
+        _print_film_style(film, hook)
         row = []
         for seconds in (0.0, 0.2, 0.5, 1.0, 2.0):
-            image = renderer.render(int(round(seconds * 60)))
+            image = film.render(int(round(seconds * 60)))
             tile = Image.fromarray(image[:, :, ::-1])
             tile.thumbnail((360, 640))
             row.append(tile)
         thumbs.append(row)
-        print(f"wrote {path} (silent; music is the next stage)")
+        print(f"wrote {path}")
     _thumb_strip(thumbs, out_dir / "paperfold_hook_thumbs.png")
     return 0
+
+
+def _print_film_style(film: Film, hook: str) -> None:
+    images = [film.render(frame) for frame in range(25)]
+    fracs = [paper_fraction(image) for image in images]
+    energy = [
+        float(np.mean(np.abs(images[index].astype(np.int16) - images[index + 1].astype(np.int16))))
+        for index in range(24)
+    ]
+    print(
+        f"style {hook}: main-shape area {fracs[0]:.1%}, min stroke 10px, "
+        f"min text 84px, motion energy 0-24 mean {float(np.mean(energy)):.2f} max {max(energy):.2f}"
+    )
 
 
 def _print_style(renderer: PaperRenderer, hook: str) -> None:
@@ -227,6 +273,148 @@ def _sheet(renderer: PaperRenderer, frames: list[int], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(path)
     print(f"wrote {path}")
+
+
+def _audio(out_dir: Path) -> int:
+    music, sfx, lufs, peak = render_audio(out_dir)
+    print(f"wrote {music}")
+    print(f"wrote {sfx}")
+    print(f"loudness {lufs:.2f} LUFS, wav peak {peak:.2f} dBTP")
+    return 0
+
+
+def _preview(hook: str, output: Path) -> int:
+    spec = require_delivery("preview", 540, 960, 30, 912)
+    film = Film(hook)
+    music = ROOT / "out" / "paperfold.wav"
+    if not music.exists():
+        render_audio(ROOT / "out")
+    indices = frame_indices("preview", 1824)
+
+    def frames():
+        for index, frame in enumerate(indices):
+            if index % 60 == 0:
+                print(f"preview {index}/{spec.frames}", flush=True)
+            yield downscale(film.render(frame))
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with Heartbeat("preview still rendering"):
+        pipe_raw_bgr(
+            frames(),
+            output,
+            width=spec.width,
+            height=spec.height,
+            fps=spec.fps,
+            audio_path=music,
+            preset="veryfast",
+            n_frames=spec.frames,
+        )
+    print(f"wrote {output}")
+    return 0
+
+
+def _postkit() -> int:
+    errors = lint_post()
+    path = write_post()
+    for error in errors:
+        print(error)
+    print(f"wrote {path}")
+    return 1 if errors else 0
+
+
+def _full(hook: str, output: Path) -> int:
+    spec = require_delivery("full", 1080, 1920, 60, 1824)
+    render_heroes(hook)
+    film = Film(hook)
+    music = ROOT / "out" / "paperfold.wav"
+    sfx = ROOT / "out" / "paperfold.sfx.wav"
+    if not music.exists() or not sfx.exists():
+        render_audio(ROOT / "out")
+    lumas: list[float] = []
+    thumbs: list[np.ndarray] = []
+
+    def frames():
+        for frame in range(spec.frames):
+            image = film.render(frame)
+            rgb = image.astype(np.float32)
+            luma = (0.0722 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.2126 * rgb[:, :, 2]).mean() / 255.0
+            lumas.append(float(luma))
+            if frame % 30 == 0:
+                thumbs.append(cv2.resize(image, (180, 320), interpolation=cv2.INTER_AREA))
+            if frame % 60 == 0:
+                print(f"full {frame}/{spec.frames}", flush=True)
+            yield image
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with Heartbeat("full still rendering"):
+        pipe_raw_bgr(
+            frames(),
+            output,
+            width=spec.width,
+            height=spec.height,
+            fps=spec.fps,
+            audio_path=music,
+            preset="slow",
+            n_frames=spec.frames,
+        )
+    np.save(ROOT / "out" / "paperfold_luma.npy", np.array(lumas, dtype=np.float32))
+    _contact(thumbs, ROOT / "out" / "contact_sheet.png")
+    silent = output.with_name(output.stem + ".music_off.mp4")
+    _remux(output, sfx, silent)
+    print(f"wrote {output}")
+    print(f"wrote {silent}")
+    return 0
+
+
+def _contact(thumbs: list[np.ndarray], path: Path) -> None:
+    if not thumbs:
+        return
+    cols = 8
+    rows = (len(thumbs) + cols - 1) // cols
+    tile_h, tile_w = thumbs[0].shape[:2]
+    sheet = np.zeros((rows * tile_h, cols * tile_w, 3), np.uint8)
+    for index, thumb in enumerate(thumbs):
+        y, x = divmod(index, cols)
+        sheet[y * tile_h : (y + 1) * tile_h, x * tile_w : (x + 1) * tile_w] = thumb
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(path), sheet)
+    print(f"wrote {path}")
+
+
+def _remux(video: Path, audio: Path, dest: Path) -> None:
+    partial = dest.with_name(dest.name + ".partial.mp4")
+    subprocess.run(
+        [
+            find_ffmpeg(),
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(video),
+            "-i",
+            str(audio),
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+            str(partial),
+        ],
+        check=True,
+    )
+    os.replace(partial, dest)
 
 
 def _thumb_strip(rows: list[list[Image.Image]], path: Path) -> None:

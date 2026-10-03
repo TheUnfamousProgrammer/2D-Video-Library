@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import yaml
 
-from fc_sat.paperfold_art import art_id, key_magenta, place_plate, run_ingest
+from fc_sat.paperfold_art import art_id, key_magenta, place_plate, rebuild_below, run_ingest
 
 
 def test_manifest_id_ignores_the_upload_suffix():
@@ -26,6 +26,31 @@ def test_small_plate_is_upscaled_and_wrong_aspect_is_logged():
     square = np.zeros((400, 400, 3), dtype=np.uint8)
     _fitted, notes = place_plate(square, 0.70)
     assert any(note.startswith("WRONG ASPECT") for note in notes)
+
+
+def test_alignment_gap_is_grain_not_a_copied_row():
+    source = np.zeros((400, 300, 3), np.uint8)
+    source[:] = (40, 50, 60)
+    source[-1, :, 0] = np.arange(300) % 50
+    fitted, notes = place_plate(source, 0.95, screen_ground=0.58)
+    assert any(note.startswith("grain fill") for note in notes)
+    step = next(float(note.split()[-1]) for note in notes if note.startswith("fill step"))
+    assert step <= 6.0
+    # The last rows are grain, not a copy of one source row, and the step stays small.
+    assert not np.array_equal(fitted[-1], fitted[-2])
+    delta = np.abs(fitted[-1].astype(np.float32) - fitted[-2].astype(np.float32)).mean()
+    assert delta <= 6.0
+    assert abs(float(np.median(fitted[-1, :, 1])) - 50) < 8
+
+
+def test_bottom_rebuild_stays_within_six_levels():
+    image = np.zeros((200, 120, 3), np.uint8)
+    image[:40] = (70, 80, 90)
+    image[40:] = (0, 0, 0)
+    _count, step = rebuild_below(image, 40)
+    assert step <= 6.0
+    assert abs(float(np.median(image[80, :, 1])) - 80) < 8
+    assert int(image[80].max()) > 40
 
 
 def test_keyed_cutout_drops_magenta_and_keeps_the_object():

@@ -134,15 +134,17 @@ class PaperCanvas:
         paint.setMaskFilter(skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, blur))
         self.canvas.drawPath(path, paint)
 
-    def stroke_polygon(self, pts: list[tuple[float, float]], hex_color: str, width: float) -> None:
-        if len(pts) < 3 or width <= 0:
+    def stroke_polygon(
+        self, pts: list[tuple[float, float]], hex_color: str, width: float, alpha: float = 1.0
+    ) -> None:
+        if len(pts) < 3 or width <= 0 or alpha <= 0:
             return
         path = skia.Path()
         path.moveTo(pts[0][0], pts[0][1])
         for x, y in pts[1:]:
             path.lineTo(x, y)
         path.close()
-        paint = self._paint(hex_color, 1.0)
+        paint = self._paint(hex_color, alpha)
         paint.setStyle(skia.Paint.kStroke_Style)
         paint.setStrokeWidth(width)
         paint.setStrokeJoin(skia.Paint.kMiter_Join)

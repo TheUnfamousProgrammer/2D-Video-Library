@@ -37,7 +37,7 @@ def description(book: ClaimBook | None = None) -> str:
         [
             line1,
             line2,
-            "Music: original, made with code.",
+            "Music: original, made with code. Art: AI-generated.",
             "#shorts #math #satisfying #space #science",
         ]
     )

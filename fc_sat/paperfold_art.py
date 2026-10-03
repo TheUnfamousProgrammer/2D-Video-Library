@@ -118,13 +118,161 @@ def aspect_note(width: int, height: int) -> str | None:
     return None
 
 
+def denoise_chroma(bgr: np.ndarray) -> np.ndarray:
+    """Bilateral filter on Cb and Cr only. Luma, and therefore edges, stay put."""
+    ycrcb = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
+    y, cr, cb = cv2.split(ycrcb)
+    cr = cv2.bilateralFilter(cr, 7, 16, 8)
+    cb = cv2.bilateralFilter(cb, 7, 16, 8)
+    return cv2.cvtColor(cv2.merge([y, cr, cb]), cv2.COLOR_YCrCb2BGR)
+
+
+def _runs(indexes: np.ndarray) -> list[tuple[int, int]]:
+    if len(indexes) == 0:
+        return []
+    groups = []
+    start = prev = int(indexes[0])
+    for value in indexes[1:]:
+        value = int(value)
+        if value == prev + 1:
+            prev = value
+            continue
+        groups.append((start, prev))
+        start = prev = value
+    groups.append((start, prev))
+    return groups
+
+
+FILL_NOISE = 1.5
+FILL_BLEND = 48
+
+
+def _column_color(band: np.ndarray) -> np.ndarray:
+    """One colour per column: the median of the band, skipping black specks and white clouds."""
+    values = band.astype(np.float32)
+    luma = values.max(axis=2)
+    keep = (luma > 45.0) & (luma < 170.0)
+    width = values.shape[1]
+    color = np.empty((width, 3), np.float32)
+    kept = values[keep]
+    fallback = np.median(kept, axis=0) if kept.size else np.median(values.reshape(-1, 3), axis=0)
+    for x in range(width):
+        chosen = values[keep[:, x], x]
+        color[x] = np.median(chosen, axis=0) if chosen.shape[0] >= 3 else fallback
+    return cv2.GaussianBlur(color.reshape(1, width, 3), (0, 0), 40).reshape(width, 3)
+
+
+def _paint_rows(image: np.ndarray, y0: int, y1: int, color: np.ndarray, rng: np.random.Generator) -> None:
+    """Per-column colour plus Gaussian noise. Float math, then round. No clamp on the noise."""
+    rows = y1 - y0 + 1
+    noise = rng.normal(0.0, FILL_NOISE, size=(rows, color.shape[0], 3)).astype(np.float32)
+    band = color[None, :, :] + noise
+    fade = min(FILL_BLEND, rows)
+    if y0 > 0 and fade > 1:
+        edge = _column_color(image[max(0, y0 - 8) : y0])
+        # Start on the real boundary row when it already matches that colour,
+        # so a dark speck in the last row cannot paint a dark ramp.
+        boundary = image[y0 - 1].astype(np.float32)
+        close = np.max(np.abs(boundary - edge), axis=1) <= 12.0
+        edge = np.where(close[:, None], boundary, edge)
+        edge = cv2.GaussianBlur(edge.reshape(1, -1, 3), (0, 0), 3).reshape(-1, 3)
+        ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)[:, None, None]
+        band[:fade] = edge[None, :, :] * (1.0 - ramp) + band[:fade] * ramp
+    image[y0 : y1 + 1] = np.rint(band)
+
+
+def _row_color(band: np.ndarray) -> np.ndarray:
+    """One colour per row, skipping black specks and white clouds."""
+    values = band.astype(np.float32)
+    luma = values.max(axis=2)
+    keep = (luma > 45.0) & (luma < 170.0)
+    height = values.shape[0]
+    color = np.empty((height, 3), np.float32)
+    fallback = np.median(values.reshape(-1, 3), axis=0)
+    for y in range(height):
+        chosen = values[y][keep[y]]
+        color[y] = np.median(chosen, axis=0) if chosen.shape[0] >= 3 else fallback
+    return cv2.GaussianBlur(color.reshape(height, 1, 3), (0, 0), 6).reshape(height, 3)
+
+
+def _paint_cols(image: np.ndarray, x0: int, x1: int, color: np.ndarray, rng: np.random.Generator) -> None:
+    cols = x1 - x0 + 1
+    noise = rng.normal(0.0, FILL_NOISE, size=(color.shape[0], cols, 3)).astype(np.float32)
+    band = color[:, None, :] + noise
+    fade = min(FILL_BLEND, cols)
+    if x0 > 0 and fade > 1:
+        edge = _row_color(image[:, max(0, x0 - 8) : x0])
+        boundary = image[:, x0 - 1].astype(np.float32)
+        close = np.max(np.abs(boundary - edge), axis=1) <= 12.0
+        edge = np.where(close[:, None], boundary, edge)
+        edge = cv2.GaussianBlur(edge.reshape(-1, 1, 3), (0, 0), 3).reshape(-1, 3)
+        ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)[None, :, None]
+        band[:, :fade] = edge[:, None, :] * (1.0 - ramp) + band[:, :fade] * ramp
+    image[:, x0 : x1 + 1] = np.rint(band)
+
+
+def max_fill_neighbor_step(image: np.ndarray, mask: np.ndarray) -> float:
+    """Largest mean absolute step between neighbouring rows inside a fill."""
+    steps = []
+    for y in range(1, image.shape[0]):
+        both = mask[y] & mask[y - 1]
+        if int(both.sum()) < image.shape[1] // 2:
+            continue
+        delta = np.abs(image[y].astype(np.float32) - image[y - 1].astype(np.float32)).mean(axis=1)
+        steps.append(float(delta[both].mean()))
+    return max(steps) if steps else 0.0
+
+
+def _fill_uncovered(placed: np.ndarray, cover: np.ndarray) -> tuple[int, np.ndarray, float]:
+    """Fill warp gaps from each column's own bottom-band colour, plus sigma-1.5 noise."""
+    covered = cover >= 0.5
+    mask = np.zeros(covered.shape, dtype=bool)
+    if covered.all():
+        return 0, mask, 0.0
+    rng = np.random.default_rng(7)
+    filled = 0
+    row_gap = covered.mean(axis=1) < 0.05
+    row_ok = ~row_gap
+    for y0, y1 in _runs(np.nonzero(row_gap)[0]):
+        hits = np.nonzero(row_ok)[0]
+        if len(hits) == 0:
+            continue
+        if y0 == 0:
+            sample = placed[int(hits[0]) : int(hits[0]) + 24]
+        else:
+            sample = placed[max(0, y0 - 24) : y0]
+        if sample.size == 0:
+            continue
+        _paint_rows(placed, y0, y1, _column_color(sample), rng)
+        mask[y0 : y1 + 1] = True
+        filled += int(mask[y0 : y1 + 1].sum())
+    # Side gaps use the same per-row colour plus sigma-1.5 noise.
+    col_gap = covered.mean(axis=0) < 0.05
+    col_ok = ~col_gap
+    for x0, x1 in _runs(np.nonzero(col_gap)[0]):
+        hits = np.nonzero(col_ok)[0]
+        if len(hits) == 0:
+            continue
+        if x0 == 0:
+            sample = placed[:, int(hits[0]) : int(hits[0]) + 24]
+        else:
+            sample = placed[:, max(0, x0 - 24) : x0]
+        if sample.size == 0:
+            continue
+        _paint_cols(placed, x0, x1, _row_color(sample), rng)
+        fresh = ~mask[:, x0 : x1 + 1]
+        mask[:, x0 : x1 + 1] = True
+        filled += int(fresh.sum())
+    return filled, mask, max_fill_neighbor_step(placed, mask)
+
+
 def place_plate(
     bgr: np.ndarray, ground_y: float, screen_ground: float = GROUND
 ) -> tuple[np.ndarray, list[str]]:
     """Scale to cover, align the ground line, and crop to 1080x1920.
 
-    Empty rows left by the shift are the source edge, repeated. p06 and p07
-    pass screen_ground 0.58 so the Earth's apex sits higher than 0.68.
+    Rows the shift leaves empty are a sampled flat colour plus matched grain.
+    p06 and p07 pass screen_ground 0.58 so the Earth's apex sits higher than 0.68.
     """
     src_h, src_w = bgr.shape[:2]
     notes = []
@@ -141,12 +289,27 @@ def place_plate(
         matrix,
         (FRAME_W, FRAME_H),
         flags=cv2.INTER_LANCZOS4,
-        borderMode=cv2.BORDER_REPLICATE,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0),
+    )
+    cover = cv2.warpAffine(
+        np.ones((src_h, src_w), np.float32),
+        matrix,
+        (FRAME_W, FRAME_H),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     )
     if "UPSCALED" in notes:
         soft = cv2.GaussianBlur(placed, (0, 0), 1.0)
-        placed = np.clip(placed * 1.15 - soft * 0.15, 0, 255)
-    return placed.astype(np.uint8), notes
+        sharp = np.clip(placed * 1.15 - soft * 0.15, 0, 255)
+        mask = cover >= 0.5
+        placed[mask] = sharp[mask]
+    filled, mask, step = _fill_uncovered(placed, cover)
+    if filled:
+        notes.append(f"grain fill {filled} px")
+        notes.append(f"fill step {step:.2f}")
+    return np.clip(np.rint(placed), 0, 255).astype(np.uint8), notes
 
 
 def recolor_grey_cap(bgr: np.ndarray) -> int:
@@ -261,26 +424,179 @@ def detect_circle(
 def restyle_deep_space_sky(
     bgr: np.ndarray, moon_cx: float, moon_cy: float, moon_radius: float
 ) -> int:
-    """Replace the flat teal cap with near-black sky and a few stars. The Moon disc stays."""
+    """Replace the flat teal cap with near-black sky and a few stars.
+
+    The mask feathers over 32 px so the boundary is not a horizontal seam.
+    The Moon disc is left untouched.
+    """
     height, width = bgr.shape[:2]
     band = np.median(bgr[:8, :48], axis=(0, 1))
     distance = np.linalg.norm(bgr.astype(np.float32) - band, axis=2)
     yy, xx = np.mgrid[0:height, 0:width]
     moon = (xx - moon_cx * width) ** 2 + (yy - moon_cy * height) ** 2 <= (moon_radius * width) ** 2
-    replace = (distance < 22) & ~moon
-    count = int(replace.sum())
-    if count == 0:
+    hard = ((distance < 26) & ~moon).astype(np.uint8)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    hard = cv2.morphologyEx(hard, cv2.MORPH_CLOSE, kernel)
+    # Cover the bright rim, then feather into the dark sky past it.
+    hard = cv2.dilate(hard, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31)))
+    guard = cv2.dilate(moon.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))) > 0
+    hard[guard] = 0
+    if int(hard.sum()) == 0:
         return 0
-    painted = bgr.copy()
-    painted[replace] = (8, 10, 12)
-    ys, xs = np.nonzero(replace)
+    inside = cv2.distanceTransform(hard, cv2.DIST_L2, 5)
+    outside = cv2.distanceTransform(1 - hard, cv2.DIST_L2, 5)
+    weight = np.clip(0.5 + (inside - outside) / 32.0, 0.0, 1.0)
+    weight[moon] = 0.0
+    sky = np.empty_like(bgr)
+    sky[:] = (8, 10, 12)
+    ys, xs = np.nonzero(weight > 0.92)
     rng = np.random.default_rng(7)
-    picks = rng.choice(len(ys), size=min(12, len(ys)), replace=False)
-    for index in picks:
-        radius = int(rng.integers(1, 3))
-        cv2.circle(painted, (int(xs[index]), int(ys[index])), radius, (242, 244, 248), -1, cv2.LINE_AA)
-    bgr[:] = painted
-    return count
+    if len(ys):
+        picks = rng.choice(len(ys), size=min(12, len(ys)), replace=False)
+        for index in picks:
+            radius = int(rng.integers(1, 3))
+            cv2.circle(sky, (int(xs[index]), int(ys[index])), radius, (242, 244, 248), -1, cv2.LINE_AA)
+    soft = weight[:, :, None]
+    blended = bgr.astype(np.float32) * (1.0 - soft) + sky.astype(np.float32) * soft
+    bgr[:] = np.clip(blended, 0, 255).astype(np.uint8)
+    _smooth_sky_horizon(bgr, moon)
+    return int((weight > 0.5).sum())
+
+
+def clean_earth_cap(bgr: np.ndarray, apex_y: int) -> int:
+    """Drop isolated mask-edge specks just outside the Earth cap. The cap itself stays."""
+    height = bgr.shape[0]
+    apex_y = int(np.clip(apex_y, 1, height - 1))
+    blue = (bgr[:, :, 0] > 110) & (bgr[:, :, 0] > bgr[:, :, 2] + 20) & (bgr[:, :, 0] > bgr[:, :, 1])
+    blue[: max(0, apex_y - 36)] = False
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(blue.astype(np.uint8), 8)
+    if count <= 1:
+        return 0
+    biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    earth = labels == biggest
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    ring = (cv2.dilate(earth.astype(np.uint8), kernel) > 0) & ~earth
+    sky_band = bgr[max(0, apex_y - 56) : max(1, apex_y - 12)]
+    if sky_band.size == 0:
+        return 0
+    sky = np.median(sky_band.reshape(-1, 3), axis=0)
+    dist = np.linalg.norm(bgr.astype(np.float32) - sky, axis=2)
+    odd = (ring & (dist > 22)).astype(np.uint8)
+    pieces, lab, piece_stats, _ = cv2.connectedComponentsWithStats(odd, 8)
+    speckle = np.zeros(earth.shape, dtype=bool)
+    for index in range(1, pieces):
+        if piece_stats[index, cv2.CC_STAT_AREA] <= 12:
+            speckle |= lab == index
+    replaced = int(speckle.sum())
+    if replaced:
+        bgr[speckle] = np.clip(sky, 0, 255).astype(np.uint8)
+    return replaced
+
+
+def clear_earth_silhouettes(bgr: np.ndarray) -> int:
+    """Inpaint the jagged limb shapes into the surrounding sky. The disc itself stays."""
+    rgb = bgr[:, :, ::-1]
+    cloud = (rgb[:, :, 0] > 195) & (rgb[:, :, 1] > 180) & (rgb[:, :, 2] > 160) & (bgr.max(axis=2) > 180)
+    cloud[:1060] = False
+    cloud[1310:] = False
+    earth = (bgr[:, :, 0] > 90) & (bgr[:, :, 0] > bgr[:, :, 2] + 8) & (bgr.max(axis=2) > 85) & ~cloud
+    earth[1320:] = False
+    earth[:1040] = False
+    if int(earth.sum()) < 10:
+        return 0
+    side = np.zeros(bgr.shape[:2], dtype=bool)
+    side[1220:1410, :250] = True
+    side[1220:1410, 830:] = True
+    target = side & (bgr.max(axis=2) < 85) & ~earth & ~cloud
+    removed = int(target.sum())
+    if removed == 0:
+        return 0
+    painted = cv2.inpaint(bgr, target.astype(np.uint8) * 255, 15, cv2.INPAINT_TELEA)
+    bgr[target] = painted[target]
+    return removed
+
+
+def _smooth_sky_horizon(bgr: np.ndarray, moon: np.ndarray, y_center: int = 250) -> None:
+    """Blur the sky vertically across the old teal edge so that row is not a line."""
+    y0 = max(0, y_center - 48)
+    y1 = min(bgr.shape[0], y_center + 48)
+    strip = bgr[y0:y1].astype(np.float32)
+    # Stars are punched out before the blur so a bright pixel cannot smear into a line.
+    sky_color = np.array([8.0, 10.0, 12.0], np.float32)
+    stars = strip.max(axis=2) > 40.0
+    clean = strip.copy()
+    clean[stars] = sky_color
+    blurred = cv2.GaussianBlur(clean, (1, 51), 0.01, sigmaY=16)
+    ramp = np.minimum(np.arange(strip.shape[0]), np.arange(strip.shape[0])[::-1]).astype(np.float32)
+    ramp = np.clip(ramp / 20.0, 0.0, 1.0)
+    mix = ramp[:, None] * (~moon[y0:y1]).astype(np.float32)
+    mix[stars] = 0.0
+    bgr[y0:y1] = np.rint(strip * (1.0 - mix[:, :, None]) + blurred * mix[:, :, None]).astype(np.uint8)
+
+
+def soften_cloud_shadows(bgr: np.ndarray) -> int:
+    """Replace the painted cloud halo with a 4 px offset, 6 px blur, alpha 0.20."""
+    rgb = bgr[:, :, ::-1]
+    cloud = (rgb[:, :, 0] > 195) & (rgb[:, :, 1] > 180) & (rgb[:, :, 2] > 160) & (bgr.max(axis=2) > 180)
+    cloud[:1060] = False
+    cloud[1310:] = False
+    if int(cloud.sum()) < 20:
+        return 0
+    earth = (bgr[:, :, 0] > 90) & (bgr[:, :, 0] > bgr[:, :, 2] + 8) & (bgr.max(axis=2) > 85) & ~cloud
+    earth[1320:] = False
+    earth[:1040] = False
+    if int(earth.sum()) < 10:
+        return 0
+    earth_color = np.median(bgr[earth], axis=0)
+    near = cv2.dilate(cloud.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))) > 0
+    disc = cv2.dilate(earth.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))) > 0
+    painted = (near | disc) & ~cloud & ~earth & (bgr.max(axis=2) < 100)
+    replaced = int(painted.sum())
+    bgr[painted] = np.rint(earth_color).astype(np.uint8)
+    shifted = np.zeros(cloud.shape, np.float32)
+    shifted[4:, 4:] = cloud[:-4, :-4].astype(np.float32)
+    blur = cv2.GaussianBlur(shifted, (0, 0), 6)
+    alpha = np.clip(blur, 0.0, 1.0) * 0.20
+    alpha[cloud] = 0.0
+    alpha[~disc] = 0.0
+    base = bgr.astype(np.float32)
+    bgr[:] = np.rint(base * (1.0 - alpha[:, :, None])).astype(np.uint8)
+    return replaced
+
+
+def rebuild_below(image: np.ndarray, y0: int = 1306) -> tuple[int, float]:
+    """Replace every row from y0 down with per-column bottom-band colour plus sigma-1.5 noise."""
+    if image.shape[0] <= y0:
+        return 0, 0.0
+    work = image.astype(np.float32)
+    sample = work[max(0, y0 - 24) : y0]
+    _paint_rows(work, y0, work.shape[0] - 1, _column_color(sample), np.random.default_rng(11))
+    rounded = np.rint(work)
+    if float(rounded[y0:].min()) < 0.0 or float(rounded[y0:].max()) > 255.0:
+        raise RuntimeError("bottom fill left the 0-255 range without a clamp")
+    image[:] = rounded.astype(np.uint8)
+    mask = np.zeros(image.shape[:2], dtype=bool)
+    mask[y0:] = True
+    return int(mask.sum()), max_fill_neighbor_step(image, mask)
+
+
+def finish_iss_key(bgra: np.ndarray) -> np.ndarray:
+    """Erode the ISS matte by 2 px and pull the pink fringe back toward the station colour."""
+    alpha = bgra[:, :, 3]
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    eroded = cv2.erode(alpha, kernel)
+    edge = cv2.dilate((eroded < 16).astype(np.uint8), kernel) > 0
+    color = bgra[:, :, :3].astype(np.int16)
+    blue, green, red = color[:, :, 0], color[:, :, 1], color[:, :, 2]
+    pink = edge & (eroded > 0) & (red > green + 18) & (blue + 8 > green) & (red > 90)
+    red = np.where(pink, green + (red - green) // 5, red)
+    blue = np.where(pink, green + np.maximum(blue - green, 0) // 5, blue)
+    out = bgra.copy()
+    out[:, :, 0] = np.clip(blue, 0, 255).astype(np.uint8)
+    out[:, :, 1] = np.clip(green, 0, 255).astype(np.uint8)
+    out[:, :, 2] = np.clip(red, 0, 255).astype(np.uint8)
+    out[:, :, 3] = eroded
+    return out
 
 
 def mask_moon_circle(bgra: np.ndarray) -> tuple[np.ndarray, tuple[float, float, float]]:
@@ -406,6 +722,102 @@ def contact_sheet(plates: list[tuple[str, np.ndarray]], objects: list[tuple[str,
     return sheet
 
 
+def chroma_speck_count(bgr: np.ndarray) -> int:
+    """Isolated cyan or red pixels: a channel spike the four-neighbors do not share."""
+    if bgr is None or bgr.size == 0:
+        return 0
+    blue, green, red = cv2.split(bgr.astype(np.int16))
+    cyan = (blue > green + 40) & (blue > red + 40)
+    hot = (red > green + 40) & (red > blue + 40)
+    mask = cyan | hot
+    kernel = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]], np.uint8)
+    neighbors = cv2.filter2D(mask.astype(np.uint8), -1, kernel)
+    return int(np.count_nonzero(mask & (neighbors == 0)))
+
+
+def paint_space_gradient(image: np.ndarray, cx: float, cy: float, radius: float) -> int:
+    """Replace the flat teal cap with a vertical gradient. The Moon disc is left as it is."""
+    height, width = image.shape[:2]
+    band = min(height, 250 + 48)
+    sample_y = min(height - 1, 280)
+    xs = np.arange(width)
+    moon_row = (xs - cx * width) ** 2 + (sample_y - cy * height) ** 2 > (radius * width + 8) ** 2
+    if moon_row.any():
+        sky = np.median(image[sample_y, moon_row].astype(np.float32), axis=0)
+    else:
+        sky = np.array([12.0, 10.0, 8.0], np.float32)
+    top = np.array([8.0, 10.0, 12.0], np.float32)
+    y = np.arange(band, dtype=np.float32)[:, None]
+    blend = np.clip(y / 250.0, 0.0, 1.0)
+    color = top[None, :] * (1.0 - blend) + sky[None, :] * blend
+    fade = np.ones((band, width), np.float32)
+    feather = y.ravel() >= (250 - 48)
+    fade[feather, :] = np.clip((250 + 48 - y.ravel()[feather]) / 48.0, 0.0, 1.0)[:, None]
+    yy, xx = np.mgrid[0:band, 0:width]
+    moon = (xx - cx * width) ** 2 + (yy - cy * height) ** 2 <= (radius * width) ** 2
+    fade[moon] = 0.0
+    region = image[:band].astype(np.float32)
+    mixed = region * (1.0 - fade[..., None]) + color[:, None, :] * fade[..., None]
+    image[:band] = np.clip(np.rint(mixed), 0, 255).astype(np.uint8)
+    return int(np.count_nonzero(fade > 0.05))
+
+
+def procedural_city(width: int = FRAME_W, height: int = FRAME_H) -> np.ndarray:
+    """Paper-cut low-rise skyline. The tallest roof is at most 30% of the frame above the ground."""
+    image = np.zeros((height, width, 3), np.float32)
+    ground = int(round(0.68 * height))
+    for y in range(ground):
+        t = y / max(1, ground - 1)
+        # Warm, dark enough that white paper clears 3:1 in the open center lane.
+        image[y] = (1.0 - t) * np.array([48.0, 42.0, 62.0]) + t * np.array([78.0, 86.0, 118.0])
+    rng = np.random.default_rng(3)
+    layers = (
+        ((127, 107, 79), 0.22, 9),
+        ((100, 90, 31), 0.28, 7),
+        ((207, 230, 239), 0.16, 6),
+    )
+    limit = int(round(0.30 * height))
+    center0 = int(round(width / 3))
+    center1 = int(round(2 * width / 3))
+    for color, max_frac, count in layers:
+        shadow = image.copy()
+        for index in range(count):
+            bw = int(rng.integers(70, 140))
+            bh = int(rng.integers(int(0.08 * height), int(max_frac * height)))
+            bh = min(bh, limit)
+            if index % 2 == 0:
+                x0 = int(rng.integers(16, max(17, center0 - bw - 8)))
+            else:
+                x0 = int(rng.integers(center1 + 8, max(center1 + 9, width - bw - 16)))
+            y0 = ground - bh
+            image[y0 + 6 : ground + 6, x0 + 8 : x0 + bw + 8] = np.array(color, np.float32) * 0.55
+            image[y0:ground, x0 : x0 + bw] = color
+            win = (max(0, color[0] - 40), max(0, color[1] - 36), max(0, color[2] - 28))
+            step_y = 28
+            step_x = 22
+            for wy in range(y0 + 16, ground - 18, step_y):
+                for wx in range(x0 + 10, x0 + bw - 16, step_x):
+                    image[wy : wy + 12, wx : wx + 10] = win
+        _ = shadow
+    awning = (92, 113, 232)
+    image[ground - 36 : ground - 24, 48:160] = awning
+    band = np.array([168.0, 176.0, 186.0], np.float32)
+    rng2 = np.random.default_rng(11)
+    grain = rng2.normal(0.0, 1.5, (height - ground, width, 1)).astype(np.float32)
+    image[ground:] = np.clip(band + grain, 0, 255)
+    return np.clip(np.rint(image), 0, 255).astype(np.uint8)
+
+
+def _note_city(which: str) -> None:
+    path = ROOT / "out" / "qa_log.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = f"\n- city plate: {which}\n"
+    existing = path.read_text() if path.exists() else "# QA log\n"
+    if line.strip() in existing:
+        return
+    path.write_text(existing.rstrip() + "\n" + line)
+
+
 def run_ingest(root: Path | None = None, out_dir: Path | None = None, manifest_path: Path | None = None) -> int:
     root = root or ART_ROOT
     out_dir = out_dir or (ROOT / "out")
@@ -436,12 +848,17 @@ def run_ingest(root: Path | None = None, out_dir: Path | None = None, manifest_p
         raw = cv2.imread(str(source), cv2.IMREAD_COLOR)
         screen = float(item.get("screen_ground", GROUND))
         extra: list[str] = []
-        if asset_id == "p07_deep_space_moon":
-            replaced = restyle_deep_space_sky(
-                raw, float(item["moon_cx"]), float(item["moon_cy"]), float(item["moon_radius"])
-            )
-            extra.append(f"teal cap replaced with near-black sky ({replaced} px)")
+        if asset_id in ("p02_street_day", "p03_city_day") and chroma_speck_count(raw) > 0:
+            raw = denoise_chroma(raw)
+            extra.append("chroma denoised")
         image, notes = place_plate(raw, float(item["ground_y"]), screen)
+        if asset_id == "p07_deep_space_moon":
+            scale, tx, ty = align_translate(float(item["ground_y"]), raw.shape[1], raw.shape[0], screen_ground=screen)
+            cx = (float(item["moon_cx"]) * raw.shape[1] * scale + tx) / FRAME_W
+            cy = (float(item["moon_cy"]) * raw.shape[0] * scale + ty) / FRAME_H
+            radius = float(item["moon_radius"]) * raw.shape[1] * scale / FRAME_W
+            painted = paint_space_gradient(image, cx, cy, radius)
+            extra.append(f"teal cap replaced with a vertical gradient ({painted} px), feather 48 px")
         notes = extra + notes
         reference = STRUCTURE_REFERENCES.get(str(item.get("scene")))
         if reference and item.get("world_m"):
@@ -452,7 +869,11 @@ def run_ingest(root: Path | None = None, out_dir: Path | None = None, manifest_p
                 shown = f"{limit_m:.0f}" if limit_m >= 10 else f"{limit_m:.1f}"
                 scale_note += f" SCALE WARN taller than {name} {shown} m"
                 if item.get("scene") == "city":
-                    scale_note += "; using the current p03 until a replacement arrives"
+                    image = procedural_city()
+                    scale_note += "; replaced with the procedural low-rise skyline"
+                    _note_city("procedural low-rise skyline")
+            elif item.get("scene") == "city":
+                _note_city("source plate p03")
             notes.append(scale_note)
         if asset_id == "p06_low_orbit_limb":
             rows = recolor_grey_cap(image)
@@ -486,6 +907,12 @@ def run_ingest(root: Path | None = None, out_dir: Path | None = None, manifest_p
         raw = cv2.imread(str(source), cv2.IMREAD_COLOR)
         keyed_image, fraction, box = key_magenta(raw)
         mark = "" if fraction >= 0.90 else " FLAG border under 90%"
+        if asset_id == "o05_iss":
+            keyed_image = finish_iss_key(keyed_image)
+            ys, xs = np.nonzero(keyed_image[:, :, 3] > 16)
+            if len(xs):
+                box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+            mark += ", eroded 2 px, pink fringe despilled"
         if asset_id == "o06_moon":
             keyed_image, circle = mask_moon_circle(keyed_image)
             ys, xs = np.nonzero(keyed_image[:, :, 3] > 16)

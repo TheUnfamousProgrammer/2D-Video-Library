@@ -52,6 +52,39 @@ def test_hook_card_and_stack_widths():
     assert tower.paper.w == STACK_W
 
 
+def test_paper_face_is_opaque_and_near_the_page_tone():
+    from fc_sat.paperfold_stills import PAPER_RGB, SEAM_RGB, _paper_texture
+
+    face = _paper_texture(150, 420, 8, 7)
+    assert int(face[:, :, 3].min()) == 255
+    rgb = face[:, :, :3].astype(np.float32)
+    paper = np.array(PAPER_RGB, np.float32)
+    seam = np.array(SEAM_RGB, np.float32)
+    nearest = np.minimum(np.max(np.abs(rgb - paper), axis=2), np.max(np.abs(rgb - seam), axis=2))
+    assert float(nearest.mean()) <= 12.0
+
+
+def test_label_plate_stays_inside_the_safe_zone():
+    from fc_sat.paperfold_stills import SAFE_L, SAFE_R, _chip_plate
+
+    left, top, width, height = _chip_plate("439,805 KM", 40, 20, "mono", "left")
+    assert top >= 200
+    assert left >= SAFE_L
+    assert left + width <= SAFE_R
+    assert height > 0
+
+
+def test_sun_distance_subline_comes_from_the_claims_engine():
+    from fc_sat.paperfold_format import earth_sun_needed
+    from fc_sat.paperfold_stills import context_sub
+
+    script = load_script()
+    assert earth_sun_needed(30) == "PAPER NEEDED 400x EARTH TO SUN"
+    assert earth_sun_needed(32) == "PAPER NEEDED 6,500x EARTH TO SUN"
+    assert context_sub(script, fold_frame(30), 30) == "PAPER NEEDED 400x EARTH TO SUN"
+    assert context_sub(script, fold_frame(32), 32) == "PAPER NEEDED 6,500x EARTH TO SUN"
+
+
 def test_moon_mask_clears_pixels_outside_the_disc():
     from fc_sat.paperfold_art import mask_moon_circle
 

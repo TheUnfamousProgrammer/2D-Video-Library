@@ -208,6 +208,7 @@ def test_each_mode_encodes_its_resolution_and_rate(tmp_path):
     ffprobe = find_ffprobe(ffmpeg)
     modes = {
         "preview": (540, 960, 30),
+        "animatic": (540, 960, 30),
         "hooks": (540, 960, 30),
         "full": (1080, 1920, 60),
     }

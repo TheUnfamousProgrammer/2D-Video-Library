@@ -506,3 +506,42 @@ Mute the video, watch the first 2 seconds at thumb distance, and pick the cleare
 - The sub-bass is audible on a phone speaker.
 - The loop feels seamless.
 - The ending lands: the square returns, and the next kick would fall on the seam.
+
+## Paperfold
+
+A 30.4 s vertical Short. A sheet of paper doubles on every fold while the camera pulls back through seven paper-cut dioramas, from a desk to deep space. At 30 folds the stack reaches space. The paper needed for that fold is about 400 times the Earth to Sun distance. In theory fold 42 passes the Moon. The real record is 12 folds. The last frames collapse back to the opening card so the video loops. There is no voiceover. The stack's width is not to scale.
+
+```bash
+python make_paperfold.py doctor
+python make_paperfold.py ingest
+python make_paperfold.py stills
+python make_paperfold.py facts
+python make_paperfold.py timeline
+python make_paperfold.py audio
+python make_paperfold.py hooks
+python make_paperfold.py preview --out out/paperfold_preview.mp4
+python make_paperfold.py postkit
+python make_paperfold.py verify --out out/paperfold.mp4
+python make_paperfold.py full --approved --out out/paperfold.mp4
+```
+
+`full` is refused without `--approved`. The master is 1080x1920 at 60 fps, 1824 frames. Preview and hook clips are 540x960 at 30 fps. The pipe sets `-framerate`, `-fps_mode cfr`, and an output `-r`, and tags the picture BT.709. The file is written to a `.partial.mp4` and renamed into place only after ffmpeg exits 0.
+
+### Art
+
+Plates and cutouts live in `assets/art/plates` and `assets/art/objects`. `ingest` writes lossless PNG in `assets/art/normalized` and keyed PNG in `assets/art/keyed`. A plate whose aspect is within 1.5% of 9:16 is scaled to fill and center-cropped. Plates smaller than 1080x1920 are upscaled with Lanczos and a mild unsharp, and the step is logged. Each plate is shifted so its ground line lands on the frame's ground line. Rows the shift adds below the picture are rebuilt from the plate's own flat bottom band: a per-column median, a low-pass across x (sigma 40 px), then grain of sigma 1.5. They are never a copy of a content row.
+
+The deep-space plate does not get speckle removal, denoise, or a sky mask. Its teal top band becomes a vertical gradient over the top 250 rows with a 48 px feather, and the Moon is left untouched. Street and city plates get a chroma-only denoise only when isolated cyan or red specks are measured. If the city plate's tallest tower is taller than the Burj Khalifa at that scene's scale, ingest replaces it with a procedural low-rise skyline and records the choice in `out/qa_log.md`.
+
+### Claims
+
+Constants and formulas live in `configs/paperfold_claims.yaml`. `facts` recomputes every claim and fails a digit on screen, in a title, or in the description that is not mapped to one. Stack height is `h(n) = t * 2^n` with `t = 0.1 mm`. The paper length is Gallivan's single-direction formula. Display strings such as "PAPER NEEDED 400x EARTH TO SUN" are formatted from those values. The description and the pinned comment say "about 400x" and list the assumptions: 0.1 mm paper, single-direction folds, Gallivan's formula.
+
+### Hook lab
+
+`hooks` writes four silent 540x960 clips and prints, for each variant, the main-shape area, the minimum stroke, the minimum text size, and the motion energy over the first 24 frames. A is the default and the one `full` uses: "42 FOLDS." / "THE MOON?". D opens on the Moon still for 24 frames, then cuts to the card.
+
+### Posting
+
+`postkit` writes `out/postkit.md`. Upload with #Shorts, set the audience, answer the copyright and altered-content questions (the music is original, the art is AI-generated), and pin comment A. Then read Viewed vs Swiped away and the retention graph against `out/retention_map.md`. Reply to a place or a distance with `python tools/fold_reply.py moon` or `python tools/fold_reply.py 100 km`. Units are km, m, ly, and AU. Unknown names, zero, and negative distances are rejected. A distance past fold 120 is reported as beyond that fold.
+

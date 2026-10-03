@@ -54,13 +54,15 @@ def fold_motion(frame: int) -> tuple[int, float, str]:
     """Fold in progress, 0..1, and 'flip' or 'squash'. Settled frames return (0, 0, 'hold')."""
     for n in range(1, 43):
         land = fold_frame(n)
-        start = land - 12
+        start = land - 10
+        if n == 1 and frame < land:
+            # Frame 0 is already at progress 0.35. The page finishes on frame 12.
+            u = 0.35 + 0.65 * ease_out_cubic(frame / float(land))
+            return n, u, "squash" if frame >= land - 2 else "flip"
         if start <= frame < land:
             local = frame - start
-            if n == 1 and local <= 9:
-                return n, 0.4 + 0.6 * ease_in_out_cubic(local / 9.0), "flip"
-            if local <= 9:
-                return n, ease_in_out_cubic(local / 9.0), "flip"
+            if local <= 7:
+                return n, ease_in_out_cubic(local / 7.0), "flip"
             return n, 1.0, "squash"
     return 0, 0.0, "hold"
 
@@ -78,7 +80,7 @@ def ghost_u(frame: int) -> float:
 
 def length_sub(n: int) -> str:
     """Paper needed, in the unit that still fits on one bottom line."""
-    from fc_sat.paperfold_format import milky_way_label, rounded_au_times, times_mark
+    from fc_sat.paperfold_format import earth_sun_needed, milky_way_label
     from fc_sat.paperfold_math import au_multiple, format_sig, light_years
 
     if light_years(n) >= 1:
@@ -86,7 +88,7 @@ def length_sub(n: int) -> str:
             return milky_way_label()
         return f"{format_sig(light_years(n), 3)} LY"
     if au_multiple(n) >= 10:
-        return f"PAPER NEEDED {rounded_au_times(n)}{times_mark()} SUN"
+        return earth_sun_needed(n)
     return f"PAPER NEEDED {paper_km_label(n)}"
 
 

@@ -26,6 +26,15 @@ def rounded_au_times(n: int) -> int:
     return int(round(sigfigs(au_multiple(n), 2)))
 
 
+def earth_sun_needed(n: int) -> str:
+    """Paper needed, in Earth-Sun distances.
+
+    The figure is the claims `au_times` value (two significant figures), with a
+    thousands separator. The mark is the ASCII x used in the posted copy.
+    """
+    return f"PAPER NEEDED {format_sig(au_multiple(n), 2)}x EARTH TO SUN"
+
+
 def rounded_light_years(n: int) -> int:
     """3 significant figures. 107,052 light-years becomes 107,000."""
     return int(round(sigfigs(light_years(n), 3)))
