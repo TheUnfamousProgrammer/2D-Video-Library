@@ -1,0 +1,400 @@
+# Numbers the paperfold short is allowed to say.
+# configs/claims.yaml belongs to Collatz, so this book has its own file.
+# Computed values are checked again on every facts run.
+# usage is the same field polycircle calls used_in.
+whitelist: []
+claims:
+  thickness_mm:
+    type: computed
+    text: "the sheet is assumed to be 0.1 mm thick"
+    value: 0.1
+    source: "assumption, shown on screen as 0.1 MM PAPER. 0.1 mm = 0.0001 m"
+    surfaces: ["0.1"]
+    usage: [hook, sub, description]
+    fn: const
+    args: ["thickness_mm"]
+  moon_km:
+    type: computed
+    text: "average Earth-Moon distance"
+    value: 384400
+    source: "NASA Science, Moon facts, average distance 384,400 km"
+    surfaces: ["384,400"]
+    usage: [hook, stamp]
+    fn: const
+    args: ["moon_km"]
+  everest_m:
+    type: computed
+    text: "Mount Everest, nearest metre"
+    value: 8849
+    source: "8,848.86 m, China-Nepal survey announced 8 December 2020, rounded to 8,849 m"
+    surfaces: ["8849", "8,849"]
+    usage: [stamp]
+    fn: const
+    args: ["everest_m"]
+  burj_m:
+    type: computed
+    text: "Burj Khalifa architectural height"
+    value: 828
+    source: "Council on Tall Buildings and Urban Habitat, architectural height 828 m"
+    surfaces: ["828"]
+    usage: [stamp]
+    fn: const
+    args: ["burj_m"]
+  karman_km:
+    type: computed
+    text: "the Karman line"
+    value: 100
+    source: "Federation Aeronautique Internationale, 100 km"
+    surfaces: ["100"]
+    usage: [stamp]
+    fn: const
+    args: ["karman_km"]
+  earth_circ_km:
+    type: computed
+    text: "Earth equatorial circumference"
+    value: 40075
+    source: "WGS84 equatorial circumference, 2 pi times 6,378.137 km, rounded to 40,075 km"
+    surfaces: ["40,075", "40075"]
+    usage: [axis, description]
+    fn: const
+    args: ["earth_circ_km"]
+  au_km:
+    type: computed
+    text: "one astronomical unit"
+    value: 149597870.7
+    source: "IAU 2012 Resolution B2, exactly 149,597,870.7 km"
+    surfaces: ["149,597,870.7"]
+    usage: [facts]
+    fn: const
+    args: ["au_km"]
+  light_year_m:
+    type: computed
+    text: "one light-year, five significant figures"
+    value: 9.4607e15
+    source: "IAU light-year 9.4607304725808e15 m, rounded to 9.4607e15 m"
+    surfaces: ["9.4607"]
+    usage: [facts]
+    fn: const
+    args: ["light_year_m"]
+  milky_way_ly:
+    type: computed
+    text: "Milky Way diameter, the round figure"
+    value: 100000
+    source: "NASA, the Milky Way is about 100,000 light-years across"
+    surfaces: ["100,000"]
+    usage: [axis, climax]
+    fn: const
+    args: ["milky_way_ly"]
+  person_m:
+    type: computed
+    text: "a person, for scale"
+    value: 1.8
+    source: "assumption, 1.8 m, shown as A PERSON"
+    surfaces: ["1.8"]
+    usage: [stamp, reality]
+    fn: const
+    args: ["person_m"]
+  earth_radius_km:
+    type: computed
+    text: "Earth volumetric mean radius"
+    value: 6371
+    source: "NASA planetary fact sheet, volumetric mean radius 6,371.0 km"
+    surfaces: ["6,371", "6371"]
+    usage: [earth]
+    fn: const
+    args: ["earth_radius_km"]
+  record_folds:
+    type: computed
+    text: "the real folding record"
+    value: 12
+    source: "Guinness World Records, Britney Gallivan, 12 folds, 27 January 2002"
+    surfaces: ["12"]
+    usage: [reality, answer, description]
+    fn: const
+    args: ["record_folds"]
+  record_m:
+    type: computed
+    text: "length of the paper Gallivan folded"
+    value: 1219
+    source: "Guinness World Records, 4,000 ft (1,219 m) of tissue paper"
+    surfaces: ["1219", "1,219", "1.2"]
+    usage: [reality, description]
+    fn: const
+    args: ["record_m"]
+  record_year:
+    type: computed
+    text: "the year of the record"
+    value: 2002
+    source: "Guinness World Records, 27 January 2002"
+    surfaces: ["2002"]
+    usage: [reality, description]
+    fn: const
+    args: ["record_year"]
+  h12:
+    type: computed
+    text: "stack after 12 folds"
+    value: 0.4096
+    source: "h(n) = t * 2^n at n=12, t=0.1 mm"
+    surfaces: ["0.41", "41"]
+    usage: [reality]
+    fn: height
+    args: [12]
+  h14:
+    type: computed
+    text: "stack after 14 folds"
+    value: 1.6384
+    source: "h(14)"
+    surfaces: ["1.638"]
+    usage: [facts]
+    fn: height
+    args: [14]
+  h15:
+    type: computed
+    text: "stack after 15 folds, past a person"
+    value: 3.2768
+    source: "h(15)"
+    surfaces: ["3.277"]
+    usage: [facts]
+    fn: height
+    args: [15]
+  h22:
+    type: computed
+    text: "stack after 22 folds"
+    value: 419.4304
+    source: "h(22)"
+    surfaces: ["419.4"]
+    usage: [facts]
+    fn: height
+    args: [22]
+  h23:
+    type: computed
+    text: "stack after 23 folds, past the Burj Khalifa"
+    value: 838.8608
+    source: "h(23)"
+    surfaces: ["838.9"]
+    usage: [facts]
+    fn: height
+    args: [23]
+  h26:
+    type: computed
+    text: "stack after 26 folds"
+    value: 6710.8864
+    source: "h(26)"
+    surfaces: ["6.711"]
+    usage: [facts]
+    fn: height
+    args: [26]
+  h27:
+    type: computed
+    text: "stack after 27 folds, past Everest"
+    value: 13421.7728
+    source: "h(27)"
+    surfaces: ["13.42"]
+    usage: [facts]
+    fn: height
+    args: [27]
+  h29:
+    type: computed
+    text: "stack after 29 folds"
+    value: 53687.0912
+    source: "h(29)"
+    surfaces: ["53.69"]
+    usage: [facts]
+    fn: height
+    args: [29]
+  h30:
+    type: computed
+    text: "stack after 30 folds, past the Karman line"
+    value: 107374.1824
+    source: "h(30)"
+    surfaces: ["107.37", "107"]
+    usage: [drop, facts]
+    fn: height
+    args: [30]
+  h41:
+    type: computed
+    text: "stack after 41 folds, still short of the Moon"
+    value: 219902325.5552
+    source: "h(41)"
+    surfaces: ["219,902"]
+    usage: [facts]
+    fn: height
+    args: [41]
+  h42:
+    type: computed
+    text: "stack after 42 folds, past the Moon, in theory"
+    value: 439804651.1104
+    source: "h(42)"
+    surfaces: ["439,805"]
+    usage: [facts, answer]
+    fn: height
+    args: [42]
+  L7:
+    type: computed
+    text: "paper length for 7 single-direction folds"
+    value: 0.8777609874129881
+    source: "Gallivan L(n) = (pi*t/6)*(2^n+4)*(2^n-1) at n=7"
+    surfaces: ["0.878"]
+    usage: [facts]
+    fn: length
+    args: [7]
+  L12:
+    type: computed
+    text: "paper length for 12 single-direction folds of 0.1 mm paper"
+    value: 879.0961642907638
+    source: "Gallivan L(12). This is not the length Gallivan used; her tissue was thinner."
+    surfaces: ["879"]
+    usage: [facts, twist]
+    fn: length
+    args: [12]
+  L19:
+    type: computed
+    text: "paper length for 19 folds"
+    value: 14392655.90624717
+    source: "Gallivan L(19)"
+    surfaces: ["14,390"]
+    usage: [facts]
+    fn: length
+    args: [19]
+  L20:
+    type: computed
+    text: "paper length for 20 folds, past one trip around the Earth"
+    value: 57570458.91568408
+    source: "Gallivan L(20)"
+    surfaces: ["57,570"]
+    usage: [facts, twist]
+    fn: length
+    args: [20]
+  L30:
+    type: computed
+    text: "paper length for 30 folds"
+    value: 60366828985972.32
+    source: "Gallivan L(30)"
+    surfaces: ["6.04"]
+    usage: [facts, twist]
+    fn: length
+    args: [30]
+  L42:
+    type: computed
+    text: "paper length for 42 folds, in theory"
+    value: 1.0127873263037144e+21
+    source: "Gallivan L(42)"
+    surfaces: ["1.013"]
+    usage: [facts, climax]
+    fn: length
+    args: [42]
+  pass_person:
+    type: computed
+    text: "first fold whose stack passes 1.8 m"
+    value: 15
+    source: "smallest n with h(n) >= 1.8 m"
+    surfaces: ["15"]
+    usage: [stamp]
+    fn: pass_fold
+    args: ["person"]
+  pass_burj:
+    type: computed
+    text: "first fold whose stack passes the Burj Khalifa"
+    value: 23
+    source: "smallest n with h(n) >= 828 m"
+    surfaces: ["23"]
+    usage: [stamp]
+    fn: pass_fold
+    args: ["burj"]
+  pass_everest:
+    type: computed
+    text: "first fold whose stack passes Everest"
+    value: 27
+    source: "smallest n with h(n) >= 8,849 m"
+    surfaces: ["27"]
+    usage: [stamp]
+    fn: pass_fold
+    args: ["everest"]
+  pass_space:
+    type: computed
+    text: "first fold whose stack passes the Karman line"
+    value: 30
+    source: "smallest n with h(n) >= 100 km"
+    surfaces: ["30"]
+    usage: [drop, stamp]
+    fn: pass_fold
+    args: ["karman"]
+  pass_moon:
+    type: computed
+    text: "first fold whose stack passes the Moon, in theory"
+    value: 42
+    source: "smallest n with h(n) >= 384,400 km"
+    surfaces: ["42"]
+    usage: [hook, answer, stamp]
+    fn: pass_fold
+    args: ["moon"]
+  pass_earth:
+    type: computed
+    text: "first fold whose paper is longer than a trip around the Earth"
+    value: 20
+    source: "smallest n with L(n) > 40,075 km"
+    surfaces: ["20"]
+    usage: [twist]
+    fn: pass_length
+    args: ["earth"]
+  sun_folds:
+    type: computed
+    text: "first fold whose stack passes the Sun, in theory"
+    value: 51
+    source: "smallest n with h(n) >= 1 AU"
+    surfaces: ["51"]
+    usage: [comment]
+    fn: pass_distance
+    args: ["sun"]
+  au_times_30:
+    type: computed
+    text: "30 folds of paper, in Earth-Sun distances, two significant figures"
+    value: 400
+    source: "round(L(30) / 1 AU, 2 significant figures)"
+    surfaces: ["400"]
+    usage: [twist]
+    fn: au_times
+    args: [30]
+  ly_42:
+    type: computed
+    text: "42 folds of paper, in light-years, three significant figures"
+    value: 107000
+    source: "round(L(42) / 1 light-year, 3 significant figures). Exact quotient is about 107,052."
+    surfaces: ["107,000", "107000"]
+    usage: [climax]
+    fn: ly_round
+    args: [42]
+  space_km:
+    type: computed
+    text: "the 30-fold stack in kilometres, three significant figures"
+    value: 107
+    source: "round(h(30) in km, 3 significant figures). Exact value is 107.374 km."
+    surfaces: ["107"]
+    usage: [drop]
+    fn: km_round
+    args: [30]
+  record_cm:
+    type: computed
+    text: "the 12-fold stack in centimetres"
+    value: 41
+    source: "round(h(12) to the nearest centimetre). Exact value is 40.96 cm."
+    surfaces: ["41"]
+    usage: [reality]
+    fn: cm_round
+    args: [12]
+  paper_km_12:
+    type: computed
+    text: "12 folds of 0.1 mm paper, in kilometres, one decimal"
+    value: 0.9
+    source: "L(12) = 879 m = 0.879 km, shown to one decimal place"
+    surfaces: ["0.9"]
+    usage: [twist]
+    fn: km_decimal
+    args: [12]
+  gallivan_formula:
+    type: cited
+    text: "single-direction folds need L = (pi t / 6) (2^n + 4) (2^n - 1)"
+    value: true
+    source: "Britney Gallivan, 2001, confirmed by Guinness World Records and MathWorld. The name is used because the 12-fold record is verified."
+    surfaces: []
+    usage: [description]

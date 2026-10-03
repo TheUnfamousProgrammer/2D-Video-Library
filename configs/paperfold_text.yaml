@@ -1,0 +1,75 @@
+# On-screen copy. Top lines are at most 14 characters after claim substitution.
+# Digits survive only when the card names the claim that computed them.
+# Variant B is three lines because "REACH THE MOON?" is 15 characters.
+# "AS THE MILKY WAY" and "THE REAL RECORD:" are split the same way.
+# Variant D uses A's words. The hard cut is a picture change, not new copy.
+hooks:
+  A:
+    lines: ["{pass_moon} FOLDS.", "ONE PAPER.", "THE MOON?"]
+    claims: [pass_moon]
+  B:
+    lines: ["CAN PAPER", "REACH THE", "MOON?"]
+    claims: []
+  C:
+    lines: ["FOLD IT", "{pass_moon} TIMES.", "WHERE IS IT?"]
+    claims: [pass_moon]
+  D:
+    lines: ["{pass_moon} FOLDS.", "ONE PAPER.", "THE MOON?"]
+    claims: [pass_moon]
+cards:
+  - id: space
+    start: 576
+    end: 672
+    lines: ["THAT'S SPACE."]
+    claims: []
+  - id: catch
+    start: 672
+    end: 864
+    lines: ["BUT THERE'S", "A CATCH"]
+    claims: []
+  - id: theory
+    start: 864
+    end: 1128
+    lines: ["IN THEORY,", "KEEP GOING"]
+    claims: []
+  - id: milky
+    start: 1152
+    end: 1248
+    lines: ["PAPER AS WIDE", "AS THE", "MILKY WAY"]
+    claims: []
+  - id: record
+    start: 1248
+    end: 1440
+    lines: ["THE REAL", "RECORD:", "{record_folds} FOLDS"]
+    claims: [record_folds]
+  - id: math
+    start: 1440
+    end: 1536
+    lines: ["IN MATH:", "{pass_moon}"]
+    claims: [pass_moon]
+  - id: life
+    start: 1536
+    end: 1632
+    lines: ["IN REAL LIFE:", "{record_folds}"]
+    claims: [record_folds]
+  - id: outro
+    start: 1632
+    end: 1800
+    lines: ["PAPER STOPS.", "MATH DOESN'T."]
+    claims: []
+subs:
+  - id: sheet
+    start: 0
+    end: 96
+    template: "{thickness_mm} MM PAPER"
+    claims: [thickness_mm]
+  - id: space_km
+    start: 576
+    end: 672
+    template: "{space_km} KM"
+    claims: [space_km]
+  - id: record_credit
+    start: 1248
+    end: 1440
+    template: "GALLIVAN {record_year}"
+    claims: [record_year]
