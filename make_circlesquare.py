@@ -19,7 +19,7 @@ from PIL import Image
 from fc_sat.audio import write_wav
 from fc_sat.beatkit.delivery import frame_indices, require_delivery
 from fc_sat.encode import pipe_raw_bgr
-from fc_sat.circlesquare_audio import master, mix, onset_sample, sync_rows
+from fc_sat.circlesquare_audio import master, mix, onset_sample, sync_rows, trim_for_aac
 from fc_sat.circlesquare_claims import evaluate, load_claims, render_report
 from fc_sat.circlesquare_doctor import doctor
 from fc_sat.circlesquare_post import lint_post, render_postkit
@@ -219,7 +219,7 @@ def _mix_files() -> tuple[Path, Path, float, float]:
     folder = ROOT / "out"
     folder.mkdir(parents=True, exist_ok=True)
     music = folder / "circlesquare.wav"
-    off_audio, off_lufs, off_peak = master(sfx)
+    off_audio, off_lufs, off_peak = trim_for_aac(*master(sfx))
     music_off = folder / "circlesquare.music_off.wav"
     write_wav(str(music), full)
     write_wav(str(music_off), off_audio)

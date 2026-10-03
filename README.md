@@ -509,7 +509,7 @@ Mute the video, watch the first 2 seconds at thumb distance, and pick the cleare
 
 ## Circlesquare
 
-A 30.4 s vertical Short. A chain of rotating circles traces a closed curve. Each beat adds one circle, and the curve turns from a circle into a square. A zoom into a corner shows the square is still rounded. The circles then double until the corner is sharp on a 1080 px frame, and the last beat snaps back to one circle so the video loops. There is no voiceover. The picture is drawn with skia (pycairo if skia is missing, otherwise Pillow) and piped through the shared BT.709 ffmpeg command. The music engine is the polycircle score, with this film's timeline and seed 11. Polycircle outputs are not touched.
+A 30.4 s vertical Short. A chain of rotating circles traces a closed curve. Each beat adds one circle, and the curve turns from a circle into a square. A zoom into a corner shows the square is still rounded. The circles then double until the corner is sharp on a 1080 px frame, and the last beat snaps back to one circle so the video loops. There is no voiceover. The picture is drawn with skia (pycairo if skia is missing, otherwise Pillow) and piped through the shared BT.709 ffmpeg command. The music engine is the polycircle score, with this film's timeline and seed 11. The shared master stops the wav at -2.3 dBTP; this mix trims another 0.55 dB so the AAC file stays at or under -1 dBTP. Polycircle outputs are not touched.
 
 ```bash
 python make_circlesquare.py doctor
