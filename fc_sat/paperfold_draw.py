@@ -76,6 +76,36 @@ class PaperCanvas:
             return
         self.canvas.drawCircle(x, y, radius, self._paint(hex_color, alpha))
 
+    def image(self, rgba: np.ndarray, x: float, y: float) -> None:
+        """Draw an RGB or RGBA uint8 image. RGB is treated as opaque."""
+        if rgba.size == 0:
+            return
+        array = np.ascontiguousarray(rgba)
+        if array.ndim != 3 or array.shape[2] not in (3, 4):
+            raise ValueError(f"image must be HxWx3 or HxWx4, got {array.shape}")
+        if array.shape[2] == 3:
+            array = np.dstack([array, np.full(array.shape[:2], 255, np.uint8)])
+        self.canvas.drawImage(skia.Image.fromarray(array), x, y)
+
+    def soft_rect(
+        self,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        hex_color: str,
+        alpha: float,
+        blur: float,
+        dx: float = 0.0,
+        dy: float = 0.0,
+    ) -> None:
+        """A blurred rectangle. Used for the paper shadow and the stack's contact shadow."""
+        if alpha <= 0 or w <= 0 or h <= 0 or blur <= 0:
+            return
+        paint = self._paint(hex_color, alpha)
+        paint.setMaskFilter(skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, blur))
+        self.canvas.drawRect(skia.Rect.MakeXYWH(x + dx, y + dy, w, h), paint)
+
     def text(self, text: str, x: float, y: float, kind: str, size: float, hex_color: str, alpha: float = 1.0) -> None:
         if not text or alpha <= 0 or size <= 0:
             return

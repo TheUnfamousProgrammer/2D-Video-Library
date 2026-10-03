@@ -21,6 +21,7 @@ from PIL import Image
 from fc_sat.beatkit.delivery import frame_indices, require_delivery
 from fc_sat.encode import pipe_raw_bgr
 from fc_sat.paperfold_art import run_ingest
+from fc_sat.paperfold_stills import render_heroes
 from fc_sat.paperfold_claims import evaluate, load_claims, render_report
 from fc_sat.paperfold_copy import lint_copy
 from fc_sat.paperfold_doctor import doctor
@@ -34,6 +35,7 @@ ROOT = Path(__file__).resolve().parent
 ROOT_MODES = (
     "doctor",
     "ingest",
+    "stills",
     "facts",
     "timeline",
     "animatic",
@@ -63,6 +65,10 @@ def main(argv: list[str] | None = None) -> int:
         code = run_ingest()
         log.mark("ingest")
         return code
+    if args.mode == "stills":
+        render_heroes(args.hook)
+        log.mark("stills")
+        return 0
     if args.mode == "doctor":
         code = doctor()
         log.mark("doctor")
