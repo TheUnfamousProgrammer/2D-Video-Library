@@ -507,6 +507,57 @@ Mute the video, watch the first 2 seconds at thumb distance, and pick the cleare
 - The loop feels seamless.
 - The ending lands: the square returns, and the next kick would fall on the seam.
 
+## Circlesquare
+
+A 30.4 s vertical Short. A chain of rotating circles traces a closed curve. Each beat adds one circle, and the curve turns from a circle into a square. A zoom into a corner shows the square is still rounded. The circles then double until the corner is sharp on a 1080 px frame, and the last beat snaps back to one circle so the video loops. There is no voiceover. The picture is drawn with skia (pycairo if skia is missing, otherwise Pillow) and piped through the shared BT.709 ffmpeg command. The music engine is the polycircle score, with this film's timeline and seed 11. Polycircle outputs are not touched.
+
+```bash
+python make_circlesquare.py doctor
+python make_circlesquare.py facts
+python make_circlesquare.py timeline
+python make_circlesquare.py stills
+python make_circlesquare.py hooks
+python make_circlesquare.py audio
+python make_circlesquare.py preview --hook A --out out/circlesquare_preview.mp4
+python make_circlesquare.py postkit
+python make_circlesquare.py verify --out out/circlesquare.mp4
+python make_circlesquare.py full --approved --hook A --out out/circlesquare.mp4
+```
+
+`full` is refused without `--approved`. Draft encodes use ffmpeg preset `veryfast`. The full file uses `slow`. The shared pipe writes a partial mp4 and renames it into place only after ffmpeg exits 0. Ctrl+C deletes the partial file. Preview and hook clips are 540x960 at 30 fps. The posted file is 1080x1920 at 60 fps, 1824 frames.
+
+### Math
+
+The square is centered at (540, 905), half-side 340 px. The curve is the Fourier series of that square: frequencies 1, -3, 5, -7, ... with coefficients `r1 / k^2 * exp(i pi/4)`, and `r1 = 8 sqrt(2) a / pi^2` (389.7 px). One revolution takes one bar, so the tip meets the corner ray on every bar line and frame 1824 has the same phase as frame 0. The gap is the maximum distance from the curve to the square's perimeter. It is computed on a dense sample through K = 2976 and by `2a / (pi^2 K)` after that. The two agree at the overlap. The smallest K with a gap at or under half a pixel is 138.
+
+At K = 2976 the world gap is 0.023 px, not the 0.01 px a first estimate suggested. The exact-square shortcut still draws the four corners when K is above 2976 and the zoom is at most 2, because 0.023 px is invisible at that zoom. The gap drops under 0.01 px around K = 11904. When the zoom is above 2 the true curve is drawn. K above 23808 reuses the 23808-circle curve (or the exact square at low zoom). The counter still shows the true K. The blend into 47616 happens while the zoom is still 36, so that one doubling is the capped curve at 36x; the leftover error is about a tenth of a pixel.
+
+Frame 954 is the published corner measurement (zoom 36, 93 circles, gap about 27 px on screen). The first doubling therefore eases across frames 955-960 instead of the usual eight frames, so that measurement is still the settled 93-circle curve. Later doublings ease across the eight frames before they land.
+
+Frame 1823 is phase-locked to frame 0 (a one-frame hold) so the loop seam matches. A pure 96-frame rotation would move the arm by about 25.5 px on that last frame, and the global SSIM of that motion sits just under 0.99.
+
+### Claims
+
+Every number on screen, in a title, or in the description comes from `configs/circlesquare_claims.yaml` and is recomputed on each `facts` run. A digit sequence that does not map to a claim fails the lint. The report is `out/claims_report.md`. Gap labels use two significant digits in fixed decimals, never scientific notation. From frame 948 to 1343 the sub-line is the gap at 36x, including while the camera zooms back out, because the label says "AT 36x".
+
+### Hook lab
+
+`hooks` writes the first 3.5 s of variants A, B, and D at 540x960 and 30 fps, with audio, plus a muted strip of frames at 0.0, 0.2, 0.5, 1.0, and 2.0 s. It prints the curve's bounding-box fraction, the design stroke, the design text size, and the motion in the first 24 frames. Those stroke and text numbers are design pixels on the 1080 px frame. A 16-character line at 72 px does not fit a 540-wide picture at 72 output pixels, so the half-resolution files scale the type and keep strokes at least 10 output pixels. Variant D shows the finished-looking square for the first beat, then cuts to one circle. The final render uses A.
+
+### Posting
+
+`postkit` writes `out/postkit.md` from the claims. Upload with #Shorts. Set the audience to not made for kids. On the copyright question, the music is original and there is no third-party footage. Pin comment A (a 10 metre square needs about 1,013 circles to land within 1 millimetre). Then read Viewed vs Swiped away and the retention graph against `out/retention_map.md`. If swipe-away is high, post the next hook variant as its own upload at least a day later.
+
+The top slot can show two lines, so a frame can carry five text strings (two lines, the CIRCLES label, the counter, and the gap). The safe zone still holds, and the boxes do not overlap. The dashed reference square is a 4 px stroke at 55% opacity with a 6 px dash. During the zoom the two edges at the corner are solid 4 px lines at 80% opacity.
+
+### Phone checklist
+
+- The hook is readable on a phone with the sound off.
+- Frame 0 is a filled circle, already turning, with a thick stroke.
+- The corner zoom is the moment the square stops looking finished.
+- The sub-bass is audible on a phone speaker.
+- The loop feels seamless.
+
 ## Paperfold
 
 A 30.4 s vertical Short. A sheet of paper doubles on every fold while the camera pulls back through seven paper-cut dioramas, from a desk to deep space. At 30 folds the stack reaches space. The paper needed for that fold is about 400 times the Earth to Sun distance. In theory fold 42 passes the Moon. The real record is 12 folds. The last frames collapse back to the opening card so the video loops. There is no voiceover. The stack's width is not to scale.
