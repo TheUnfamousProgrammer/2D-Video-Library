@@ -9,6 +9,31 @@ from fc_sat.polycircle_format import format_count, format_gap
 from make_polycircle import main
 
 
+def test_engine_extraction_keeps_frame_and_audio_hashes():
+    """Pixels and samples from before the beatkit move. A mismatch means the extract drifted."""
+    import hashlib
+
+    import numpy as np
+
+    from fc_sat.polycircle_audio import mix
+    from fc_sat.polycircle_render import PolyRenderer
+    from fc_sat.polycircle_timeline import build_timeline
+
+    timeline = build_timeline()
+    renderer = PolyRenderer(timeline, width=1080, height=1920, hook="A")
+    digest = hashlib.sha256()
+    for frame in (0, 12, 24, 96, 192, 576, 768, 954, 1128, 1488, 1632, 1800, 1823):
+        digest.update(np.ascontiguousarray(renderer.render(frame)).tobytes())
+    assert digest.hexdigest() == "1aea15bbef4ea73e8840363a5bc289b4b5508bd1f20737a2d19566dfa0dd0feb"
+    audio, sfx, _lufs, _peak = mix(timeline.to_json(), seed=timeline.config.seed, n_frames=timeline.n_frames)
+    assert hashlib.sha256(np.ascontiguousarray(audio).tobytes()).hexdigest() == (
+        "d2409a0c2eea71d3993f3850ae482e3c69baaaf6bd3bc94007e981caec2aea1d"
+    )
+    assert hashlib.sha256(np.ascontiguousarray(sfx).tobytes()).hexdigest() == (
+        "4f1bf4699581eb2e6437741ef4536cd0248ef49905652f596362917eef6b754f"
+    )
+
+
 def test_full_render_is_refused_without_approval():
     with pytest.raises(SystemExit, match="approved"):
         main(["full"])

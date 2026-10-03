@@ -10,13 +10,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from fc_sat.beatkit.grid import snap_frame
 from fc_sat.polycircle_geometry import insertion_edge
-
-
-def snap_frame(beats: float, bpm: float, fps: int) -> tuple[int, float]:
-    exact = float(beats) * (60.0 / float(bpm)) * int(fps)
-    frame = int(round(exact))
-    return frame, abs(exact - frame)
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from fc_sat.audio import true_peak_db
+from fc_sat.beatkit.probes import frame_rate_errors
 from fc_sat.encode import find_ffmpeg, find_ffprobe
 from fc_sat.polycircle_audio import events_aligned, onset_sample
 from fc_sat.polycircle_claims import evaluate, load_claims
@@ -169,6 +170,7 @@ def probe_errors(path: Path) -> list[str]:
     adur = float(audio.get("duration") or duration)
     if abs(vdur - adur) > 0.020:
         errors.append(f"A/V durations differ by {abs(vdur - adur) * 1000:.1f} ms")
+    errors.extend(frame_rate_errors(find_ffprobe(find_ffmpeg()), path, rate="60/1", frames=1824))
     wav = path.with_suffix(".verify.wav")
     subprocess.run([find_ffmpeg(), "-y", "-v", "error", "-i", str(path), "-ac", "2", str(wav)], check=False)
     if not wav.exists():

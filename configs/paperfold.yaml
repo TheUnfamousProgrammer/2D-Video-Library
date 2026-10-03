@@ -1,0 +1,30 @@
+# Paperfold short. 30.4 s, 150 bpm, 1080x1920. Preview is a separate mode at 30 fps.
+# Bar hues are equalized to one OKLab lightness at load time.
+# configs/claims.yaml belongs to Collatz, so this film uses configs/paperfold_claims.yaml.
+bpm: 150
+fps: 60
+width: 1080
+height: 1920
+frames: 1824
+sample_rate: 48000
+hook: A
+seed: 7
+background: "#0E1117"
+panel: "#1B2030"
+paper: "#F2F4F8"
+seam: "#C9D1E3"
+text: "#F2F4F8"
+muted: "#8A93A6"
+gold: "#FFD166"
+coral: "#FF6B6B"
+teal: "#2EC4B6"
+space: "#05060A"
+bar_colors:
+  - "#FF6B6B"
+  - "#FF9F43"
+  - "#FECA57"
+  - "#1DD1A1"
+  - "#48DBFB"
+  - "#5F7CFF"
+  - "#A55EEA"
+  - "#FF6BCB"

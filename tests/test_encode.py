@@ -3,7 +3,7 @@ import subprocess
 
 import numpy as np
 
-from fc_sat.encode import BT709_FILTER, encode_solid, find_ffmpeg, find_ffprobe
+from fc_sat.encode import BT709_FILTER, encode_command, encode_solid, find_ffmpeg, find_ffprobe
 
 
 def test_solid_color_roundtrip(tmp_path):
@@ -36,3 +36,11 @@ def test_solid_color_roundtrip(tmp_path):
     decoded = frame[32, 32].astype(np.int16)
     assert np.max(np.abs(decoded - np.array(color))) <= 8
     assert BT709_FILTER == "scale=out_color_matrix=bt709:out_range=tv"
+    assert str(video.get("r_frame_rate")) == "60/1"
+    command = encode_command(ffmpeg, width=64, height=64, fps=60, output=output, audio_path=None)
+    assert command[command.index("-framerate") + 1] == "60"
+    assert "cfr" in command
+    # The output -r is the one after -fps_mode, not the input timestamp -r.
+    pinned = command[command.index("-fps_mode") + 1 :]
+    assert pinned[0] == "cfr"
+    assert pinned[pinned.index("-r") + 1] == "60"

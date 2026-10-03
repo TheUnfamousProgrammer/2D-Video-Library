@@ -1,21 +1,16 @@
-"""Load and check the polycircle config.
-
-Bar colors keep the brief's hues. Their OKLab lightness is pulled to the median
-so the spread is at most 0.03 and a downbeat does not flash.
-"""
+"""Load and check the paperfold config. Full renders are 1080x1920 at 60 fps."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import yaml
 
 from fc_sat.beatkit.palette import equalize_lightness, lightness_spread
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = ROOT / "configs" / "polycircle.yaml"
+CONFIG_PATH = ROOT / "configs" / "paperfold.yaml"
 
 
 class ConfigError(SystemExit):
@@ -23,38 +18,31 @@ class ConfigError(SystemExit):
 
 
 @dataclass(frozen=True)
-class PolyConfig:
+class PaperConfig:
     bpm: float
     fps: int
     width: int
     height: int
     frames: int
     sample_rate: int
-    radius: float
-    center_x: float
-    center_y: float
-    zoom_max: float
-    gap_px: float
     hook: str
     seed: int
     background: str
+    panel: str
+    paper: str
+    seam: str
     text: str
     muted: str
     gold: str
+    coral: str
+    teal: str
+    space: str
     bar_hues: tuple[str, ...]
     bar_colors: tuple[str, ...]
     path: Path
 
-    @property
-    def center(self) -> np.ndarray:
-        return np.array([self.center_x, self.center_y], dtype=np.float64)
 
-    @property
-    def top(self) -> np.ndarray:
-        return np.array([self.center_x, self.center_y - self.radius], dtype=np.float64)
-
-
-def load_config(path: Path | None = None) -> PolyConfig:
+def load_config(path: Path | None = None) -> PaperConfig:
     path = path or CONFIG_PATH
     raw = yaml.safe_load(path.read_text())
     if not isinstance(raw, dict):
@@ -62,25 +50,25 @@ def load_config(path: Path | None = None) -> PolyConfig:
     hues = [str(item) for item in raw.get("bar_colors") or []]
     if len(hues) != 8:
         raise ConfigError("bar_colors needs 8 hex hues, one per bar in the cycle")
-    center = raw.get("center") or [540, 910]
-    cfg = PolyConfig(
+    cfg = PaperConfig(
         bpm=float(raw["bpm"]),
         fps=int(raw["fps"]),
         width=int(raw["width"]),
         height=int(raw["height"]),
         frames=int(raw["frames"]),
         sample_rate=int(raw["sample_rate"]),
-        radius=float(raw["radius"]),
-        center_x=float(center[0]),
-        center_y=float(center[1]),
-        zoom_max=float(raw["zoom_max"]),
-        gap_px=float(raw["gap_px"]),
         hook=str(raw.get("hook", "A")),
         seed=int(raw.get("seed", 7)),
         background=str(raw["background"]),
+        panel=str(raw["panel"]),
+        paper=str(raw["paper"]),
+        seam=str(raw["seam"]),
         text=str(raw["text"]),
         muted=str(raw["muted"]),
         gold=str(raw["gold"]),
+        coral=str(raw["coral"]),
+        teal=str(raw["teal"]),
+        space=str(raw["space"]),
         bar_hues=tuple(hues),
         bar_colors=tuple(equalize_lightness(hues)),
         path=path,
@@ -89,21 +77,16 @@ def load_config(path: Path | None = None) -> PolyConfig:
     return cfg
 
 
-def validate_config(cfg: PolyConfig) -> None:
-    if cfg.bpm <= 0 or cfg.fps <= 0:
-        raise ConfigError("bpm and fps must be positive")
+def validate_config(cfg: PaperConfig) -> None:
+    if (cfg.width, cfg.height, cfg.fps) != (1080, 1920, 60):
+        raise ConfigError("the master is 1080x1920 at 60 fps; 540x960 at 30 fps is a preview mode")
     if cfg.frames != 1824:
         raise ConfigError(f"this short is 1824 frames, got {cfg.frames}")
+    if cfg.bpm != 150:
+        raise ConfigError("tempo is 150 bpm so a beat is exactly 24 frames")
     if cfg.sample_rate != 48000:
         raise ConfigError("sample rate is 48000")
-    if cfg.fps not in (30, 60):
-        raise ConfigError("fps must be 30 or 60")
-    if cfg.radius <= 0 or cfg.zoom_max <= 1:
-        raise ConfigError("radius and zoom_max are out of range")
-    if cfg.hook not in {"A", "B", "C"}:
-        raise ConfigError("hook must be A, B, or C")
+    if cfg.hook not in {"A", "B", "C", "D"}:
+        raise ConfigError("hook must be A, B, C, or D")
     if lightness_spread(cfg.bar_colors) > 0.03:
         raise ConfigError("equalized bar colors exceed 0.03 OKLab L")
-    exact = cfg.fps * 60.0 / cfg.bpm
-    if abs(exact - round(exact)) > 0.5:
-        raise ConfigError(f"beat snap error {abs(exact - round(exact)):.3f} frames exceeds 0.5")
