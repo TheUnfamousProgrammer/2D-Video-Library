@@ -5,13 +5,14 @@ Input range flags are intentionally omitted. The bitstream is tagged BT.709
 limited range. The file is written to a temporary path and renamed only after
 ffmpeg exits 0, so a failed encode never leaves a partial mp4 at the final path.
 
-The posted polycircle file was 30 fps. Preview, animatic, and hooks pass
-``fps=30`` and every other timeline frame, and that file is still 30.4 s long,
-so a duration check cannot tell it from the 60 fps master. The rawvideo
-demuxer's frame-rate option is ``-framerate`` (its default is 25). This command
-used to set only an input ``-r`` and never pinned the output, so a later
-ffmpeg or a player could report a different rate than the one requested.
-``-framerate``, ``-fps_mode cfr``, and an output ``-r`` lock the requested rate.
+The posted polycircle file is 1080x1920, 30 fps, 912 frames. The command was
+``python make_polycircle.py full --approved --hook A --out out/polycircle.mp4``:
+the 1080x1920 renderer, the 30.4 s mix, and ``-shortest``. The pipe was given
+the preview rate, fps=30. 1824 frames at 30 fps is 60.8 s, so ``-shortest``
+kept 30.4 * 30 = 912 frames and the raster stayed 1080x1920. It was not the
+540x960 preview. ``-framerate``, ``-fps_mode cfr``, and an output ``-r`` lock
+the rate the caller asked for, and ``require_delivery`` rejects 1080x1920 at
+30 fps before ffmpeg runs.
 """
 
 from __future__ import annotations

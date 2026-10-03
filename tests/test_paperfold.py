@@ -120,3 +120,112 @@ def test_hook_variants_share_the_fold_grid():
     for hook in ("A", "B", "C", "D"):
         assert top_lines(script, 0, hook)
         assert top_lines(script, 0, hook) == top_lines(script, 1823, hook)
+
+
+def test_tower_transition_is_frames_72_to_84():
+    from fc_sat.paperfold_schedule import TRANSITION_END, TRANSITION_START, camera_at, fold_frame
+    from fc_sat.paperfold_timeline import build_timeline, retention_markdown
+
+    assert fold_frame(6) == 72
+    assert fold_frame(7) == 84
+    assert TRANSITION_START == 72
+    assert TRANSITION_END == 84
+    assert camera_at(71) == "topdown"
+    assert camera_at(72) == "transition"
+    assert camera_at(83) == "transition"
+    assert camera_at(84) == "tower"
+    text = retention_markdown(build_timeline())
+    assert "frame 84" in text
+    assert "1.4 s" in text
+    assert "first tower doubling" in text
+
+
+def test_copy_says_about_400x_and_credits_only_the_name():
+    from fc_sat.paperfold_copy import about_sun, credit, description, lint_copy, pinned_comment
+
+    assert about_sun() == "about 400x"
+    assert "about 400x" in description()
+    assert "about 400x" in pinned_comment()
+    assert credit() == "Britney Gallivan, 2002"
+    assert "1.2" not in credit()
+    assert "1219" not in credit()
+    assert lint_copy() == []
+
+
+def test_delivery_rejects_the_posted_30fps_master():
+    from fc_sat.beatkit.delivery import frame_indices, require_delivery
+
+    with pytest.raises(SystemExit, match="1080x1920 at 30 fps"):
+        require_delivery("full", 1080, 1920, 30, 912)
+    with pytest.raises(SystemExit):
+        require_delivery("full", 1080, 1920, 30, 1824)
+    full = require_delivery("full", 1080, 1920, 60, 1824)
+    preview = require_delivery("preview", 540, 960, 30, 912)
+    hooks = require_delivery("hooks", 540, 960, 30, 105)
+    assert (full.width, full.height, full.fps, full.frames) == (1080, 1920, 60, 1824)
+    assert (preview.width, preview.height, preview.fps) == (540, 960, 30)
+    assert (hooks.width, hooks.height, hooks.fps, hooks.frames) == (540, 960, 30, 105)
+    assert len(frame_indices("full")) == 1824
+    assert len(frame_indices("preview")) == 912
+    assert len(frame_indices("hooks")) == 105
+    assert frame_indices("preview")[1] == 2
+
+
+def test_each_mode_encodes_its_resolution_and_rate(tmp_path):
+    import json
+    import subprocess
+
+    from fc_sat.beatkit.probes import count_video_frames
+    from fc_sat.encode import encode_solid, find_ffmpeg, find_ffprobe
+
+    ffmpeg = find_ffmpeg()
+    ffprobe = find_ffprobe(ffmpeg)
+    modes = {
+        "preview": (540, 960, 30),
+        "hooks": (540, 960, 30),
+        "full": (1080, 1920, 60),
+    }
+    for mode, (width, height, fps) in modes.items():
+        path = tmp_path / f"{mode}.mp4"
+        encode_solid((20, 40, 60), path, width=width, height=height, frames=6, fps=fps, preset="ultrafast")
+        rate, count = count_video_frames(ffprobe, path)
+        assert rate == f"{fps}/1"
+        assert count == 6
+        probe = json.loads(
+            subprocess.check_output(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "json",
+                    str(path),
+                ]
+            )
+        )
+        stream = probe["streams"][0]
+        assert int(stream["width"]) == width
+        assert int(stream["height"]) == height
+
+
+def test_opening_frame_is_bold_and_the_loop_matches():
+    import numpy as np
+
+    from fc_sat.paperfold_render import PaperRenderer, paper_fraction, tower_white_span
+
+    renderer = PaperRenderer(1080, 1920, "A")
+    frame0 = renderer.render(0)
+    assert paper_fraction(frame0) >= 0.18
+    assert renderer.top_size >= 70
+    assert not np.array_equal(frame0, renderer.render(1))
+    assert np.array_equal(frame0, renderer.render(1823))
+    for frame in (84, 168, 576, 1128):
+        image = renderer.render(frame)
+        assert tower_white_span(image, 1) == pytest.approx(700, abs=2)
+        assert renderer.top_size >= 70
+    hook = PaperRenderer(540, 960, "A")
+    assert min(paper_fraction(hook.render(frame)) for frame in (0, 6, 12, 40, 84, 168)) >= 0.12

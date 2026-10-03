@@ -52,8 +52,8 @@ def doctor() -> int:
         print(f"multiplication sign: FAIL {exc}")
         failed = True
     print(f"renderer: {backend_name()}")
-    print("full frame rate: 60/1 pinned with -framerate, -fps_mode cfr, and an output -r")
-    print("preview and hooks stay 540x960 at 30 fps; verify refuses that file as a master")
+    print("posted file: full 1080x1920 with fps=30 and -shortest kept 912 frames at 30/1")
+    print("full is 1080x1920 at 60 fps, 1824 frames; preview and hooks are 540x960 at 30 fps")
     try:
         cfg = load_config()
         spread = lightness_spread(cfg.bar_colors)

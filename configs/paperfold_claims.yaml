@@ -130,6 +130,15 @@ claims:
     usage: [reality, description]
     fn: const
     args: ["record_year"]
+  h6_cm:
+    type: computed
+    text: "stack after 6 folds, in centimetres"
+    value: 0.64
+    source: "h(6) = 0.1 mm * 64 = 6.4 mm = 0.64 cm"
+    surfaces: ["0.64"]
+    usage: [transition]
+    fn: cm_tenth
+    args: [6]
   h12:
     type: computed
     text: "stack after 12 folds"

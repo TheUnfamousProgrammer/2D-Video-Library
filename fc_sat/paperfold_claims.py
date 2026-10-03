@@ -77,6 +77,10 @@ def _cm(n: int) -> int:
     return int(round(height_m(int(n)) * 100.0))
 
 
+def _cm_tenth(n: int) -> float:
+    return round(height_m(int(n)) * 100.0, 2)
+
+
 def _km_decimal(n: int) -> float:
     return round(length_km(int(n)), 1)
 
@@ -92,6 +96,7 @@ FNS = {
     "ly_round": lambda n: rounded_light_years(int(n)),
     "km_round": lambda n: rounded_km(int(n)),
     "cm_round": _cm,
+    "cm_tenth": _cm_tenth,
     "km_decimal": _km_decimal,
 }
 

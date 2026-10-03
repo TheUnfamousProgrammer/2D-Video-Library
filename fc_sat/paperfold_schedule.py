@@ -37,6 +37,29 @@ def max_snap_error(bpm: float = 150.0, fps: int = 60) -> float:
     return error
 
 
+# Fold 6 lands at frame 72. The camera swings from the sheet to the tower across
+# the next 12 frames. Fold 7 lands at frame 84: the ghost copy has doubled the
+# stack, and the tower view is fully up.
+TRANSITION_START = 72
+TRANSITION_END = 84
+
+
+def camera_at(frame: int) -> str:
+    if frame < TRANSITION_START:
+        return "topdown"
+    if frame < TRANSITION_END:
+        return "transition"
+    if frame < 1248:
+        return "tower"
+    if frame < 1440:
+        return "reality"
+    if frame < 1632:
+        return "answer"
+    if frame < 1800:
+        return "outro"
+    return "collapse"
+
+
 SEGMENTS = (
     ("hook", 0, 192),
     ("rising", 192, 576),

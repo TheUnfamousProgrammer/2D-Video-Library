@@ -17,6 +17,11 @@ hooks:
     lines: ["{pass_moon} FOLDS.", "ONE PAPER.", "THE MOON?"]
     claims: [pass_moon]
 cards:
+  - id: doubling
+    start: 192
+    end: 576
+    lines: ["DOUBLING."]
+    claims: []
   - id: space
     start: 576
     end: 672
@@ -31,6 +36,11 @@ cards:
     start: 864
     end: 1128
     lines: ["IN THEORY,", "KEEP GOING"]
+    claims: []
+  - id: moon_stamp
+    start: 1128
+    end: 1152
+    lines: ["THE MOON"]
     claims: []
   - id: milky
     start: 1152
@@ -60,9 +70,14 @@ cards:
 subs:
   - id: sheet
     start: 0
-    end: 96
+    end: 72
     template: "{thickness_mm} MM PAPER"
     claims: [thickness_mm]
+  - id: h6
+    start: 72
+    end: 84
+    template: "{h6_cm} CM"
+    claims: [h6_cm]
   - id: space_km
     start: 576
     end: 672
@@ -71,5 +86,5 @@ subs:
   - id: record_credit
     start: 1248
     end: 1440
-    template: "GALLIVAN {record_year}"
+    template: "Britney Gallivan, {record_year}"
     claims: [record_year]

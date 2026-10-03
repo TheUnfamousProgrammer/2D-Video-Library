@@ -17,6 +17,7 @@ from pathlib import Path
 from PIL import Image
 
 from fc_sat.audio import write_wav
+from fc_sat.beatkit.delivery import frame_indices, require_delivery
 from fc_sat.encode import pipe_raw_bgr
 from fc_sat.polycircle_audio import master, mix, onset_sample, sync_rows
 from fc_sat.polycircle_claims import evaluate, load_claims, render_report
@@ -164,17 +165,26 @@ def _animatic(hook: str, output: Path) -> int:
         f"sequential full-render eta {heavy * timeline.n_frames / 60000:.1f} min",
         flush=True,
     )
-    count = 912
-    indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
+    spec = require_delivery("animatic", 540, 960, 30, 912)
+    indices = frame_indices("animatic", timeline.n_frames)
 
     def frames():
         for index, frame in enumerate(indices):
             if index % 60 == 0:
-                print(f"animatic {index}/{count}", flush=True)
+                print(f"animatic {index}/{spec.frames}", flush=True)
             yield renderer.render(frame)
 
     with Heartbeat("animatic still rendering"):
-        pipe_raw_bgr(frames(), output, width=540, height=960, fps=30, audio_path=None, preset="veryfast", n_frames=count)
+        pipe_raw_bgr(
+            frames(),
+            output,
+            width=spec.width,
+            height=spec.height,
+            fps=spec.fps,
+            audio_path=None,
+            preset="veryfast",
+            n_frames=spec.frames,
+        )
     _sheet(renderer, [0, 192, 768, 954, 1128, 1488, 1632, 1823], ROOT / "out" / "polycircle_contact.png")
     _sheet(renderer, [876, 912, 948, 960, 1128], ROOT / "out" / "polycircle_zoom_strip.png")
     print(f"draft profile {ms:.0f} ms/frame")
@@ -233,8 +243,9 @@ def _hooks() -> int:
     music, _off, _lufs, _peak = _mix_files()
     folder = ROOT / "out" / "hooks"
     folder.mkdir(parents=True, exist_ok=True)
-    count = 105
-    indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
+    spec = require_delivery("hooks", 540, 960, 30, 105)
+    count = spec.frames
+    indices = frame_indices("hooks", timeline.n_frames)
     for hook in ("A", "B", "C"):
         renderer = PolyRenderer(timeline, width=540, height=960, hook=hook)
         _encode(renderer, indices, folder / f"hook_{hook}.mp4", music, 30, f"hook {hook}")
@@ -246,24 +257,25 @@ def _hooks() -> int:
 def _preview(hook: str, output: Path) -> int:
     timeline = build_timeline()
     music, music_off, _lufs, _peak = _mix_files()
-    renderer = PolyRenderer(timeline, width=540, height=960, hook=hook)
-    count = 912
-    indices = [min(timeline.n_frames - 1, index * 2) for index in range(count)]
-    _encode(renderer, indices, output, music, 30, "preview")
+    spec = require_delivery("preview", 540, 960, 30, 912)
+    renderer = PolyRenderer(timeline, width=spec.width, height=spec.height, hook=hook)
+    indices = frame_indices("preview", timeline.n_frames)
+    _encode(renderer, indices, output, music, spec.fps, "preview")
     off = output.with_name(output.stem + ".music_off.mp4")
-    _encode(renderer, indices, off, music_off, 30, "preview music-off")
+    _encode(renderer, indices, off, music_off, spec.fps, "preview music-off")
     return 0
 
 
 def _full(hook: str, output: Path) -> int:
     timeline = build_timeline()
     music, music_off, _lufs, _peak = _mix_files()
-    renderer = PolyRenderer(timeline, width=1080, height=1920, hook=hook)
+    spec = require_delivery("full", 1080, 1920, 60, timeline.n_frames)
+    renderer = PolyRenderer(timeline, width=spec.width, height=spec.height, hook=hook)
     heavy = renderer.profile_ms()
     print(f"profile: {heavy:.0f} ms; eta {heavy * timeline.n_frames / 60000:.1f} min", flush=True)
-    indices = list(range(timeline.n_frames))
-    _encode(renderer, indices, output, music, 60, "full")
-    _encode(renderer, indices, output.with_name(output.stem + ".music_off.mp4"), music_off, 60, "full music-off")
+    indices = frame_indices("full", timeline.n_frames)
+    _encode(renderer, indices, output, music, spec.fps, "full")
+    _encode(renderer, indices, output.with_name(output.stem + ".music_off.mp4"), music_off, spec.fps, "full music-off")
     return 0
 
 
