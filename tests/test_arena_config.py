@@ -104,15 +104,17 @@ def test_no_cast_contains_a_blocked_code():
         "americas.yaml",
         "asia.yaml",
         "europe.yaml",
+        "players.yaml",
         "world.yaml",
     }
     for path in paths:
         countries, warnings = load_cast(path, guards)
-        assert len(countries) == 32
+        expected = 16 if path.stem == "players" else 32
+        assert len(countries) == expected
         assert warnings == ()
         codes = {country.iso2 for country in countries}
         assert codes.isdisjoint(guards.blocked)
-        assert len(codes) == 32
+        assert len(codes) == expected
 
 
 def test_gravity_key_is_rejected():

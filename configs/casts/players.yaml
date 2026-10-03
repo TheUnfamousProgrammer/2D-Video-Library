@@ -1,0 +1,17 @@
+# 16 players. iso2 is a roster code, not a country. Portraits live in assets/players/.
+- {name: Mbappé, iso2: MB, iso3: MBP}
+- {name: Yamal, iso2: LY, iso3: YAM}
+- {name: Messi, iso2: LM, iso3: MES}
+- {name: Ronaldo, iso2: CR, iso3: RON}
+- {name: Haaland, iso2: HA, iso3: HAA}
+- {name: Modrić, iso2: MO, iso3: MOD}
+- {name: Neymar, iso2: NJ, iso3: NEY}
+- {name: Salah, iso2: MS, iso3: SAL}
+- {name: Lewandowski, iso2: RL, iso3: LEW}
+- {name: Benzema, iso2: KB, iso3: BEN}
+- {name: Kane, iso2: HK, iso3: KAN}
+- {name: De Bruyne, iso2: KD, iso3: KDB}
+- {name: Vinícius, iso2: VJ, iso3: VIN}
+- {name: Bellingham, iso2: JB, iso3: BEL}
+- {name: Son, iso2: SH, iso3: SON}
+- {name: Kroos, iso2: TK, iso3: KRO}

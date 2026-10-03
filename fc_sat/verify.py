@@ -927,7 +927,7 @@ def verify_arena_file(path: Path, cfg, sidecar: dict | None = None) -> list[Chec
     ]
     _add(checks, "text safe zone", bool(boxes) and not box_fail, f"{len(boxes)} boxes, {len(box_fail)} outside")
     zone_ok = True
-    zone_detail = "inside x [130, 950], y [480, 1400]"
+    zone_detail = "inside the platform slot"
     for moment, hw, hh in ((2.0, frame[1], frame[2]) for frame in cfg.platform_keyframes[:2]):
         view = camera_view(cfg, moment, hw, hh)
         if (

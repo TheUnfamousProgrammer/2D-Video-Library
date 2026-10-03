@@ -28,10 +28,10 @@ DIFFERENCES = ("hue", "tilt", "detail")
 TIERS = ("easy", "normal", "hard")
 PERCENT_CLAIM = re.compile(r"\d+(?:\.\d+)?\s*%", re.IGNORECASE)
 # Rung 1 is easiest. CVD required distance is half the hue rung's nominal distance.
-HUE_DISTANCE = {1: 0.20, 2: 0.15, 3: 0.12, 4: 0.09, 5: 0.06}
+HUE_DISTANCE = {1: 0.20, 2: 0.15, 3: 0.12, 4: 0.09, 5: 0.03}
 TILT_DEGREES = {1: 18.0, 2: 13.0, 3: 9.0, 4: 6.0, 5: 4.0}
 DETAIL_OFFSET = {1: 0.55, 2: 0.42, 3: 0.30, 4: 0.22, 5: 0.15}
-HUE_LIGHTNESS = 0.05
+HUE_LIGHTNESS = 0.02
 DOT_FRACTION = 0.14
 SKIPPED_MEASURE = "SKIPPED (not reliably measurable after compression)"
 

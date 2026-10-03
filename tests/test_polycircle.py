@@ -169,12 +169,44 @@ def test_layout_stays_in_the_safe_zone():
     renderer = PolyRenderer(width=540, height=960, hook="A")
     for frame in range(0, 1824, 3):
         boxes = renderer.plan(frame)
-        assert len(boxes) <= 4
+        assert len(boxes) <= 5
         for box in boxes:
             assert inside_safe(box, renderer.scale), (frame, box.text)
         for index, left in enumerate(boxes):
             for right in boxes[index + 1 :]:
                 assert not overlaps(left, right), (frame, left.text, right.text)
+
+
+def test_shape_names_follow_the_count():
+    from fc_sat.polycircle_names import polygon_name, shape_labels
+    from fc_sat.polycircle_render import PolyRenderer
+    from fc_sat.polycircle_timeline import build_timeline
+
+    assert polygon_name(4) == "SQUARE"
+    assert polygon_name(5) == "PENTAGON"
+    assert polygon_name(8) == "OCTAGON"
+    assert polygon_name(12) == "DODECAGON"
+    assert polygon_name(20) == "ICOSAGON"
+    assert polygon_name(61) == "HEXACONTAKAIHENAGON"
+    assert polygon_name(96) == "ENNEACONTAKAIHEXAGON"
+    assert all(len(name) <= 22 for name in (
+        polygon_name(n) for n in (4, 12, 27, 61, 96)
+    ))
+    timeline = build_timeline()
+    labels = shape_labels(timeline)
+    assert labels[0] == "SQUARE"
+    assert labels[24] == "PENTAGON"
+    assert labels[1823] == "SQUARE"
+    assert labels[768] == "ENNEACONTAKAIHEXAGON"
+    assert labels[1488] == "HEXACONTAKAIHENAGON"
+    assert labels[1632] == "APEIROGON"
+    # The thirty-second roll changes too fast for a word.
+    assert labels[600] == ""
+    renderer = PolyRenderer(timeline, width=540, height=960, hook="A")
+    opening = [box.text for box in renderer.plan(0)]
+    assert "SQUARE" in opening
+    assert "SIDES" not in opening
+    assert len(opening) <= 5
 
 
 def test_style_law_source():
@@ -242,10 +274,16 @@ def test_sidechain_ducks_and_releases():
 
 def test_postkit_lints_clean():
     from fc_sat.polycircle_claims import load_claims
-    from fc_sat.polycircle_post import lint_post, titles
+    from fc_sat.polycircle_post import description, lint_post, tags, titles
 
     book = load_claims()
     assert lint_post(book) == []
+    upload, _claims = titles(book)[0]
+    assert upload == "How many sides does a circle have?"
+    assert len(upload) <= 40
+    assert description(book).splitlines()[0].lower().startswith("how many sides does a circle have?")
+    assert tags()[0] == "how many sides does a circle have"
+    assert "has" in tags()[1]
     for title, _claims in titles(book):
         assert len(title) <= 60
         assert not title.isupper()

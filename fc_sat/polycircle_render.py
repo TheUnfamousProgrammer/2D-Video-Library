@@ -20,6 +20,7 @@ from fc_sat.polycircle_geometry import (
     project,
     zoom_at,
 )
+from fc_sat.polycircle_names import shape_labels
 from fc_sat.polycircle_schedule import active_morph
 from fc_sat.polycircle_text import Script, load_script, sub_template, top_lines
 from fc_sat.polycircle_timeline import Timeline, build_timeline, counter_number
@@ -117,6 +118,7 @@ class PolyRenderer:
         self.radius = 370.0 * self.scale
         self.top = np.array([self.center[0], self.center[1] - self.radius], dtype=np.float64)
         self._infinity_font = infinity_in_font()
+        self._labels = shape_labels(self.timeline)
 
     def _px(self, design: float) -> float:
         return design * self.scale
@@ -152,11 +154,24 @@ class PolyRenderer:
             limit = self._px(820)
             if widest > limit:
                 size = min(self._fit_size("word", line, size, limit) for line in headline)
-            start = self._px({1: 300, 2: 260, 3: 240}[len(headline)])
-            step = self._px(96)
+            # Three lines sit on the top of the safe area so the last line clears the shape.
+            if len(headline) >= 3:
+                start = self._px(200)
+                step = self._px(100)
+            else:
+                start = self._px({1: 292, 2: 220}[len(headline)])
+                step = self._px(112)
             for index, line in enumerate(headline):
                 gold = next((bit for bit in gold_bits if bit and bit in line), "")
                 tops.append(self._box(line, self.center[0], start + index * step, size, "word", self.timeline.config.text, alpha, gold))
+            circle_top = float(self.center[1] - self.radius)
+            overflow = tops[-1].bottom() - (circle_top - self._px(72))
+            if overflow > 0:
+                room = tops[0].y - self._px(200)
+                shift = min(overflow, max(0.0, room))
+                if shift > 0:
+                    for box in tops:
+                        box.y -= shift
 
         sub_text, sub_alpha = self._sub(frame)
         count = counter_number(self.timeline, frame)
@@ -167,26 +182,43 @@ class PolyRenderer:
             counter_text = format_count(count)
             counter_kind = "mono"
         pop = counter_scale(frame, self.timeline)
-        counter_size = self._fit_size(counter_kind, counter_text, self._px(130) * pop, self._px(800))
-        counter_top = self._px(1380)
+        counter_size = self._fit_size(counter_kind, counter_text, self._px(118) * pop, self._px(800))
         counter_color = self.timeline.config.gold if 1488 <= frame < 1632 else self.timeline.config.text
+        # Sub line stays on the bottom of the safe area. The name sits clear of the circle, then the number follows it.
+        sub_top = self._px(1508)
+        label = self._labels[frame] or "SIDES"
+        label_size = self._fit_size("word", label, self._px(42 if label != "SIDES" else 36), self._px(800))
+        ink = measure("word", label_size, label)
+        circle_bottom = float(self.center[1] + self.radius)
+        label_top = circle_bottom + self._px(64)
+        counter_top = label_top + ink.height + self._px(28)
         counter = self._box(counter_text, self.center[0], counter_top, counter_size, counter_kind, counter_color, 1.0)
-        # Keep the counter above the sub line.
-        sub_top = self._px(1496)
-        if counter.bottom() > sub_top - self._px(8):
-            counter_size = self._fit_size(counter_kind, counter_text, self._px(108), self._px(800))
+        while counter.bottom() > sub_top - self._px(22) and counter_size > self._px(72):
+            counter_size -= self._px(4)
+            counter = self._box(counter_text, self.center[0], counter_top, counter_size, counter_kind, counter_color, 1.0)
+        # If the number still crowds the sub line, lift the name and the number together, but not into the circle.
+        if counter.bottom() > sub_top - self._px(22):
+            nudge = counter.bottom() - (sub_top - self._px(22))
+            floor = circle_bottom + self._px(36)
+            nudge = min(nudge, max(0.0, label_top - floor))
+            label_top -= nudge
+            counter_top -= nudge
             counter = self._box(counter_text, self.center[0], counter_top, counter_size, counter_kind, counter_color, 1.0)
 
         bottom: list[TextBox] = []
-        sides = self._box("SIDES", self.center[0], self._px(1336), self._px(36), "word", self.timeline.config.muted, 1.0)
-        bottom.append(sides)
+        label_box = self._box(label, self.center[0], label_top, label_size, "word", self.timeline.config.text if label != "SIDES" else self.timeline.config.muted, 1.0)
+        bottom.append(label_box)
         bottom.append(counter)
         if sub_text and sub_alpha > 0.01:
             sub_size = self._fit_size("word", sub_text, self._px(32), self._px(800))
             sub = self._box(sub_text, self.center[0], sub_top, sub_size, "word", self.timeline.config.muted, sub_alpha)
+            limit = self._px(1534)
+            if sub.bottom() > limit:
+                sub = self._box(sub_text, self.center[0], limit - sub.h, sub_size, "word", self.timeline.config.muted, sub_alpha)
             bottom.append(sub)
-        while len(tops) + len(bottom) > 4 and any(item.text == "SIDES" for item in bottom):
-            bottom = [item for item in bottom if item.text != "SIDES"]
+        # The name takes the SIDES slot. Five elements is the hook (three lines) plus the name plus the count.
+        while len(tops) + len(bottom) > 5 and any(item.text == label for item in bottom):
+            bottom = [item for item in bottom if item.text != label]
         return [*tops, *bottom]
 
     def _sub(self, frame: int) -> tuple[str, float]:

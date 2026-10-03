@@ -225,17 +225,21 @@ def _dist_to_segment(x: float, y: float, a: tuple[float, float], b: tuple[float,
 def _spawn(cfg: ArenaConfig, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     count = len(cfg.countries)
     cx, cy = cfg.center
-    hw = cfg.hw0 * cfg.disk_frac
-    hh = cfg.hh0 * cfg.disk_frac
+    # Scatter across the real opening floor, not the spec 410 x 460 box.
+    # hw0 is the design size; the tuned floor starts much wider.
+    start_hw = cfg.platform_keyframes[0][1]
+    start_hh = cfg.platform_keyframes[0][2]
+    hw = start_hw * cfg.disk_frac
+    hh = start_hh * cfg.disk_frac
     cr = corner_radius(hw, hh, cfg.corner_frac)
-    full_cr = corner_radius(cfg.hw0, cfg.hh0, cfg.corner_frac)
+    full_cr = corner_radius(start_hw, start_hh, cfg.corner_frac)
     order = rng.permutation(count)
     clash = (int(order[0]), int(order[1]))
     half = cfg.clash_gap * 0.5
     pos = np.zeros((count, 2), dtype=np.float64)
     pos[clash[0]] = (cx, cy - half)
     pos[clash[1]] = (cx, cy + half)
-    spacing = cfg.ball_radius * 2.0 + 2.0
+    spacing = max(cfg.ball_radius * 2.0 + 2.0, 150.0)
     placed = [tuple(pos[clash[0]]), tuple(pos[clash[1]])]
     filled = 2
     candidates: list[tuple[float, float]] = []
@@ -256,12 +260,22 @@ def _spawn(cfg: ArenaConfig, rng: np.random.Generator) -> tuple[np.ndarray, np.n
     if len(candidates) < count - 2:
         raise RuntimeError(f"spawn has {len(candidates)} slots for {count - 2} balls")
     rng.shuffle(candidates)
-    for point in candidates[: count - 2]:
+    picked = [candidates.pop()]
+    while len(picked) < count - 2 and candidates:
+        best_i = 0
+        best_d = -1.0
+        for index, point in enumerate(candidates):
+            distance = min(math.hypot(point[0] - px, point[1] - py) for px, py in picked)
+            if distance > best_d:
+                best_d = distance
+                best_i = index
+        picked.append(candidates.pop(best_i))
+    for point in picked:
         slot = int(order[filled])
         pos[slot] = point
         filled += 1
     for index in range(count):
-        if rounded_rect_sd(float(pos[index, 0]), float(pos[index, 1]), cx, cy, cfg.hw0, cfg.hh0, full_cr) > 0.0:
+        if rounded_rect_sd(float(pos[index, 0]), float(pos[index, 1]), cx, cy, start_hw, start_hh, full_cr) > 0.0:
             raise RuntimeError("spawn placed a ball outside the platform")
     vel = np.zeros((count, 2), dtype=np.float64)
     direction = pos[clash[1]] - pos[clash[0]]
@@ -498,6 +512,7 @@ def simulate(
     duel_start = None
     t_win = None
     winner = None
+    semi_start = None
     tie = False
     both_finalists_hit = False
 
@@ -537,11 +552,18 @@ def simulate(
         alive_n = int(alive.sum())
         rate = 1.0 + cfg.shrink_gain * (alive_n - float(target_alive[step]))
         rate = min(2.0, max(0.0, rate))
+        # Hold the floor while four names are on screen, then close it
+        # once the final has been readable, so the duel does not stall.
+        speed_cap = cfg.hw_speed_max
+        if semi_start is not None and alive_n >= 4 and now < semi_start + 2.0:
+            rate = 0.0
+        if duel_start is not None and alive_n <= 2 and now > duel_start + 2.2:
+            speed_cap = cfg.hw_speed_max * 3.2
         proposed = storm + rate * dt
         hw2, hh2 = _sample_platform(cfg.platform_keyframes, proposed)
         dhw = abs(hw2 - hw)
-        if dhw > cfg.hw_speed_max * dt and dhw > 1e-8:
-            proposed = storm + rate * dt * (cfg.hw_speed_max * dt) / dhw
+        if dhw > speed_cap * dt and dhw > 1e-8:
+            proposed = storm + rate * dt * (speed_cap * dt) / dhw
             hw2, hh2 = _sample_platform(cfg.platform_keyframes, proposed)
         storm = proposed
         hw, hh = hw2, hh2
@@ -778,6 +800,8 @@ def simulate(
             eliminated.add(index)
             elims.append(Elim(now, index, cause, killer, closing_speed, combo, revenge))
             remaining = count - len(elims)
+            if remaining == 4 and semi_start is None:
+                semi_start = now
             if remaining == 2 and duel_start is None:
                 duel_start = now
             if remaining == 1 and winner is None:

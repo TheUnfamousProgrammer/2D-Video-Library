@@ -298,7 +298,7 @@ python make_arena.py --cast configs/casts/world.yaml --out out/arena.mp4 --full 
 
 With no mode flag the command runs the 40-seed search and a debug reel. If fewer than 30% of seeds pass, it prints each gate's rate and exits non-zero. It still writes the reel of the seed that cleared the most gates. `--seed` renders that seed even when it would lose the search. `--full` is the only mode that encodes the 1080x1920 master. Do not start that until a seed passes.
 
-Output names include the cast stem and the seed (`arena_world_s5.mp4`). Preview is 540x960 at 30 fps with no audio. The reel is 360x640 at 15 fps: circles, ISO codes, velocity vectors, windup lines.
+Output names include the cast stem and the seed (`arena_world_s5.mp4`). Preview is 540x960 at 30 fps and includes the mix. The reel is 360x640 at 15 fps: circles, country names, velocity vectors, windup lines. On-screen labels use the full country name with its flag. While four balls are alive the banner names the semifinalists, and while two are alive it names the finalists.
 
 ### Tuned knobs
 
@@ -307,7 +307,7 @@ These are the only numbers that were moved off the spec table. Gates were not re
 - `physics.damping` stays 2.2. Lower moves the opening clash earlier than 0.4 s. Higher drops mean speed under 140 px/s.
 - `ai.dash_speed` is 1200, not 1500, so one hit does not cross the floor.
 - `ai.aggression_scale` is 1.2.
-- `platform.keyframes` start at half-size 1020 x 1150 and shrink at about 12 px/s, under the 28 px/s cap. The spec 410 x 460 floor wiped the cast before 12 s. Camera zoom is `min(410 / hw, 460 / hh)`, so the wider floor still fills the same on-screen box and the balls grow as it shrinks. The opening punch is clamped by that limit and shows up only after the floor has shrunk.
+- `platform.keyframes` start at half-size 1020 x 1150 and shrink at about 12 px/s, under the 28 px/s cap. The spec 410 x 460 floor wiped the cast before 12 s. Camera zoom is `min(520 / hw, 640 / hh)`, so the wider floor fills a larger on-screen box. Flags are drawn at twice the collision radius, because a physics-sized ball on that floor is too small to read. The balls still grow as the floor shrinks. The opening punch is clamped by that limit and shows up only after the floor has shrunk.
 
 A 40-seed search on this tuning passed 0/40. The gates that still miss are the final duel, the winner window, and dead time. Causes, the opening impact, and neighbor spacing passed. See `out/sim_report.md`.
 
@@ -367,7 +367,7 @@ The default command writes the sim, a clean puzzle PNG and a ringed answer PNG p
 
 Items fade from `pop_floor` 0.5 to full over 0.2 s, so frame 0 already shows the discs and the timer is already full. Positions never move. The odd cell is one uniform draw and is not repeated on the next level. `detail_mode` is `moved`: the odd dot is shifted by a fraction of the item radius in one of eight seeded directions, and the others stay centered. The dot radius is 14% of the item radius. The seconds number is centered on the timer row, to the right of the bar, so it does not meet the caption. The outro question is 52 px at y 420, above the field. The CTA is 40 px at y 1450, below it. There is no bloom key.
 
-Difficulty is a rung from 1 to 5, 1 easiest. Normal uses hue rung 2 (OKLab 0.15, lightness at least 0.05), tilt rung 3 (9 degrees), and detail rung 4 (offset 0.22 of the radius). The CVD floor is half the hue rung's distance, so rung 2 requires 0.075, which is above 0.07. Easy uses rung 1 on all three (0.20, 18 degrees, offset 0.55) and does not lower that CVD rule.
+Difficulty is a rung from 1 to 5, 1 easiest. Normal uses rung 5 on all three: hue OKLab 0.03 (lightness at least 0.02), tilt 4 degrees, detail offset 0.15 of the radius. The CVD floor is half the hue distance, so rung 5 requires 0.015. Easy uses rung 1 on all three (0.20, 18 degrees, offset 0.55) and does not lower that CVD rule. Rung 5 is played, and its pixel check prints `SKIPPED (not reliably measurable after compression)`. The lightness floor is 0.02 so the hue gap is not also a brighter disc. Rung 5 hue is 0.03 because 0.06 still read as a different color.
 
 ### Tiers
 
@@ -387,7 +387,7 @@ The distance tables are in code:
 | 2 | 0.15 | 13 | 0.42 |
 | 3 | 0.12 | 9 | 0.30 |
 | 4 | 0.09 | 6 | 0.22 |
-| 5 | 0.06 | 4 | 0.15 |
+| 5 | 0.03 | 4 | 0.15 |
 
 ### How detectability is checked
 
@@ -481,7 +481,7 @@ python make_polycircle.py full --approved --hook A --out out/polycircle.mp4
 
 Claims live in `configs/polycircle_claims.yaml`. `configs/claims.yaml` belongs to Collatz, so this film does not use it. On-screen text is `configs/polycircle_text.yaml`. The default hook is A. Tempo is 150 bpm, which lands on exact frames (24 per beat, 96 per bar). Other tempos snap to the nearest frame and `facts` prints the maximum snap error, which must stay at or under half a frame.
 
-Bar colors are the eight hues in the config, shifted in OKLab so their lightness stays within 0.03. The camera's "screen center" is the anchor at (540, 910), the polygon center, not the canvas midline at y=960. At 36x zoom the top of the circle sits on that anchor. The gold dimension line is drawn 36 px to the right of the center column so the gap measurement stays clean. Gap labels always use the 1080 px frame numbers, including in the half-resolution preview. The line "THE GAP KEEPS SHRINKING" is wrapped so each line stays at or under 22 characters.
+Bar colors are the eight hues in the config, shifted in OKLab so their lightness stays within 0.03. The camera's "screen center" is the anchor at (540, 910), the polygon center, not the canvas midline at y=960. At 36x zoom the top of the circle sits on that anchor. The gold dimension line is drawn 36 px to the right of the center column so the gap measurement stays clean. Gap labels always use the 1080 px frame numbers, including in the half-resolution preview. The line "THE GAP KEEPS SHRINKING" is wrapped so each line stays at or under 22 characters. The SIDES label becomes the polygon's name (square, pentagon, hexagon, and on through the systematic names) while that count holds for at least 12 frames. The 96-gon is an enneacontakaihexagon, the 61-gon is a hexacontakaihenagon, and the infinity counter is an apeirogon. Faster than that, the label goes back to SIDES.
 
 Rotation speed rises from about 30 deg/s to about 150 deg/s and then eases to a stop at frame 864. A single scale (printed by `facts`) makes the freeze angle exact and makes frame 0 match that angle modulo a quarter turn, which is the square's symmetry. The opening shape is a diamond, a vertex near the top, and frame 1823 matches frame 0.
 
@@ -497,7 +497,7 @@ Mute the video, watch the first 2 seconds at thumb distance, and pick the cleare
 
 ### Posting
 
-`postkit` writes `out/postkit.md` from the claims, and stills of the drop, the zoom hold, and the 61 frame in `out/thumbs/`. Upload with #Shorts. Set the audience. On the copyright and altered-content questions, the music is original and there is no third-party footage. Pin comment A. In YouTube Studio, read Viewed vs Swiped away and the retention graph against `out/retention_map.md`. If swipe-away is high, post the next hook variant as its own upload at least a day later.
+`postkit` writes `out/postkit.md` from the claims, and stills of the drop, the zoom hold, and the 61 frame in `out/thumbs/`. The upload title is the phrase YouTube autocomplete completes, and it stays inside 40 characters. Hashtags stay in the description, five of them, `#shorts` first. Tags are the real search phrases plus the misspelling. Set the audience to not made for kids so the pinned comment can collect replies. On the altered-content question, the music is original and there is no third-party footage. Pin comment A. In YouTube Studio, read Viewed vs Swiped away and the retention graph against `out/retention_map.md`. If swipe-away is high, post the next title as its own upload at least a day later.
 
 ### Phone checklist
 

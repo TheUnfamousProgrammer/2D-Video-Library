@@ -4,7 +4,15 @@ import numpy as np
 import pytest
 
 from fc_sat.color import oklab_delta
-from fc_sat.odd_config import HUE_DISTANCE, HUE_LIGHTNESS, SKIPPED_MEASURE, TILT_DEGREES, cvd_floor, load_odd_config
+from fc_sat.odd_config import (
+    DETAIL_OFFSET,
+    HUE_DISTANCE,
+    HUE_LIGHTNESS,
+    SKIPPED_MEASURE,
+    TILT_DEGREES,
+    cvd_floor,
+    load_odd_config,
+)
 from fc_sat.odd_diff import (
     apply_look,
     choose_odd_lab,
@@ -106,7 +114,7 @@ def test_moved_detail_directions_and_measure():
     again = simulate_show(cfg).levels[3]
     assert sim.diff_params["direction"] in range(8)
     assert sim.diff_params["direction"] == again.diff_params["direction"]
-    assert sim.diff_params["offset"] == pytest.approx(0.22)
+    assert sim.diff_params["offset"] == pytest.approx(DETAIL_OFFSET[cfg.tier.detail_rung])
     assert sim.diff_params["detail_mode"] == "moved"
     size = sim.level.size
     radius = size / 2.0
@@ -154,7 +162,7 @@ def test_moved_detail_directions_and_measure():
     frame = paint_synthetic(cfg.width, cfg.height, looks, [tuple(p) for p in centers], _bg())
     others = [tuple(centers[index]) for index in range(sim.level.count) if index != sim.odd_index]
     stats = measure_detail(frame, tuple(centers[sim.odd_index]), others, radius)
-    nominal = 0.22
+    nominal = float(sim.diff_params["offset"])
     assert stats["odd"] >= 0.60 * nominal
     assert stats["max_other"] < 0.25 * nominal
 

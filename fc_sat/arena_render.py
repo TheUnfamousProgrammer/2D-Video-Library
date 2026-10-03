@@ -13,14 +13,19 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from fc_sat.arena_config import ArenaConfig
 from fc_sat.arena_sim import Elim, SimResult
 from fc_sat.color import dominant_colors
-from fc_sat.visual import find_font, raster_text
+from fc_sat.visual import composite_rgba, find_font
 
-SAFE = (130, 950, 200, 1536)
-PLATFORM_BOX = (130, 950, 480, 1400)
+SAFE = (40, 1040, 140, 1760)
+PLATFORM_BOX = (20, 1060, 340, 1540)
+# The world floor is wider than the screen, so a physics-sized ball is a speck.
+# Draw the flag about twice as big as the collision radius. Neighbors that are
+# touching will overlap; the alternative is a flag you cannot see.
+ICON_SCALE = 2.0
 
 
 @dataclass(frozen=True)
@@ -272,14 +277,17 @@ def active_kill_lines(elims: tuple[Elim, ...], timeline: Timeline, video_t: floa
 
 def layout_boxes(cfg: ArenaConfig, video_t: float, *, alive: int, phase: str) -> tuple[TextBox, ...]:
     boxes: list[TextBox] = []
-    boxes.append(TextBox("alive", 390, 205, 690, 305))
-    show_hook = video_t <= 3.0 or phase in {"final", "wait"}
-    if show_hook:
-        boxes.append(TextBox("hook", 180, 342, 900, 418))
-    if 3.0 <= video_t <= 5.5:
-        boxes.append(TextBox("sub", 200, 423, 880, 457))
-    boxes.append(TextBox("kill0", 150, 1422, 900, 1458))
-    boxes.append(TextBox("kill1", 150, 1468, 900, 1504))
+    boxes.append(TextBox("alive", 340, 150, 740, 230))
+    show_roster = phase == "replay" or (alive in (2, 4) and phase != "celebration")
+    show_hook = video_t < 3.0 or phase in {"final", "wait"}
+    if show_roster:
+        boxes.append(TextBox("roster", 40, 236, 1040, 336))
+    elif show_hook:
+        boxes.append(TextBox("hook", 90, 236, 990, 310))
+    elif 3.0 <= video_t <= 5.5:
+        boxes.append(TextBox("sub", 90, 236, 990, 310))
+    boxes.append(TextBox("kill0", 40, 1556, 1040, 1630))
+    boxes.append(TextBox("kill1", 40, 1640, 1040, 1714))
     return tuple(boxes)
 
 
@@ -298,6 +306,18 @@ def layout_clear(boxes: tuple[TextBox, ...]) -> bool:
         if box.x0 < SAFE[0] or box.x1 > SAFE[1] or box.y0 < SAFE[2] or box.y1 > SAFE[3]:
             return False
     return True
+
+
+def _heavy_font() -> str:
+    for path in (
+        Path("/System/Library/Fonts/Supplemental/Arial Black.ttf"),
+        Path("/Library/Fonts/Arial Black.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
+        Path("C:/Windows/Fonts/ariblk.ttf"),
+    ):
+        if path.is_file():
+            return str(path)
+    return find_font()
 
 
 def _repo_root() -> Path:
@@ -341,18 +361,22 @@ class ArenaRenderer:
             self.fps = 30 if preview else cfg.fps
         self.timeline = build_timeline(result, cfg)
         self.n_frames = max(1, int(round(self.timeline.duration * self.fps)))
-        self.font = find_font()
+        self.font = _heavy_font()
+        self._font_cache: dict[int, ImageFont.FreeTypeFont] = {}
         self.boxes: list[tuple[int, int, int, int]] = []
         self.hud_boxes: tuple[TextBox, ...] = ()
         self._trace = result.trace
         root = _repo_root()
         self._sprites: list[np.ndarray] = []
+        self._photos: list[bool] = []
         self._colors: list[tuple] = []
         if not reel:
             for country in cfg.countries:
-                path = root / "assets" / "flags" / "png" / f"{country.iso2.lower()}.png"
+                photo = root / "assets" / "players" / f"{country.iso2.lower()}.png"
+                path = photo if photo.is_file() else root / "assets" / "flags" / "png" / f"{country.iso2.lower()}.png"
                 sprite = _circle_sprite(path)
                 self._sprites.append(sprite)
+                self._photos.append(photo.is_file())
                 self._colors.append(dominant_colors(sprite[..., :3][..., ::-1], k=3, seed=cfg.seed))
             self._cameo = _circle_sprite(root / "assets" / "cameos" / "ohio.png")
         self._zoom = 1.0
@@ -375,7 +399,7 @@ class ArenaRenderer:
         cam = camera_view(self.cfg, sim_t, hw, hh)
         self._draw_platform(frame, cam, hw, hh, sim_t)
         self._draw_balls(frame, step, cam, phase, sim_t)
-        self._draw_hud(frame, video_t, sim_t, phase)
+        self._draw_hud(frame, video_t, sim_t, phase, step)
         if self.safe_overlay:
             x0, x1, y0, y1 = (int(v * self.scale) for v in (SAFE[0], SAFE[1], SAFE[2], SAFE[3]))
             cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 255, 255), 1)
@@ -411,7 +435,7 @@ class ArenaRenderer:
         phases = self._trace["phase"][step]
         facing = self._trace["facing"][step]
         zoom = cam.zoom
-        radius = max(2, int(round(self.cfg.ball_radius * zoom * self.scale)))
+        radius = max(2, int(round(self.cfg.ball_radius * zoom * self.scale * ICON_SCALE)))
         gone = {item.index: item.time for item in self.result.elims}
         for index, country in enumerate(self.cfg.countries):
             shrink = 1.0
@@ -426,7 +450,7 @@ class ArenaRenderer:
             if self.reel:
                 color = (180, 220, 255) if alive[index] else (80, 80, 120)
                 cv2.circle(frame, (sx, sy), draw_r, color, 1, lineType=cv2.LINE_AA)
-                cv2.putText(frame, country.iso3, (sx - 14, sy + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (240, 240, 240), 1, cv2.LINE_AA)
+                self._draw_ball_name(frame, country.name, sx, sy, draw_r)
                 if step > 0:
                     prev = self._trace["xy"][step - 1, index]
                     gain = 0.15 / self.cfg.dt
@@ -443,7 +467,10 @@ class ArenaRenderer:
                     cv2.line(frame, (sx, sy), (ex, ey), (80, 220, 255), 1, cv2.LINE_AA)
             elif index < len(self._sprites):
                 self._blit(frame, self._sprites[index], sx, sy, draw_r * 2)
-                self._eyes(frame, sx, sy, draw_r, float(facing[index]), angry=phases[index] == 1)
+                if not self._photos[index]:
+                    self._eyes(frame, sx, sy, draw_r, float(facing[index]), angry=phases[index] == 1)
+                if alive[index]:
+                    self._draw_ball_name(frame, country.name, sx, sy, draw_r)
                 if phases[index] == 1 and alive[index]:
                     length = int(draw_r * 3)
                     ex = int(sx + math.cos(float(facing[index])) * length)
@@ -473,68 +500,168 @@ class ArenaRenderer:
             cv2.circle(frame, (ex, ey), eye_r, (255, 255, 255), -1, lineType=cv2.LINE_AA)
             cv2.circle(frame, (ex, ey), max(1, eye_r // 2), (20, 20, 20), -1, lineType=cv2.LINE_AA)
 
-    def _fit_text(self, text: str, slot: TextBox, thickness: int) -> tuple[TextBox, int, int, float]:
-        """Largest Hershey size that stays inside the reserved slot, centered."""
-        span_w = max(1.0, slot.x1 - slot.x0)
-        span_h = max(1.0, slot.y1 - slot.y0)
-        font_scale = 0.4
-        for _ in range(12):
-            (width, height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale * self.scale, thickness)
-            full_w = width / max(self.scale, 1e-6)
-            full_h = (height + baseline) / max(self.scale, 1e-6)
-            if full_w <= span_w * 0.96 and full_h <= span_h * 0.96:
-                font_scale *= 1.25
-            else:
-                font_scale /= 1.25
-                break
-        font_scale = max(0.35, font_scale)
-        (width, height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale * self.scale, thickness)
-        x = int(round(((slot.x0 + slot.x1) * 0.5) * self.scale - width / 2))
-        y = int(round(((slot.y0 + slot.y1) * 0.5) * self.scale + height / 2))
-        return self._glyph_box(text, x, y, font_scale * self.scale, thickness), x, y, font_scale * self.scale
+    def _typeface(self, px: int) -> ImageFont.FreeTypeFont:
+        px = max(8, int(px))
+        face = self._font_cache.get(px)
+        if face is None:
+            face = ImageFont.truetype(self.font, px)
+            self._font_cache[px] = face
+        return face
 
-    def _glyph_box(self, text: str, x: int, y: int, font_scale: float, thickness: int) -> TextBox:
-        (width, height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-        scale = max(self.scale, 1e-6)
-        return TextBox(text, x / scale, (y - height) / scale, (x + width) / scale, (y + baseline) / scale)
+    def _measure(self, text: str, px: int) -> tuple[int, int]:
+        box = self._typeface(px).getbbox(text)
+        return box[2] - box[0], box[3] - box[1]
+
+    def _stamp(self, frame: np.ndarray, text: str, x: int, y: int, px: int, color: tuple[int, int, int]) -> tuple[int, int]:
+        """Draw bulky text. x, y are the top-left of the ink. color is RGB."""
+        px = max(8, int(px))
+        font = self._typeface(px)
+        box = font.getbbox(text)
+        width = box[2] - box[0]
+        height = box[3] - box[1]
+        stroke = max(1, px // 16)
+        pad = stroke + 2
+        image = Image.new("RGBA", (width + pad * 2, height + pad * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(image).text(
+            (pad - box[0], pad - box[1]),
+            text,
+            font=font,
+            fill=(*color, 255),
+            stroke_width=stroke,
+            stroke_fill=(0, 0, 0, 255),
+        )
+        composite_rgba(frame, np.array(image), x - pad, y - pad)
+        return width, height
+
+    def _fit_px(self, text: str, max_w: int, max_h: int, start: int) -> int:
+        px = max(8, int(start))
+        while px > 8:
+            width, height = self._measure(text, px)
+            if width <= max_w and height <= max_h:
+                return px
+            px = int(px * 0.9)
+        return 8
 
     def _draw_label(self, frame: np.ndarray, text: str, slot: TextBox, thickness: int, color: tuple[int, int, int]) -> TextBox:
-        box, x, y, font_scale = self._fit_text(text, slot, thickness)
-        cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
-        return box
+        del thickness
+        max_w = int((slot.x1 - slot.x0) * self.scale * 0.96)
+        max_h = int((slot.y1 - slot.y0) * self.scale * 0.82)
+        px = self._fit_px(text, max_w, max_h, int((slot.y1 - slot.y0) * 0.7 * self.scale))
+        width, height = self._measure(text, px)
+        x = int((slot.x0 + slot.x1) * 0.5 * self.scale - width / 2)
+        y = int((slot.y0 + slot.y1) * 0.5 * self.scale - height / 2)
+        self._stamp(frame, text, x, y, px, color)
+        return slot
 
-    def _draw_hud(self, frame: np.ndarray, video_t: float, sim_t: float, phase: str) -> None:
-        alive = sum(1 for item in self.result.elims if item.time > sim_t)
-        alive = len(self.cfg.countries) - (len(self.result.elims) - alive)
+    def _draw_ball_name(self, frame: np.ndarray, name: str, sx: int, sy: int, radius: int) -> None:
+        px = self._fit_px(name, max(radius * 4, 12), max(radius, 12), max(12, int(radius * 0.7)))
+        width, height = self._measure(name, px)
+        self._stamp(frame, name, sx - width // 2, sy + radius + 2, px, (255, 255, 255))
+
+    def _party_name(self, index: int | None, cause: str) -> tuple[int | None, str]:
+        if index is not None and 0 <= index < len(self.cfg.countries):
+            return index, self.cfg.countries[index].name
+        if cause == "boss" or (index is not None and index < 0):
+            return None, self.cfg.cameo_name
+        return None, cause.upper()
+
+    def _draw_flag_name(self, frame: np.ndarray, index: int | None, name: str, x: int, y: int, px: int, flag: int) -> int:
+        if index is not None and not self.reel and index < len(self._sprites):
+            self._blit(frame, self._sprites[index], x + flag // 2, y + flag // 2, flag)
+        text_x = x + (flag + 8 if index is not None and not self.reel else 0)
+        width, _ = self._stamp(frame, name, text_x, y, px, (255, 255, 255))
+        return text_x + width
+
+    def _draw_roster(self, frame: np.ndarray, slot: TextBox, title: str, ids: list[int], step: int) -> TextBox:
+        title_slot = TextBox("title", slot.x0, slot.y0, slot.x1, slot.y0 + 30)
+        self._draw_label(frame, title, title_slot, 2, (250, 220, 140))
+        if not ids:
+            return slot
+        xy = self._trace["xy"][step]
+        ordered = sorted(ids, key=lambda index: float(xy[index, 0]))
+        px = int(28 * self.scale)
+        flag = max(10, int(round(30 * self.scale)))
+        limit = (slot.x1 - slot.x0 - 24) * self.scale
+        while px > 10:
+            widths = [self._measure(self.cfg.countries[index].name, px)[0] + flag + 8 for index in ordered]
+            if sum(widths) + 14 * self.scale * (len(ordered) - 1) <= limit:
+                break
+            px = int(px * 0.9)
+        widths = [self._measure(self.cfg.countries[index].name, px)[0] + flag + 8 for index in ordered]
+        gap = int(14 * self.scale)
+        total = sum(widths) + gap * (len(ordered) - 1)
+        x = int(((slot.x0 + slot.x1) * 0.5) * self.scale - total / 2)
+        y = int((slot.y0 + 34) * self.scale)
+        for index, width in zip(ordered, widths):
+            self._draw_flag_name(frame, index, self.cfg.countries[index].name, x, y, px, flag)
+            x += width + gap
+        return slot
+
+    def _draw_kill(self, frame: np.ndarray, slot: TextBox, item: Elim) -> TextBox:
+        killer_i, killer = self._party_name(item.killer, item.cause)
+        victim_i, victim = self._party_name(item.index, item.cause)
+        if item.cause == "storm":
+            phrase = f"The storm beat {victim}"
+            parts: list[tuple[int | None, str]] = [(None, "The storm beat "), (victim_i, victim)]
+        elif killer_i is not None or item.cause == "boss":
+            phrase = f"{killer} beat {victim}"
+            parts = [(killer_i, killer), (None, " beat "), (victim_i, victim)]
+        else:
+            phrase = f"{victim} fell off"
+            parts = [(victim_i, phrase)]
+        max_w = int((slot.x1 - slot.x0) * self.scale * 0.96)
+        max_h = int((slot.y1 - slot.y0) * self.scale * 0.8)
+        px = self._fit_px(phrase, max_w, max_h, int(40 * self.scale))
+        flag = max(12, int(round(px * 1.15)))
+        widths = []
+        for index, text in parts:
+            extra = flag + 6 if index is not None else 0
+            widths.append(self._measure(text, px)[0] + extra)
+        total = sum(widths)
+        x = int((slot.x0 + slot.x1) * 0.5 * self.scale - total / 2)
+        y = int((slot.y0 + slot.y1) * 0.5 * self.scale - self._measure(phrase, px)[1] / 2)
+        for (index, text), width in zip(parts, widths):
+            if index is None:
+                self._stamp(frame, text, x, y, px, (255, 255, 255))
+            else:
+                self._draw_flag_name(frame, index, text, x, y, px, flag)
+            x += width
+        return slot
+
+    def _draw_hud(self, frame: np.ndarray, video_t: float, sim_t: float, phase: str, step: int) -> None:
+        alive_ids = [index for index, flag in enumerate(self._trace["alive"][step]) if flag]
+        alive = len(alive_ids)
         slots = layout_boxes(self.cfg, video_t, alive=alive, phase=phase)
         boxes: list[TextBox] = []
         by_name = {slot.name: slot for slot in slots}
         if "alive" in by_name:
             boxes.append(self._draw_label(frame, f"ALIVE {alive}", by_name["alive"], 2, (240, 240, 240)))
-        if "hook" in by_name:
+        if "roster" in by_name:
+            if phase == "replay":
+                title = "FINAL"
+            elif alive == 2:
+                title = "FINAL"
+            else:
+                title = "SEMIFINAL"
+            boxes.append(self._draw_roster(frame, by_name["roster"], title, alive_ids, step))
+        elif "hook" in by_name:
             hook = self.cfg.hook[: self.cfg.hook_max_chars]
-            if phase == "final":
-                hook = "FINAL 2" if alive <= 2 else "FINAL 3"
-            elif phase == "wait":
+            if phase == "wait":
                 hook = "wait for it..."
             boxes.append(self._draw_label(frame, hook, by_name["hook"], 2, (230, 230, 230)))
         if "sub" in by_name:
             boxes.append(self._draw_label(frame, self.cfg.sub_text, by_name["sub"], 1, (200, 200, 200)))
-        lines = active_kill_lines(self.result.elims, self.timeline, video_t, self.cfg.kill_fade, 2)
+        happened = [item for item in self.result.elims if video_time(self.timeline, item.time) <= video_t]
+        lines = tuple(happened[-2:])
         for row, item in enumerate(lines):
             slot = by_name.get(f"kill{row}")
             if slot is None:
                 continue
-            killer = self.cfg.countries[item.killer].iso3 if item.killer is not None and item.killer >= 0 else item.cause.upper()
-            victim = self.cfg.countries[item.index].iso3
-            boxes.append(self._draw_label(frame, f"{killer} > {victim}"[:34], slot, 1, (240, 240, 240)))
+            boxes.append(self._draw_kill(frame, slot, item))
         if phase == "celebration" and self.result.winner is not None:
             name = self.cfg.countries[self.result.winner].name.upper()
-            slot = TextBox("winner", 180, 342, 900, 418)
-            boxes.append(self._draw_label(frame, f"{name} WINS"[:24], slot, 2, (250, 250, 250)))
-        if phase == "replay":
-            slot = TextBox("replay", 180, 342, 900, 418)
-            boxes.append(self._draw_label(frame, "REPLAY", slot, 2, (250, 220, 160)))
+            slot = TextBox("winner", 90, 236, 990, 310)
+            boxes.append(self._draw_label(frame, f"{name} WINS", slot, 2, (250, 250, 250)))
         self.hud_boxes = tuple(boxes)
 
 

@@ -60,7 +60,7 @@ def choose_odd_lab(
     base = np.asarray(base, dtype=np.float64)
     base_h = math.atan2(float(base[2]), float(base[1]))
     rejected = 0
-    light_steps = (0.05, 0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.22, 0.28, 0.34)
+    light_steps = (0.02, 0.05, 0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.22, 0.28, 0.34)
     for mag in light_steps:
         for sign in (1.0, -1.0):
             if mag + 1e-9 < min_lightness:

@@ -36,6 +36,11 @@ def test_every_cast_flag_exists_and_rasterizes(tmp_path: Path):
         countries, _warnings = load_cast(path, guards)
         codes.update(country.iso2.lower() for country in countries)
     for code in sorted(codes):
+        portrait = Path("assets/players") / f"{code}.png"
+        if portrait.is_file():
+            with Image.open(portrait) as image:
+                assert image.size[0] >= 128 and image.size[1] >= 128
+            continue
         svg = Path("assets/flags/svg") / f"{code}.svg"
         png = Path("assets/flags/png") / f"{code}.png"
         assert svg.is_file(), code

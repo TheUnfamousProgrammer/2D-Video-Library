@@ -29,20 +29,20 @@ platform:
   # Slopes stay under hw_speed_max (28 px/s) so the cap does not hide the shape.
   keyframes:
     - [0, 1020, 1150]
-    - [6, 1020, 1150]
-    - [14, 940, 1050]
-    - [22, 860, 960]
-    - [30, 780, 860]
-    - [34, 700, 780]
+    - [3, 1020, 1150]
+    - [9, 860, 960]
+    - [15, 680, 760]
+    - [21, 460, 510]
+    - [27, 200, 220]
   shrink_gain: 0.35
-  hw_speed_max: 28
+  hw_speed_max: 36
   n_target:
     - [0, 32]
-    - [4, 29]
-    - [10, 21]
-    - [16, 13]
-    - [22, 7]
-    - [28, 2]
+    - [4, 26]
+    - [8, 16]
+    - [12, 9]
+    - [16, 5]
+    - [22, 2]
 
 spawn:
   disk_frac: 0.8
@@ -145,15 +145,17 @@ drama:
   repeat_penalty: 2.0
 
 camera:
-  screen_hw: 410
-  screen_hh: 460
+  # Wider than the spec 410 x 460 slot so the flags stay readable.
+  # The world floor is still 1020 x 1150; only the on-screen box grew.
+  screen_hw: 520
+  screen_hh: 640
   smooth: 0.35
   punch_seconds: 0.4
   punch_from: 1.15
   punch_to: 1.0
   impact_shake: 6
-  platform_x: [130, 950]
-  platform_y: [480, 1400]
+  platform_x: [20, 1060]
+  platform_y: [340, 1540]
 
 layout:
   safe_x: [130, 950]
@@ -187,9 +189,9 @@ timeline:
   slowmo_rate: 0.35
   slowmo_pre: 0.25
   slowmo_post: 0.35
-  replay_sim: 0.9
+  replay_sim: 0.55
   replay_zoom: 1.5
-  celebration: 2.6
+  celebration: 1.6
   winner_scale: 1.8
   confetti: 300
   duration: [33, 43]

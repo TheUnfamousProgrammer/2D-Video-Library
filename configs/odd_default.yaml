@@ -20,9 +20,9 @@ background: "#14171F"
 
 # 1 is easiest. The tables live in code. CVD floor is half the hue distance.
 rung:
-  hue: 2
-  tilt: 3
-  detail: 4
+  hue: 5
+  tilt: 5
+  detail: 5
 
 levels:
   - id: 1

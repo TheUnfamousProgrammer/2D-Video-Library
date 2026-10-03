@@ -27,17 +27,15 @@ from fc_sat.odd_sim import save_show, simulate_show
 from fc_sat.odd_verify import harsh_measure_show
 
 CRITIQUE = """
-Looked at the clean puzzles, the ringed answers, the contact sheet, and the ladder stills.
+Looked at the clean puzzles after pushing every level to rung 5.
 
-L1 is a fast scan. Seed 7 put the odd disc at row 1, column 2: olive against pink, same size, no ring, no glow. The measured OKLab gap is 0.190 against a nominal 0.15, and the lightness delta is 0.050, so it is a real color difference without being a neon mismatch.
+L1 is the same purple family. Seed 7 still puts the odd disc at row 1, column 2. The OKLab gap is 0.03 with a lightness delta of 0.02, so it is a slight shift toward pink, not a second color. Same size, no ring, no glow. A 0.06 gap was still an obvious pink disc, which is why rung 5 is 0.03.
 
-L2 reads in a still. One rounded square is turned 9 degrees and the other 35 are upright, all the same blue, at row 2 column 2. The location phrase is also "upper left", and the cell is not the level 1 cell.
+L2 is a 4 degree tilt at row 2, column 2. It is the smallest step on the ladder. You can see it if you look at that square. It is not circled.
 
-L3 takes a scan. Forty-nine discs, and the only tell is the lower-left dot shifted east by 0.22 of the radius. Next to its neighbor the shift is obvious. In the full grid it is easy to walk past, which is what this rung is for. Nothing else points at it.
+L3 is a 0.15 radius dot shift on the lower-left disc, east. In the full 7x7 it is easy to miss.
 
-The reveal dims the others, puts a flat gold ring on the odd item, and the caption says the dot was off center. Text stays off the field. At most the level label, one caption, and the seconds number are on screen.
-
-On the ladder, hue rung 5 is a slight tint, tilt rung 4 is a small turn you can still see, and detail rung 1 is an obvious shove. Detail rung 4 is this film's level 3. Rung 5 is allowed and flagged as not reliably measurable after compression.
+The reveal dims the others and rings the odd item. Text stays off the field. Rung 5 pixel checks are skipped after compression.
 """.strip()
 
 

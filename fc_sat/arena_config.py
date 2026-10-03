@@ -434,7 +434,10 @@ def load_cast(
             warnings.append(message)
             print(f"warning: {message}", file=sys.stderr)
         countries.append(Country(name=name, iso2=iso2, iso3=iso3))
-    if len(countries) != CAST_SIZE:
+    allowed = {CAST_SIZE}
+    if Path(path).stem == "players":
+        allowed.add(16)
+    if len(countries) not in allowed:
         _fail("cast", f"must contain exactly {CAST_SIZE} countries, got {len(countries)}")
     return tuple(countries), tuple(warnings)
 

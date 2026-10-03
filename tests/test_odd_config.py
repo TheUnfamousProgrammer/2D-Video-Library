@@ -19,17 +19,18 @@ from fc_sat.odd_config import (
 
 
 def test_rung_tables():
-    assert HUE_DISTANCE == {1: 0.20, 2: 0.15, 3: 0.12, 4: 0.09, 5: 0.06}
+    assert HUE_DISTANCE == {1: 0.20, 2: 0.15, 3: 0.12, 4: 0.09, 5: 0.03}
     assert TILT_DEGREES == {1: 18.0, 2: 13.0, 3: 9.0, 4: 6.0, 5: 4.0}
     assert DETAIL_OFFSET == {1: 0.55, 2: 0.42, 3: 0.30, 4: 0.22, 5: 0.15}
     for rung, distance in HUE_DISTANCE.items():
         assert cvd_floor(distance) == pytest.approx(0.5 * distance)
     cfg = load_odd_config("configs/odd_default.yaml")
-    assert (cfg.tier.hue_rung, cfg.tier.tilt_rung, cfg.tier.detail_rung) == (2, 3, 4)
-    assert HUE_DISTANCE[cfg.tier.hue_rung] == pytest.approx(0.15)
-    assert cvd_floor(HUE_DISTANCE[2]) == pytest.approx(0.075)
-    assert cvd_floor(HUE_DISTANCE[2]) >= 0.07
-    assert HUE_LIGHTNESS == pytest.approx(0.05)
+    assert (cfg.tier.hue_rung, cfg.tier.tilt_rung, cfg.tier.detail_rung) == (5, 5, 5)
+    assert HUE_DISTANCE[cfg.tier.hue_rung] == pytest.approx(0.03)
+    assert TILT_DEGREES[cfg.tier.tilt_rung] == pytest.approx(4)
+    assert DETAIL_OFFSET[cfg.tier.detail_rung] == pytest.approx(0.15)
+    assert cvd_floor(HUE_DISTANCE[5]) == pytest.approx(0.015)
+    assert HUE_LIGHTNESS == pytest.approx(0.02)
 
 
 def test_default_config_and_timeline():
@@ -70,8 +71,8 @@ def test_easy_is_rung_1_and_hard_adds_level_4():
     assert hard.levels[-1].size == 76
     assert hard.levels[-1].timer == 9.0
     assert active_rung(hard.tier, hard.levels[-1]) == 5
-    assert HUE_DISTANCE[5] == pytest.approx(0.06)
-    assert cvd_floor(HUE_DISTANCE[5]) == pytest.approx(0.03)
+    assert HUE_DISTANCE[5] == pytest.approx(0.03)
+    assert cvd_floor(HUE_DISTANCE[5]) == pytest.approx(0.015)
     assert sum(segment.duration_s for segment in build_timeline(hard)) == pytest.approx(37.4)
     assert timeline_frames(hard) == 2244
 

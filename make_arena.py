@@ -45,16 +45,29 @@ def output_name(base: Path, cast_path: str, seed: int) -> Path:
 
 def _with_cast(cfg, cast_path: str, allow_sensitive: bool):
     countries, warnings = load_cast(cast_path, cfg.guards, allow_sensitive=allow_sensitive)
-    return replace(
-        cfg,
-        countries=countries,
-        cast_path=str(cast_path),
-        cast_size=len(countries),
-        sensitive_warnings=warnings,
-    )
+    updates = {
+        "countries": countries,
+        "cast_path": str(cast_path),
+        "cast_size": len(countries),
+        "sensitive_warnings": warnings,
+    }
+    # The default storm schedule counts down from 32. A 16-player roster
+    # would sit still until that target fell, so give it the same shape.
+    if len(countries) == 16:
+        updates["n_target"] = (
+            (0.0, 16.0),
+            (4.0, 13.0),
+            (8.0, 8.0),
+            (12.0, 5.0),
+            (16.0, 4.0),
+            (22.0, 2.0),
+        )
+    return replace(cfg, **updates)
 
 
 def _pick_hook(cfg):
+    if Path(cfg.cast_path).stem == "players":
+        return replace(cfg, hook="Which player survives?", hook_index=0)
     if cfg.hook_index is not None:
         index = int(cfg.hook_index)
     else:
@@ -181,7 +194,7 @@ def render_job(
     audio_path = None
     lufs = None
     true_peak = None
-    if not preview:
+    if not reel:
         spoken = None
         if voice:
             spoken = load_voice(cfg, result, timeline, renderer.n_frames * 800)
@@ -439,7 +452,7 @@ def _one(cfg, base: Path, args, cast_path: str) -> None:
         keep_temp=args.keep_temp,
         safe_overlay=args.safe_overlay,
         contact=args.contact_sheet or mode == "preview",
-        music=not args.no_music and mode == "full",
+        music=not args.no_music and mode in {"full", "preview"},
         voice=not args.no_voice and mode == "full",
         rows=rows,
         reel=reel,
