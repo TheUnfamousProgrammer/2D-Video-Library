@@ -324,13 +324,21 @@ def _tape_stop(audio: np.ndarray) -> None:
     audio[start + n :] = 0.0
 
 
+# AAC spreads a transient about 50 ms. The measured silent beat is frames 744–767,
+# so the wav goes quiet earlier and the drop waits a few milliseconds.
+_SILENCE_PRE = int(0.070 * SR)
+_SILENCE_POST = int(0.030 * SR)
+
+
 def _cut_silence(audio: np.ndarray) -> None:
     fade = int(0.005 * SR)
-    start = 744 * HOP
-    end = 768 * HOP
-    audio[start - fade : start] *= np.linspace(1.0, 0.0, fade)[:, None]
+    start = 744 * HOP - _SILENCE_PRE
+    end = 768 * HOP + _SILENCE_POST
+    if start - fade > 0:
+        audio[start - fade : start] *= np.linspace(1.0, 0.0, fade)[:, None]
     audio[start:end] = 0.0
-    audio[end : end + fade] *= np.linspace(0.0, 1.0, fade)[:, None]
+    if end + fade <= len(audio):
+        audio[end : end + fade] *= np.linspace(0.0, 1.0, fade)[:, None]
 
 
 def _master(audio: np.ndarray) -> tuple[np.ndarray, float, float]:
@@ -344,14 +352,8 @@ def _master(audio: np.ndarray) -> tuple[np.ndarray, float, float]:
         padded = np.zeros((samples(), 2), dtype=np.float64)
         padded[: len(mastered)] = mastered
         mastered = padded
-    fade = int(0.005 * SR)
-    start = 744 * HOP
-    end = 768 * HOP
-    mastered[start:end] = 0.0
+    _cut_silence(mastered)
     mastered[1806 * HOP :] = 0.0
-    if start - fade > 0:
-        mastered[start - fade : start] *= np.linspace(1.0, 0.0, fade)[:, None]
-    mastered[end : end + fade] *= np.linspace(0.0, 1.0, fade)[:, None]
     return mastered, float(lufs), float(peak)
 
 
@@ -534,15 +536,9 @@ def master_mix(audio: np.ndarray) -> tuple[np.ndarray, float, float]:
 
 
 def _finish_edges(audio: np.ndarray) -> np.ndarray:
-    fade = int(0.005 * SR)
-    start = 744 * HOP
-    end = 768 * HOP
     audio = np.array(audio, dtype=np.float64, copy=True)
-    audio[start:end] = 0.0
+    _cut_silence(audio)
     audio[1806 * HOP :] = 0.0
-    if start - fade > 0:
-        audio[start - fade : start] *= np.linspace(1.0, 0.0, fade)[:, None]
-    audio[end : end + fade] *= np.linspace(0.0, 1.0, fade)[:, None]
     return audio
 
 
