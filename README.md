@@ -596,3 +596,69 @@ Constants and formulas live in `configs/paperfold_claims.yaml`. `facts` recomput
 
 `postkit` writes `out/postkit.md`. Upload with #Shorts, set the audience, answer the copyright and altered-content questions (the music is original, the art is AI-generated), and pin comment A. Then read Viewed vs Swiped away and the retention graph against `out/retention_map.md`. Reply to a place or a distance with `python tools/fold_reply.py moon` or `python tools/fold_reply.py 100 km`. Units are km, m, ly, and AU. Unknown names, zero, and negative distances are rejected. A distance past fold 120 is reported as beyond that fold.
 
+## Linedraw
+
+A 30.4 s vertical Short. Random straight lines are thrown onto a sheet of sketch paper. The ones that move the drawing closer to a picture are kept. At first it is chaos. The music builds, the lines stop for one silent beat, and on the drop the picture snaps into view. A zoom shows that the mouth is only crossing straight lines. The last beat throws the lines off the page so frame 1823 matches frame 0. There is no voiceover. The meaning is in the type.
+
+```bash
+python make_linedraw.py doctor
+python make_linedraw.py optimize --target assets/target/target.png
+python make_linedraw.py stills --target assets/target/target.png
+python make_linedraw.py audio --target assets/target/target.png
+python make_linedraw.py hooks --target assets/target/target.png
+python make_linedraw.py preview --target assets/target/target.png
+python make_linedraw.py full --approved --target assets/target/target.png
+```
+
+`full` is refused without `--approved`. The master is 1080×1920 at 60 fps, exactly 1824 frames, H.264 high, CRF 16, preset slow, BT.709 television range, AAC 256k at 48 kHz, `+faststart`. The pipe sets `-framerate 60`, `-fps_mode cfr`, and an output `-r 60`. The file is written to `linedraw.partial.mp4` and renamed into place only after ffmpeg exits 0. A second file, `out/linedraw.music_off.mp4`, is the same picture with scratches, whooshes, the impact, and the tape stop only. Preview and hook clips are 540×960 at 30 fps.
+
+### Setup
+
+Use the project venv from the top of this file, then install the pinned requirements. Linedraw adds `scikit-image`, `soundfile`, and `numba` on top of numpy, scipy, pillow, opencv-python, skia-python, and pyloudnorm. Numba is optional: if it does not install, the fly-off painter falls back to OpenCV. ffmpeg must be on `PATH` (Homebrew is enough). If it is missing, the encoder uses the `imageio-ffmpeg` binary.
+
+Fonts are the OFL files `assets/fonts/Montserrat-ExtraBold.ttf` and `assets/fonts/JetBrainsMono-ExtraBold.ttf`, with their license texts beside them. If a download fails, the renderer uses the system bold fallbacks in `fc_sat/fonts.py`.
+
+### Run it on any picture
+
+```bash
+python make_linedraw.py full --approved \
+  --target path/to/picture.png \
+  --subject "A NAME" \
+  --credit "Photo by Ada" \
+  --rights own
+```
+
+- `--target` defaults to `assets/target/target.png`.
+- `--subject` is optional. It is used once, on the drop caption, at most 18 characters per line. With no subject the caption is "THERE IT IS".
+- `--credit` is optional. It is printed in the description before "Music: original, made with code."
+- `--rights` is `public-domain`, `own`, `licensed`, or `unknown` (the default).
+- `--show-original` is `auto`, `yes`, or `no`. Auto shows the color crop when rights are public-domain, own, or licensed, and compares an earlier drawing with the finished one when rights are unknown.
+- `--crop x0,y0,x1,y1` overrides the automatic crop, in source-image pixels.
+- `--weight` is 0 to 4 (default 2.5) and pulls lines toward the face.
+- `--seed` defaults to 7. The same seed repeats the same lines.
+
+Rights warning: when `--rights` is `unknown`, the image may be copyrighted and it may show a real person. The post kit and this section say so. The render is not blocked. Do not post that video until you have permission, and answer YouTube's copyright and altered-content questions honestly.
+
+### Algorithm
+
+The picture is luminance. If the shorter side is under 600 px it is upscaled with Lanczos first. The crop is aspect 0.69. OpenCV's frontal-face cascades (default and alt2, plus a slightly blurred copy) pick the largest face and the crop tries to put it in the upper third. If that would cut the head off, the crop keeps the head and the face sits a little lower. With no face, the crop uses the spectral-residual saliency peak, then a center crop. A 2,000-line trial picks the CLAHE clip (0.012 or 0.02) with the higher likeness.
+
+The search grid is 254×368. One cell is 3 output pixels, so the paper on screen is 762×1104. The paper starts at mid grey. Each step throws 150 candidate lines. Dark ink subtracts and light ink adds, with strength 0.06 per unit of anti-aliased coverage. A candidate is kept only when its weighted gain is positive. The longest lines shrink from 300 cells to 40. The search stops at 36,000 kept lines or after 2,000 empty steps. Likeness is the SSIM of the canvas and the target after a 1.5-cell blur, logged every 100 kept lines, in `out/lines.npz` and `out/lines_report.md`.
+
+L_aha is the first logged count at 60% of the final likeness. The film is supposed to hold at 60% of L_aha before the drop. If that count is already past 30% likeness, the face is readable too early, so the silent beat holds at the last logged count still under 30% and the drop still lands on L_aha. The choice is in `out/lines_report.md`.
+
+### Sound
+
+Original, synthesized at 48 kHz. 150 bpm, A minor, chords Am F C G. An 808 with a pitch drop and tanh drive, kick, clap, hats, a cowbell motif, a soft pad, vinyl crackle, a pencil scratch per landed line, hook plucks, whooshes, a drop impact, a riser, a snare roll, and a tape stop. Buses are sidechained to the kick. A small room sits on the cowbell, claps, and scratches. The master is high-passed at 30 Hz, gently compressed, limited, and normalized to about −14 LUFS with true peak at or under −1 dBTP. The wav is held a little lower so AAC stays under that ceiling. Frames 744–767 are silent. Frames 1806–1823 are silent so the loop restarts clean. Stems are in `out/stems/`. The measured gates are in `out/audio_report.md`.
+
+### Posting checklist
+
+`postkit` writes `out/postkit.md`. Titles do not say what the picture is. The description starts with the hook, then one sentence on the rule (random lines are thrown and only the ones that bring the drawing closer are kept; likeness is a similarity score), then the credit and "Music: original, made with code.", then `#shorts #art #satisfying #generativeart #asmr`.
+
+Before you upload:
+
+- Set the audience. If rights are unknown the picture may show a real person, so do not mark it made for kids.
+- Answer the copyright question and the altered-content question. The music is original. The picture was redrawn with code.
+- Pin "{kept} lines kept out of {thrown} thrown."
+- After it posts, compare Viewed vs Swiped away and the retention graph with `out/retention_map.md`. The silent beat is at 12.4 s and the drop is at 12.8 s.
+
