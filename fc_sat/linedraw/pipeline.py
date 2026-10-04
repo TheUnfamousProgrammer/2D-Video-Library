@@ -36,6 +36,41 @@ def load_state(out: Path, job: dict):
     return meta, picture, fit, plan
 
 
+def write_timeline(out: Path) -> None:
+    payload = {
+        "bpm": 150,
+        "fps": 60,
+        "frames": N_FRAMES,
+        "sample_rate": 48000,
+        "hop": 800,
+        "sections": [
+            {"name": "hook", "start": 0, "end": 191},
+            {"name": "rising", "start": 192, "end": 743},
+            {"name": "silence", "start": 744, "end": 767},
+            {"name": "drop", "start": 768, "end": 863},
+            {"name": "twist", "start": 864, "end": 959},
+            {"name": "rising_2", "start": 960, "end": 1439},
+            {"name": "climax", "start": 1440, "end": 1823},
+        ],
+        "events": [
+            {"frame": 0, "event": "kick_and_pluck"},
+            {"frame": 384, "event": "riser"},
+            {"frame": 576, "event": "snare_roll"},
+            {"frame": 744, "event": "silence"},
+            {"frame": 768, "event": "impact"},
+            {"frame": 876, "event": "zoom_whoosh"},
+            {"frame": 940, "event": "pitch_dip"},
+            {"frame": 960, "event": "second_drop"},
+            {"frame": 1344, "event": "breakdown"},
+            {"frame": 1440, "event": "wipe_whoosh"},
+            {"frame": 1536, "event": "wipe_whoosh_back"},
+            {"frame": 1632, "event": "chord_stab"},
+            {"frame": 1800, "event": "tape_stop"},
+        ],
+    }
+    (out / "timeline.json").write_text(json.dumps(payload, indent=2) + "\n")
+
+
 def write_audio(out: Path, fit, plan, seed: int):
     stems, mix, sfx, lufs, peak = render_score(fit, plan, seed)
     sf.write(out / "linedraw.wav", mix, 48000, subtype="FLOAT")
@@ -69,6 +104,7 @@ def write_audio(out: Path, fit, plan, seed: int):
         "",
     ]
     (out / "audio_report.md").write_text("\n".join(report))
+    write_timeline(out)
     print(f"audio {lufs:.2f} LUFS peak {peak:.2f} dBTP", flush=True)
     return mix, sfx, lufs, peak
 
@@ -185,6 +221,8 @@ def render_full(job: dict, log: StageLog) -> int:
     if not (out / "linedraw.wav").exists():
         write_audio(out, fit, plan, job["seed"])
         log.mark("audio")
+    elif not (out / "timeline.json").exists():
+        write_timeline(out)
     renderer = LineRenderer(fit, picture, plan, job, width=1080, height=1920, hook=job.get("hook", "A"))
     encode_pair(renderer, out, preset="slow")
     log.mark("encode")

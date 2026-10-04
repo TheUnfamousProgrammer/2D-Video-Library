@@ -260,11 +260,13 @@ class LineRenderer:
         paint = skia.Paint(AntiAlias=True, Color=skia.Color(*_hex("#8F826D")))
         canvas.drawRect(skia.Rect.MakeXYWH(x, y, w, h), paint)
         self._ensure_paths(count)
-        stroke = max(1.0, self._s(2.4))
+        # A fully scaled 2.4 px stroke becomes a solid at 12x. Grow it, but keep each segment readable.
+        screen_px = self._s(2.2 + 4.0 * min(1.0, (zoom - 1.0) / 11.0))
+        stroke = max(0.15, screen_px / max(zoom, 1.0))
         dark = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#1C1712")))
         light = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#F3E9D2")))
-        canvas.drawPath(self._dark_path, dark)
         canvas.drawPath(self._light_path, light)
+        canvas.drawPath(self._dark_path, dark)
         canvas.restore()
         self.commit(count)
 
@@ -419,9 +421,9 @@ class LineRenderer:
             self._s(16),
             self._s(16),
         )
-        plate_paint = skia.Paint(AntiAlias=True, Color=skia.Color(27, 32, 48, int(round(0.92 * 255))))
-        canvas.drawRRect(plate, plate_paint)
         if lines and alpha > 0:
+            plate_paint = skia.Paint(AntiAlias=True, Color=skia.Color(27, 32, 48, int(round(0.92 * 255))))
+            canvas.drawRRect(plate, plate_paint)
             self._draw_caption(canvas, lines, alpha)
         kept = f"LINES KEPT {count:,}"
         if show_thrown_counter(frame) and frame < 1800:
@@ -431,8 +433,8 @@ class LineRenderer:
         self._draw_counters(canvas, kept, right)
 
     def _draw_caption(self, canvas, lines: list[str], alpha: float) -> None:
-        max_w = self._s(SAFE[2] - SAFE[0] - 48)
-        max_h = self._s(PLATE[3] - 48)
+        max_w = self._s(PLATE[2] - 32)
+        max_h = self._s(PLATE[3] - 24)
         floor = self._s(64 if max(len(line) for line in lines) <= 14 else 52)
         size = self._fit(self._word, lines, max_w, max_h, self._s(90), floor)
         self.last_caption_px = size / max(self.scale, 1e-6)
