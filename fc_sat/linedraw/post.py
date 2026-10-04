@@ -127,14 +127,12 @@ The film is 30.4 seconds at 150 bpm. Times are exact frame numbers divided by 60
 
 | time | frame | what the viewer should feel |
 | --- | --- | --- |
-| 0.0s | 0 | A line is already in the air. The only question is what it becomes. |
-| 0.0–3.2s | 0–191 | Sixteen throws, one every eighth note. It looks like chaos, and the counters are still small. |
-| 3.2–12.4s | 192–743 | The throws speed up. The page gets busier, but the subject is not obvious yet. |
-| 12.4s | 744 | Everything stops for one silent beat. Lean in. |
-| 12.8s | 768 | The drop. Thousands of lines land at once and the picture snaps into view. |
-| 14.6–15.7s | 876–940 | The zoom. The mouth, or the main feature, is nothing but crossing straight lines. |
-| 16.0–22.0s | 960–1320 | Back out. The counters race toward {kept:,} kept lines. |
-| 24.0–27.2s | 1440–1631 | Then and now, or the original beside the lines when the picture's rights allow it. |
+| 0.0–3.2s | 0–191 | Hook. A line is already in the air. The question is what it becomes. It is still a scribble. |
+| 3.2–12.4s | 192–743 | Rising action. Lines keep landing and a shape grows. The face is not readable yet. |
+| 12.4s | 744 | The music stops for one beat. The drawing is almost something. It does not stop. |
+| 12.8–16.0s | 768–959 | Twist. The face arrives with the drop, then the zoom shows it is still only straight lines. |
+| 16.0–24.0s | 960–1439 | Rising action again. Detail and the rejection count. The drawing is not finished yet. |
+| 24.0–27.2s | 1440–1631 | Climax. The finished drawing, then the early scribble beside it. |
 | 30.0s | 1800 | The lines fly off the page. |
 | 30.4s | 1823 | Blank paper, the first line back in flight, the hook returned. It loops. |
 

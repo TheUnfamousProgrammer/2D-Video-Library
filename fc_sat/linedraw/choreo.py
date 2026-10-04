@@ -89,41 +89,36 @@ def build_plan(n_lines: int, l_aha: int, reveal_fraction: float = 0.55, pre_drop
         burst = aha - pre
     mid = min(total, max(aha, int(round(1.4 * aha))))
     few = min(total, max(mid, int(round(mid + 0.08 * (total - mid)))))
-    counts = np.zeros(N_FRAMES, dtype=np.int32)
-    for frame in range(192):
-        counts[frame] = 0 if frame < 6 else min(HOOK_LINES, (frame - 6) // 12 + 1)
-    index = np.arange(192, 744)
-    u = (index - 192) / (743 - 192)
-    rising = np.rint(HOOK_LINES + (pre - HOOK_LINES) * _exp_in(u, 5.0)).astype(np.int32)
-    rising = np.clip(rising, HOOK_LINES, pre)
-    counts[index] = rising
-    _cummax(counts[192:744])
-    counts[192] = HOOK_LINES
-    counts[743] = pre
-    counts[744:768] = pre
-    counts[768:774] = aha
-    index = np.arange(774, 864)
-    u = (index - 774) / (863 - 774)
-    smooth = u * u * (3.0 - 2.0 * u)
-    mid_run = np.rint(aha + (mid - aha) * smooth).astype(np.int32)
-    counts[index] = np.clip(mid_run, aha, mid)
-    _cummax(counts[774:864])
-    counts[863] = mid
-    index = np.arange(864, 1057)
-    u = (index - 864) / (1056 - 864)
-    few_run = np.rint(mid + (few - mid) * u).astype(np.int32)
-    counts[index] = np.clip(few_run, mid, few)
-    _cummax(counts[864:1057])
-    counts[1056] = few
-    index = np.arange(1057, 1321)
-    u = (index - 1057) / (1320 - 1057)
-    race = np.rint(few + (total - few) * _exp_in(u, 4.0)).astype(np.int32)
-    counts[index] = np.clip(race, few, total)
-    _cummax(counts[1057:1321])
-    counts[1320] = total
-    counts[1321:1800] = total
-    counts[1800:] = total
+    counts = _continuous_counts(total)
     return Plan(total, aha, burst, pre, mid, few, float(reveal_fraction), counts)
+
+
+def _continuous_counts(total: int) -> np.ndarray:
+    """One line count for the whole film. It never jumps, and the picture waits for the story.
+
+    Tuned on 36,000 lines. The hook is a scribble. The face becomes readable on the
+    drop, not in the first three seconds. The finished drawing is the climax.
+    """
+    keys = (
+        (0, 0.0),
+        (6, 0.0),
+        (36, 80 / 36000),
+        (191, 380 / 36000),
+        (500, 800 / 36000),
+        (744, 1150 / 36000),
+        (860, 2800 / 36000),
+        (960, 5500 / 36000),
+        (1440, 1.0),
+    )
+    frames = np.arange(N_FRAMES, dtype=np.float64)
+    xs = np.array([frame for frame, _ in keys], dtype=np.float64)
+    ys = np.array([fraction for _, fraction in keys], dtype=np.float64)
+    counts = np.rint(np.interp(frames, xs, ys) * total).astype(np.int32)
+    counts[:6] = 0
+    counts[1440:1800] = total
+    counts[1800:] = total
+    _cummax(counts[:1800])
+    return counts
 
 
 def zoom_at(frame: int) -> float:
@@ -232,6 +227,10 @@ def caption_lines(frame: int, hook: str, subject: str, show_original: bool, thro
     opening = hooks.get(hook, hooks["A"])
     if frame <= 191 or frame >= 1800:
         return opening
+    if 192 <= frame <= 519:
+        return ["STILL JUST", "LINES"]
+    if 520 <= frame <= 767:
+        return ["CAN YOU TELL", "YET"]
     if 768 <= frame <= 875:
         return drop_caption(subject)
     if 876 <= frame <= 939:

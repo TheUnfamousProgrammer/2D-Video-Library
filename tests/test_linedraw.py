@@ -127,25 +127,23 @@ def test_hold_moves_back_when_the_spec_count_already_looks_like_the_picture():
     scores = np.array([0.27, 0.296, 0.40, 0.55])
     assert choose_hold(counts, scores, 1800) == 200
     plan = build_plan(36000, 1800, pre_drop=200)
-    assert plan.pre_drop == 200
-    assert plan.burst == 1600
-    assert plan.counts[743] == 200
-    assert plan.counts[768] == 1800
+    assert plan.counts[0] == 0
+    assert 100 < plan.counts[191] < 800
+    assert plan.counts[744] < 1600
+    assert plan.counts[860] > plan.counts[768] + 400
+    assert plan.counts[1320] < 36000
+    assert plan.counts[1440] == 36000
+    assert int(np.max(np.diff(plan.counts[:1441].astype(np.int32)))) < 80
     assert np.all(np.diff(plan.counts[:1800].astype(np.int32)) >= 0)
 
 
 def test_frame_counts_are_monotone_and_anchored():
     plan = build_plan(5000, 1000)
-    assert plan.burst == 400
-    assert plan.pre_drop == 600
     assert plan.counts[0] == 0
-    assert plan.counts[192] == 16
-    assert plan.counts[743] == 600
-    assert np.all(plan.counts[744:768] == 600)
-    assert plan.counts[768] == 1000
-    assert plan.counts[768] - plan.counts[767] == plan.burst
-    assert plan.counts[863] == plan.mid
-    assert plan.counts[1320] == 5000
+    assert plan.counts[192] > 16
+    assert plan.counts[768] > plan.counts[700]
+    assert plan.counts[1320] < 5000
+    assert plan.counts[1440] == 5000
     assert np.all(np.diff(plan.counts[:1800]) >= 0)
     assert plan.count_at(1823) == 0
     assert plan.count_at(1799) == 5000
@@ -219,7 +217,7 @@ def test_persistent_buffer_matches_a_full_redraw_and_the_loop_frame():
     opening = renderer.render(0)
     ending = renderer.render(1823)
     assert ssim_u8(opening, ending) >= 0.99
-    renderer.render(768)
+    renderer.render(400)
     assert renderer.last_caption_px >= 48
     assert all(len(line) <= 18 for line in drop_caption(job["subject"]))
 

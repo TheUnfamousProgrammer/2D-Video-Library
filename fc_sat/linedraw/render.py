@@ -63,13 +63,104 @@ if njit is not None:
                         image[y, xx, 1] = green
                         image[y, xx, 2] = blue
 
+    @njit(cache=True)
+    def _composite_clipped(image, x0, y0, x1, y1, dark, alpha, radius):
+        """Alpha-composite straight strokes in order. Coordinates are already in image pixels."""
+        height, width, _ = image.shape
+        dark_rgb = (0x1C / 255.0, 0x17 / 255.0, 0x12 / 255.0)
+        light_rgb = (0xF3 / 255.0, 0xE9 / 255.0, 0xD2 / 255.0)
+        span = radius * 2 + 1
+        for index in range(x0.shape[0]):
+            coverage = alpha[index]
+            if coverage <= 0.0:
+                continue
+            color = dark_rgb if dark[index] else light_rgb
+            x_a = x0[index]
+            y_a = y0[index]
+            x_b = x1[index]
+            y_b = y1[index]
+            dx = x_b - x_a
+            dy = y_b - y_a
+            p0 = -dx
+            p1 = dx
+            p2 = -dy
+            p3 = dy
+            q0 = x_a
+            q1 = (width - 1.0) - x_a
+            q2 = y_a
+            q3 = (height - 1.0) - y_a
+            u0 = 0.0
+            u1 = 1.0
+            keep = True
+            for edge in range(4):
+                if edge == 0:
+                    edge_p, edge_q = p0, q0
+                elif edge == 1:
+                    edge_p, edge_q = p1, q1
+                elif edge == 2:
+                    edge_p, edge_q = p2, q2
+                else:
+                    edge_p, edge_q = p3, q3
+                if edge_p == 0.0:
+                    if edge_q < 0.0:
+                        keep = False
+                        break
+                    continue
+                edge_t = edge_q / edge_p
+                if edge_p < 0.0:
+                    if edge_t > u1:
+                        keep = False
+                        break
+                    if edge_t > u0:
+                        u0 = edge_t
+                else:
+                    if edge_t < u0:
+                        keep = False
+                        break
+                    if edge_t < u1:
+                        u1 = edge_t
+            if not keep or u1 < u0:
+                continue
+            cx0 = x_a + dx * u0
+            cy0 = y_a + dy * u0
+            cx1 = x_a + dx * u1
+            cy1 = y_a + dy * u1
+            steps = int(max(abs(cx1 - cx0), abs(cy1 - cy0))) + 1
+            for step in range(steps):
+                t = 0.0 if steps == 1 else step / (steps - 1)
+                x = int(cx0 + (cx1 - cx0) * t)
+                y = int(cy0 + (cy1 - cy0) * t)
+                for oy in range(span):
+                    yy = y + oy - radius
+                    if yy < 0 or yy >= height:
+                        continue
+                    row = image[yy]
+                    for ox in range(span):
+                        xx = x + ox - radius
+                        if xx < 0 or xx >= width:
+                            continue
+                        row[xx, 0] = row[xx, 0] * (1.0 - coverage) + color[0] * coverage
+                        row[xx, 1] = row[xx, 1] * (1.0 - coverage) + color[1] * coverage
+                        row[xx, 2] = row[xx, 2] * (1.0 - coverage) + color[2] * coverage
+
 else:
 
     def _paint_numba(*_args):
         return None
 
+    def _composite_clipped(*_args):
+        return None
+
 
 PAPER = (159, 420, 762, 1104)
+_PAPER_RGB = np.array((0x8F, 0x82, 0x6D), dtype=np.float32) / 255.0
+_DARK_RGB = np.array((0x1C, 0x17, 0x12), dtype=np.float32) / 255.0
+_LIGHT_RGB = np.array((0xF3, 0xE9, 0xD2), dtype=np.float32) / 255.0
+
+
+def _stroke_alpha(index: int) -> float:
+    """Early strokes stay readable. Later ones add detail without burying them."""
+    return max(0.02, 0.55 * math.exp(-index / 1600.0))
 PLATE = (124, 190, 832, 140)
 SAFE = (130, 200, 950, 1536)
 
@@ -106,6 +197,10 @@ class LineRenderer:
         self._dark_path = None
         self._light_path = None
         self._path_count = 0
+        self._ink = np.empty((*picture["target"].shape, 3), dtype=np.float32)
+        self._ink[:] = _PAPER_RGB
+        self._ink_count = 0
+        self._alpha = np.array([_stroke_alpha(index) for index in range(self.n)], dtype=np.float32)
         self.last_caption_px = 0.0
         if skia is not None:
             self._surface = skia.Surface(self.width, self.height)
@@ -186,7 +281,7 @@ class LineRenderer:
             self._stroke_grid(canvas, self._flight(0, progress), 1.0)
             return
         if frame >= 1800:
-            self._draw_flyoff(canvas, frame)
+            self._blit_paper(canvas, self._ink_image(frame, self.n, 1.0))
             return
         count = int(self.plan.counts[frame])
         zoom = zoom_at(frame)
@@ -194,11 +289,9 @@ class LineRenderer:
         if wipe is not None:
             self._blit_paper(canvas, self._comparison(wipe))
             return
-        if zoom != 1.0:
-            self._draw_zoom(canvas, frame, count, zoom)
-            return
-        self._blit_paper(canvas, self.paper_image(count))
-        self._draw_motion(canvas, frame, count)
+        self._blit_paper(canvas, self._ink_image(frame, count, zoom))
+        if zoom == 1.0 and frame <= 180 and count > 0:
+            self._draw_rejects(canvas, frame, count)
 
     def _draw_motion(self, canvas, frame: int, count: int) -> None:
         overlay = _overlay_alpha(frame)
@@ -215,18 +308,25 @@ class LineRenderer:
                 self._stroke_grid(canvas, pose, overlay)
         if frame <= 575 and frame > 0 and count > 0:
             self._draw_rejects(canvas, frame, count)
-        if count <= THROW_LINES or frame > 575:
+        self._draw_arrivals(canvas, frame, count)
+
+    def _draw_arrivals(self, canvas, frame: int, count: int) -> None:
+        """Stroke each new line on from one end, so a burst is a pour and not a cut."""
+        if frame <= 0 or count <= THROW_LINES:
             return
-        newcomers = range(max(THROW_LINES, int(self.plan.counts[frame - 1]) if frame else 0), count)
+        window = 5
+        cap = 90 if 768 <= frame <= 840 else 16
         shown = 0
-        for index in newcomers:
-            if shown >= 8:
-                break
+        for index in range(count - 1, THROW_LINES - 1, -1):
             age = frame - int(self.appear[index])
-            if age < 0 or age > 2:
+            if age > window:
+                break
+            if age < 0:
                 continue
-            self._stroke_grid(canvas, self._partial(index, (age + 1) / 3.0), 0.9)
+            self._stroke_grid(canvas, self._partial(index, (age + 1) / (window + 1)), 1.0, clip_paper=True)
             shown += 1
+            if shown >= cap:
+                break
 
     def _draw_rejects(self, canvas, frame: int, count: int) -> None:
         rejects = self.fit.reject_x0
@@ -249,36 +349,173 @@ class LineRenderer:
             )
             self._stroke_grid(canvas, pose, 0.10)
 
-    def _draw_zoom(self, canvas, frame: int, count: int, zoom: float) -> None:
+    def _commit_ink(self, count: int) -> None:
+        count = max(0, min(int(count), self.n))
+        if count < self._ink_count:
+            self._ink[:] = _PAPER_RGB
+            self._ink_count = 0
+        height, width = self._ink.shape[:2]
+        while self._ink_count < count:
+            index = self._ink_count
+            rr, cc, val = line_aa(
+                int(round(float(self.fit.y0[index]))),
+                int(round(float(self.fit.x0[index]))),
+                int(round(float(self.fit.y1[index]))),
+                int(round(float(self.fit.x1[index]))),
+            )
+            mask = (rr >= 0) & (rr < height) & (cc >= 0) & (cc < width)
+            if np.any(mask):
+                alpha = (_stroke_alpha(index) * val[mask])[:, None]
+                color = _DARK_RGB if int(self.fit.ink[index]) < 0 else _LIGHT_RGB
+                self._ink[rr[mask], cc[mask]] = self._ink[rr[mask], cc[mask]] * (1.0 - alpha) + color * alpha
+            self._ink_count += 1
+
+    def _ink_image(self, frame: int, count: int, zoom: float) -> np.ndarray:
+        if frame >= 1800:
+            return self._flyoff_ink(frame)
+        self._commit_ink(count)
+        paper_w = int(round(self._s(PAPER[2])))
+        paper_h = int(round(self._s(PAPER[3])))
+        rgb = (np.clip(self._ink, 0.0, 1.0) * 255.0).astype(np.uint8)
+        if zoom == 1.0:
+            return cv2.resize(rgb, (paper_w, paper_h), interpolation=cv2.INTER_NEAREST)
+        return self._zoom_strokes(count, zoom, paper_w, paper_h)
+
+    def _zoom_strokes(self, count: int, zoom: float, paper_w: int, paper_h: int) -> np.ndarray:
+        """Redraw the mouth crop from the same strokes, so the zoom stays lines instead of blocks."""
+        height, width = self.picture["target"].shape
+        half_w = width / (2.0 * zoom)
+        half_h = height / (2.0 * zoom)
+        cx, cy = float(self.picture["mouth"][0]), float(self.picture["mouth"][1])
+        limit = max(0, min(int(count), self.n))
+        x0 = self.fit.x0[:limit]
+        y0 = self.fit.y0[:limit]
+        x1 = self.fit.x1[:limit]
+        y1 = self.fit.y1[:limit]
+        hit = (
+            (np.maximum(x0, x1) >= cx - half_w)
+            & (np.minimum(x0, x1) <= cx + half_w)
+            & (np.maximum(y0, y1) >= cy - half_h)
+            & (np.minimum(y0, y1) <= cy + half_h)
+        )
+        scale_x = paper_w / (2.0 * half_w)
+        scale_y = paper_h / (2.0 * half_h)
+        origin_x = cx - half_w
+        origin_y = cy - half_h
+        image = np.empty((paper_h, paper_w, 3), dtype=np.float32)
+        image[:] = _PAPER_RGB
+        if np.any(hit) and _composite_clipped is not None:
+            chosen = np.flatnonzero(hit)
+            _composite_clipped(
+                image,
+                (x0[chosen] - origin_x).astype(np.float64) * scale_x,
+                (y0[chosen] - origin_y).astype(np.float64) * scale_y,
+                (x1[chosen] - origin_x).astype(np.float64) * scale_x,
+                (y1[chosen] - origin_y).astype(np.float64) * scale_y,
+                self.fit.ink[:limit][chosen] < 0,
+                self._alpha[:limit][chosen],
+                1,
+            )
+        return (np.clip(image, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+    def _flyoff_ink(self, frame: int) -> np.ndarray:
+        height, width = self.picture["target"].shape
+        image = np.empty((height, width, 3), dtype=np.float32)
+        image[:] = _PAPER_RGB
+        paper_w = int(round(self._s(PAPER[2])))
+        paper_h = int(round(self._s(PAPER[3])))
+        for index in range(self.n):
+            progress = flyoff_progress(frame, index, self.n)
+            if progress >= 1.0:
+                continue
+            # Square the progress so the first frame barely moves. A linear map
+            # throws the face-building strokes sideways on the first fly-off frame.
+            pose = self._final(index) if progress <= 0.0 else self._flight(index, 1.0 - progress * progress)
+            rr, cc, val = line_aa(
+                int(round(pose[1])),
+                int(round(pose[0])),
+                int(round(pose[3])),
+                int(round(pose[2])),
+            )
+            mask = (rr >= 0) & (rr < height) & (cc >= 0) & (cc < width)
+            if not np.any(mask):
+                continue
+            alpha = (_stroke_alpha(index) * val[mask])[:, None]
+            color = _DARK_RGB if pose[4] < 0 else _LIGHT_RGB
+            image[rr[mask], cc[mask]] = image[rr[mask], cc[mask]] * (1.0 - alpha) + color * alpha
+        rgb = (np.clip(image, 0.0, 1.0) * 255.0).astype(np.uint8)
+        return cv2.resize(rgb, (paper_w, paper_h), interpolation=cv2.INTER_NEAREST)
+
+    def _draw_sheet(self, canvas, frame: int, count: int, stroke: float | None = None) -> None:
+        canvas.save()
+        canvas.clipRRect(self._paper_rrect(), True)
+        self._paint_lines(canvas, frame, count, stroke)
+        canvas.restore()
+
+    def _paint_lines(self, canvas, frame: int, count: int, stroke: float | None = None) -> None:
+        """Every kept line is a straight stroke. New ones grow on from one end."""
         x, y, w, h = self._paper_box()
+        canvas.drawRect(skia.Rect.MakeXYWH(x, y, w, h), skia.Paint(AntiAlias=True, Color=skia.Color(*_hex("#8F826D"))))
+        width = stroke if stroke is not None else max(1.0, self._s(1.35))
+        settled = self._settled_count(frame, count)
+        self._ensure_paths(settled)
+        light = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=width, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#F3E9D2")))
+        dark = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=width, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#1C1712")))
+        if self._light_path is not None:
+            canvas.drawPath(self._light_path, light)
+            canvas.drawPath(self._dark_path, dark)
+        window = 4
+        ink = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=width, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#1C1712")))
+        chalk = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=width, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#F3E9D2")))
+        for index in range(settled, count):
+            age = frame - int(self.appear[index])
+            amount = 1.0 if age >= window else max(0.08, (age + 1) / (window + 1))
+            pose = self._partial(index, amount)
+            x0, y0 = self._grid_to_screen(pose[0], pose[1])
+            x1, y1 = self._grid_to_screen(pose[2], pose[3])
+            canvas.drawLine(x0, y0, x1, y1, ink if pose[4] < 0 else chalk)
+
+    def _settled_count(self, frame: int, count: int) -> int:
+        if count <= 0 or frame <= 0 or len(self.appear) == 0:
+            return 0
+        ready = int(np.searchsorted(self.appear, frame - 4, side="right"))
+        return max(0, min(count, ready))
+
+    def _draw_zoom(self, canvas, frame: int, count: int, zoom: float) -> None:
         mouth_x, mouth_y = self._grid_to_screen(self.picture["mouth"][0], self.picture["mouth"][1])
         canvas.save()
         canvas.clipRRect(self._paper_rrect(), True)
         canvas.translate(mouth_x, mouth_y)
         canvas.scale(zoom, zoom)
         canvas.translate(-mouth_x, -mouth_y)
-        paint = skia.Paint(AntiAlias=True, Color=skia.Color(*_hex("#8F826D")))
-        canvas.drawRect(skia.Rect.MakeXYWH(x, y, w, h), paint)
-        self._ensure_paths(count)
-        # A fully scaled 2.4 px stroke becomes a solid at 12x. Grow it, but keep each segment readable.
-        screen_px = self._s(2.2 + 4.0 * min(1.0, (zoom - 1.0) / 11.0))
-        stroke = max(0.15, screen_px / max(zoom, 1.0))
-        dark = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#1C1712")))
-        light = skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#F3E9D2")))
-        canvas.drawPath(self._light_path, light)
-        canvas.drawPath(self._dark_path, dark)
+        screen_px = self._s(1.6 + 5.0 * min(1.0, (zoom - 1.0) / 11.0))
+        stroke = max(0.12, screen_px / max(zoom, 1.0))
+        self._paint_lines(canvas, frame, count, stroke)
         canvas.restore()
-        self.commit(count)
 
     def _draw_flyoff(self, canvas, frame: int) -> None:
-        blend = min(1.0, max(0.0, (frame - 1800) / 3.0))
-        vectors = self._vector_paper(frame)
-        if blend < 1:
-            tone = self.paper_image(self.n).astype(np.float32)
-            mixed = tone * (1.0 - blend) + vectors.astype(np.float32) * blend
-            self._blit_paper(canvas, np.clip(np.rint(mixed), 0, 255).astype(np.uint8))
-        else:
-            self._blit_paper(canvas, vectors)
+        x, y, w, h = self._paper_box()
+        canvas.save()
+        canvas.clipRRect(self._paper_rrect(), True)
+        canvas.drawRect(skia.Rect.MakeXYWH(x, y, w, h), skia.Paint(AntiAlias=True, Color=skia.Color(*_hex("#8F826D"))))
+        dark = skia.Path()
+        light = skia.Path()
+        for index in range(self.n):
+            progress = flyoff_progress(frame, index, self.n)
+            if progress >= 1.0:
+                continue
+            # Square the progress so the first frame barely moves. A linear map
+            # throws the face-building strokes sideways on the first fly-off frame.
+            pose = self._final(index) if progress <= 0.0 else self._flight(index, 1.0 - progress * progress)
+            x0, y0 = self._grid_to_screen(pose[0], pose[1])
+            x1, y1 = self._grid_to_screen(pose[2], pose[3])
+            path = dark if pose[4] < 0 else light
+            path.moveTo(x0, y0)
+            path.lineTo(x1, y1)
+        width = max(1.0, self._s(1.35))
+        canvas.drawPath(light, skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=width, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#F3E9D2"))))
+        canvas.drawPath(dark, skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=width, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#1C1712"))))
+        canvas.restore()
 
     def _vector_paper(self, frame: int) -> np.ndarray:
         width = int(round(self._s(PAPER[2])))
@@ -292,7 +529,9 @@ class LineRenderer:
             progress = flyoff_progress(frame, index, self.n)
             if progress >= 1.0:
                 continue
-            pose = self._final(index) if progress <= 0.0 else self._flight(index, 1.0 - _ease_out(progress))
+            # Square the progress so the first frame barely moves. A linear map
+            # throws the face-building strokes sideways on the first fly-off frame.
+            pose = self._final(index) if progress <= 0.0 else self._flight(index, 1.0 - progress * progress)
             xs0.append(pose[0] * scale_x)
             ys0.append(pose[1] * scale_y)
             xs1.append(pose[2] * scale_x)
@@ -304,15 +543,49 @@ class LineRenderer:
                 cv2.line(image, (int(x_a), int(y_a)), (int(x_b), int(y_b)), color, 2, cv2.LINE_AA)
         return image
 
+    def _snapshot_ink(self, count: int) -> np.ndarray:
+        saved_ink = self._ink
+        saved_count = self._ink_count
+        self._ink = np.empty_like(saved_ink)
+        self._ink[:] = _PAPER_RGB
+        self._ink_count = 0
+        image = self._ink_image(1320, count, 1.0)
+        self._ink = saved_ink
+        self._ink_count = saved_count
+        return image
+
+    def _raster_vectors(self, count: int) -> np.ndarray:
+        width = int(round(self._s(PAPER[2])))
+        height = int(round(self._s(PAPER[3])))
+        surface = skia.Surface(width, height)
+        canvas = surface.getCanvas()
+        red, green, blue = _hex("#8F826D")
+        canvas.clear(skia.Color4f(red / 255, green / 255, blue / 255, 1))
+        grid_h, grid_w = self.picture["target"].shape
+        scale_x = width / grid_w
+        scale_y = height / grid_h
+        dark = skia.Path()
+        light = skia.Path()
+        limit = min(int(count), self.n)
+        for index in range(limit):
+            path = dark if int(self.fit.ink[index]) < 0 else light
+            path.moveTo(float(self.fit.x0[index]) * scale_x, float(self.fit.y0[index]) * scale_y)
+            path.lineTo(float(self.fit.x1[index]) * scale_x, float(self.fit.y1[index]) * scale_y)
+        stroke = max(1.0, self._s(1.35))
+        canvas.drawPath(light, skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#F3E9D2"))))
+        canvas.drawPath(dark, skia.Paint(AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=stroke, StrokeCap=skia.Paint.kRound_Cap, Color=skia.Color(*_hex("#1C1712"))))
+        image = surface.makeImageSnapshot().toarray()
+        return np.ascontiguousarray(image[:, :, :3])
+
     def _comparison(self, amount: float) -> np.ndarray:
         if self.job["show_original"]:
             left = self._original
         else:
             if self._then is None:
-                self._then = paper_rgb(self.redraw(int(self.plan.counts[600])), self._original.shape[1], self._original.shape[0])
+                self._then = self._snapshot_ink(int(self.plan.counts[600]))
             left = self._then
         if self._now is None:
-            self._now = self.paper_image(self.n)
+            self._now = self._snapshot_ink(self.n)
         cut = int(round(amount * left.shape[1]))
         image = self._now.copy()
         if cut > 0:
@@ -369,7 +642,7 @@ class LineRenderer:
         canvas.drawImage(image, x, y)
         canvas.restore()
 
-    def _stroke_grid(self, canvas, pose, alpha: float) -> None:
+    def _stroke_grid(self, canvas, pose, alpha: float, clip_paper: bool = False) -> None:
         if alpha <= 0:
             return
         x0, y0 = self._grid_to_screen(pose[0], pose[1])
@@ -383,7 +656,10 @@ class LineRenderer:
             Color=skia.Color(color[0], color[1], color[2], int(round(alpha * 255))),
         )
         canvas.save()
-        canvas.clipRect(skia.Rect.MakeXYWH(0, self._s(416), self.width, self.height - self._s(416)))
+        if clip_paper:
+            canvas.clipRRect(self._paper_rrect(), True)
+        else:
+            canvas.clipRect(skia.Rect.MakeXYWH(0, self._s(416), self.width, self.height - self._s(416)))
         canvas.drawLine(x0, y0, x1, y1, paint)
         canvas.restore()
 
