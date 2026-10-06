@@ -57,12 +57,12 @@ from fc_sat.polycircle_draw import advance_width, measure
 SAFE = (130.0, 950.0, 200.0, 1536.0)
 COUNTER_TOP = 1332.0
 GHOST = (144, DROP)
-LAP_STAMP = (RESUME, 900)
+LAP_STAMP = (RESUME, 888)
 SAT_STAMPS = (1452, 1512, 1572)
 ARROWS = ((292, 322, 384, 396), (780, 810, 876, 888))
 STROKES = (DROP, SAT_END)
 OUTLINES = ((1368, 400.0), (1376, 540.0), (1384, 680.0))
-OUTLINE_OUT = (1400, 1412)
+OUTLINE_OUT = (1404, 1416)
 CARRY_PATH_OUT = (1344, 1356)
 SAT_PATH = (1704, 1740)
 RIM_FLASHES = (1272, 1680)
@@ -141,10 +141,10 @@ def grey_alpha(frame: int) -> float:
     if frame < GLIDE_OUT[0] or frame >= RETURN[1]:
         return 1.0
     if frame < GLIDE_OUT[1]:
-        return 1.0 - 0.8 * ease_in_out_cubic((frame - GLIDE_OUT[0]) / float(GLIDE_OUT[1] - GLIDE_OUT[0]))
+        return 1.0 - ease_in_out_cubic((frame - GLIDE_OUT[0]) / float(GLIDE_OUT[1] - GLIDE_OUT[0]))
     if frame < RETURN[0]:
-        return 0.2
-    return 0.2 + 0.8 * ease_in_out_cubic((frame - RETURN[0]) / float(RETURN[1] - RETURN[0]))
+        return 0.0
+    return ease_in_out_cubic((frame - RETURN[0]) / float(RETURN[1] - RETURN[0]))
 
 
 def arrow_progress(frame: int) -> tuple[float, float]:
@@ -247,7 +247,7 @@ class CoinRenderer:
             boxes.append(TextBox(term.text, (self.width - ink.width) / 2.0, y, ink.width, ink.height, size, "mono", self.color(term.color), 1.0))
             cursor += rest_ink.height + self.px(14)
             if counter.sub:
-                sub_size = _fit("word", counter.sub, self.px(36), self.px(24), limit)
+                sub_size = _fit("word", counter.sub, self.px(44), self.px(28), limit)
                 ink = measure("word", sub_size, counter.sub)
                 boxes.append(TextBox(counter.sub, (self.width - ink.width) / 2.0, cursor, ink.width, ink.height, sub_size, "word", cfg.muted, 1.0))
         else:
@@ -378,6 +378,16 @@ class CoinRenderer:
             count = max(2, int(180 * sweep / TAU) + 2)
             pts = [self._stage(frame, CX + radius * math.sin(a), CY - radius * math.cos(a)) for a in np.linspace(0.0, sweep, count)]
             canvas.stroke(pts, cfg.rolling, width, alpha)
+        if RESIZE[1] <= frame < SNAP[0]:
+            # Three ticks cut the big rim into arcs one gold-coin circumference long each.
+            grow = ease_out_cubic(min(1.0, (frame - RESIZE[1]) / 12.0))
+            outer = grey_radius(frame) + 14.0
+            inner = grey_radius(frame) - 26.0
+            for index in range(3):
+                d = direction(TAU * index / 3.0)
+                a = self._stage(frame, CX + inner * d[0], CY + inner * d[1])
+                b = self._stage(frame, CX + outer * d[0], CY + outer * d[1])
+                canvas.stroke([a, b], cfg.text, self._len(frame, 7), grow)
         pulse = _since(frame, QUARTER_PULSES, 12)
         if pulse > 0.0:
             pts = [self._stage(frame, CX + radius * math.sin(a), CY - radius * math.cos(a)) for a in np.linspace(sweep, TAU, 40)]
@@ -405,7 +415,7 @@ class CoinRenderer:
             pop = 0.6 + 0.4 * ease_out_cubic(min(1.0, (frame - start) / 8.0))
             alpha = _fade(frame, *OUTLINE_OUT)
             sx, sy = self._stage(frame, x, CY)
-            canvas.circle_stroke(sx, sy, self._len(frame, R_SMALL * pop), cfg.gold_coin, self._len(frame, 6), alpha)
+            canvas.circle_stroke(sx, sy, self._len(frame, R_SMALL * pop), cfg.gold_coin, self._len(frame, 9), alpha)
 
     def _coin(self, canvas, frame: int, center, radius: float, theta: float, alpha: float) -> None:
         """The gold coin with its face. Theta turns the face clockwise; 0 is upright."""
@@ -442,6 +452,9 @@ class CoinRenderer:
         grow = ease_out_cubic(min(1.0, (frame - ROD_GROW[0]) / float(ROD_GROW[1] - ROD_GROW[0])))
         end = np.array([CX, CY]) + full * grow * d
         canvas.stroke([self._stage(frame, CX, CY), self._stage(frame, float(end[0]), float(end[1]))], cfg.trip, self._len(frame, 18), alpha)
+        chin = np.array([CX, CY]) + (R1 + 0.06 * R1) * d
+        canvas.dot(*self._stage(frame, float(chin[0]), float(chin[1])), self._len(frame, 15), cfg.text, alpha)
+        canvas.dot(*self._stage(frame, float(chin[0]), float(chin[1])), self._len(frame, 11), cfg.trip, alpha)
         for bolt, distance in zip(BOLTS, (2.0 * R1 - 0.88 * R1, 2.0 * R1 - 0.70 * R1)):
             if frame < bolt:
                 continue

@@ -90,10 +90,10 @@ def counter_at(frame: int) -> Counter:
     if frame < EQUATION[1]:
         result = Term("2", "gold", pulse=_pulse(frame, PULSES[2]))
         if frame < ROAD[1]:
-            return Counter("equation", (Term("?", "muted"), Term("?", "muted"), result))
+            return Counter("equation", (Term("?", "muted", "ROLLING"), Term("?", "muted", "TRIP AROUND"), result))
         rolled = Term("1", "rolling", "ROLLING", _pulse(frame, PULSES[0]))
         if frame < CARRY[1]:
-            return Counter("equation", (rolled, Term("?", "muted"), result))
+            return Counter("equation", (rolled, Term("?", "muted", "TRIP AROUND"), result))
         return Counter("equation", (rolled, Term("1", "trip", "TRIP AROUND", _pulse(frame, PULSES[1])), result))
     if frame < SAT_COUNT[1]:
         count = _sat_count(frame)

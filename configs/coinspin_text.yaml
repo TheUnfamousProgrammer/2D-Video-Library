@@ -61,7 +61,7 @@ cards:
   - id: sat_ask
     start: 1344
     end: 1572
-    lines: ["{sat_year} SAT ASKED:", "GREY {sat_ratio}X WIDER."]
+    lines: ["{sat_year} SAT ASKED:", "GREY COIN IS {sat_ratio}X", "WIDER. SPINS?"]
     claims: [sat_year, sat_ratio]
   - id: sat_said
     start: 1572
