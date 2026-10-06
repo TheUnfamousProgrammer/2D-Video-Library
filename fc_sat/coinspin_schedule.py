@@ -1,111 +1,129 @@
-"""What the counter shows on each frame, and the frames where a spin lands."""
+"""What the counter area shows on each frame: one number, an equation, or the SAT chip.
+
+A count only changes on a frame where the gold coin's face comes back upright, so the
+viewer can check every number by eye. The counter never shows 0; before a count it shows ?.
+"""
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
-from fc_sat.coinspin_math import (
-    DOUBLING_FRAMES,
-    LAPS,
-    SNAP,
-    TAU,
-    TROPICAL_YEAR,
-    YEAR,
-    landed_ratio,
-    lap_theta,
-    rotations_per_year,
-    year_progress,
-)
+from fc_sat.coinspin_math import CARRY, DROP, ROAD, SAT_END, SNAP, upright_frames
 
 N_FRAMES = 1824
-# Frames where a finished lap's count is held in gold before the next coin.
-HOLDS = ((192, 216, 2), (360, 384, 3), (768, 876, 4))
-FORMULA_SAT = (876, 960)
-SKY_ROWS = (1344, 1632)
-FORMULA_YEAR = (1632, 1800)
+UNIT = "1 SPIN = FACE UPRIGHT AGAIN"
+EQUATION = (876, 1344)
+SAT_COUNT = (1344, 1632)
+SAT_HOLD = (1632, 1680)
+SAT_SPLIT = (1680, SNAP[0])
+CHIP = (1368, 1680)
+CHIP_FADE = 1668
+CHIP_SLIDE = 12
+STRIKE = (SAT_END, SAT_END + 12)
+PULSES = {
+    0: (1272, 1680),
+    1: (1296, 1740),
+    2: (1320,),
+}
+PULSE_FRAMES = 12
+
+
+@dataclass(frozen=True)
+class Term:
+    text: str
+    color: str
+    label: str = ""
+    pulse: float = 0.0
+
+
+@dataclass(frozen=True)
+class Chip:
+    label: str
+    value: str
+    alpha: float
+    slide: float
+    struck: float
+    pulse: float
 
 
 @dataclass(frozen=True)
 class Counter:
-    """``live`` and ``hold`` show one number, ``formula`` shows value + plus, ``sky`` shows two rows."""
+    """``single`` shows one term under the SPINS label; ``equation`` shows a + b = result."""
 
     mode: str
-    value: int | None = None
-    plus: int | None = None
-    days: int | None = None
-    spins: int | None = None
-    gold: bool = False
+    terms: tuple[Term, ...]
+    label: str = ""
+    sub: str = ""
+    chip: Chip | None = None
 
 
-def live_spins(frame: int) -> int | None:
-    for lap in LAPS:
-        if lap.counted and lap.start <= frame < lap.end:
-            return int(math.floor(lap_theta(lap, frame) / TAU + 1e-9))
-    return None
+def _pulse(frame: int, events: tuple[int, ...]) -> float:
+    for event in events:
+        if event <= frame < event + PULSE_FRAMES:
+            return 1.0 - (frame - event) / float(PULSE_FRAMES)
+    return 0.0
 
 
-def sky_counts(frame: int) -> tuple[int, int]:
-    progress = year_progress(frame)
-    days = int(math.floor(TROPICAL_YEAR * progress + 1e-9))
-    spins = int(math.floor(rotations_per_year(TROPICAL_YEAR) * progress + 1e-9))
-    return days, spins
+def _sat_count(frame: int) -> int:
+    return sum(1 for tick in upright_frames() if SAT_COUNT[0] <= tick <= frame and tick < SAT_END)
+
+
+def chip_at(frame: int) -> Chip | None:
+    if not CHIP[0] <= frame < CHIP[1]:
+        return None
+    slide = min(1.0, (frame - CHIP[0] + 1) / float(CHIP_SLIDE))
+    alpha = slide
+    if frame >= CHIP_FADE:
+        alpha *= 1.0 - (frame - CHIP_FADE) / float(CHIP[1] - CHIP_FADE)
+    struck = 0.0 if frame < STRIKE[0] else min(1.0, (frame - STRIKE[0] + 1) / float(STRIKE[1] - STRIKE[0]))
+    return Chip("SAT ANSWER", "3", alpha, slide, struck, _pulse(frame, (1572,)))
 
 
 def counter_at(frame: int) -> Counter:
     frame = int(frame)
-    if frame >= SNAP[0]:
-        return Counter("live", value=0)
-    for first, end, value in HOLDS:
-        if first <= frame < end:
-            return Counter("hold", value=value, gold=True)
-    if FORMULA_SAT[0] <= frame < FORMULA_SAT[1]:
-        return Counter("formula", value=LAPS[2].ratio, plus=1)
-    if DOUBLING_FRAMES[0] <= frame < SKY_ROWS[0]:
-        return Counter("formula", value=landed_ratio(frame), plus=1)
-    if SKY_ROWS[0] <= frame < SKY_ROWS[1]:
-        days, spins = sky_counts(frame)
-        return Counter("sky", days=days, spins=spins, gold=frame >= YEAR[1])
-    if FORMULA_YEAR[0] <= frame < FORMULA_YEAR[1]:
-        days, _spins = sky_counts(YEAR[1])
-        return Counter("formula", value=days, plus=1)
-    value = live_spins(frame)
-    return Counter("live", value=0 if value is None else value)
+    if frame >= SNAP[0] or frame < 288:
+        return Counter("single", (Term("?", "text"),), "SPINS", UNIT)
+    if frame < DROP:
+        return Counter("single", (Term("1", "text"),), "SPINS", UNIT)
+    if frame < EQUATION[0]:
+        return Counter("single", (Term("2", "gold"),), "SPINS", UNIT)
+    if frame < EQUATION[1]:
+        result = Term("2", "gold", pulse=_pulse(frame, PULSES[2]))
+        if frame < ROAD[1]:
+            return Counter("equation", (Term("?", "muted"), Term("?", "muted"), result))
+        rolled = Term("1", "rolling", "ROLLING", _pulse(frame, PULSES[0]))
+        if frame < CARRY[1]:
+            return Counter("equation", (rolled, Term("?", "muted"), result))
+        return Counter("equation", (rolled, Term("1", "trip", "TRIP AROUND", _pulse(frame, PULSES[1])), result))
+    if frame < SAT_COUNT[1]:
+        count = _sat_count(frame)
+        return Counter("single", (Term(str(count) if count else "?", "text"),), "SPINS", chip=chip_at(frame))
+    if frame < SAT_HOLD[1]:
+        return Counter("single", (Term("4", "gold"),), "", chip=chip_at(frame))
+    return Counter(
+        "equation",
+        (
+            Term("3", "rolling", "ROLLING", _pulse(frame, PULSES[0])),
+            Term("1", "trip", "TRIP AROUND", _pulse(frame, PULSES[1])),
+            Term("4", "gold"),
+        ),
+        chip=chip_at(frame),
+    )
 
 
-def spin_frames() -> list[int]:
-    """Frames where a counted lap finishes a spin: the arrow points straight up again."""
+def count_changes() -> list[int]:
+    """Frames where a counted number first appears. Each must be an upright frame."""
     frames = []
-    for lap in LAPS:
-        if not lap.counted:
-            continue
-        span = lap.end - lap.start
-        for spin in range(1, lap.ratio + 2):
-            frames.append(lap.start + span * spin // (lap.ratio + 1))
-    return frames
-
-
-def uncounted_spin_frames() -> list[int]:
-    frames = []
-    for lap in LAPS:
-        if lap.counted:
-            continue
-        span = lap.end - lap.start
-        for spin in range(1, lap.ratio + 2):
-            frames.append(lap.start + span * spin // (lap.ratio + 1))
-    return frames
-
-
-def quarter_frames() -> list[int]:
-    """Frames where the arrow passes a quarter turn that is not a full spin."""
-    frames = []
-    for lap in LAPS:
-        span = lap.end - lap.start
-        quarters = 4 * (lap.ratio + 1)
-        for index in range(1, quarters):
-            if index % 4 == 0:
-                continue
-            frames.append(lap.start + span * index // quarters)
+    previous = counter_at(0)
+    for frame in range(1, N_FRAMES):
+        current = counter_at(frame)
+        before = [term.text for term in previous.terms if term.text != "?"]
+        after = [term.text for term in current.terms if term.text != "?"]
+        if current.mode == previous.mode and after != before and len(after) >= len(before) and after:
+            frames.append(frame)
+        elif current.mode != previous.mode and after and frame in upright_frames():
+            frames.append(frame)
+        previous = current
     return frames
 
 
@@ -113,7 +131,9 @@ def screen_counts() -> list[int]:
     found: set[int] = set()
     for frame in range(N_FRAMES):
         counter = counter_at(frame)
-        for value in (counter.value, counter.plus, counter.days, counter.spins):
-            if value is not None:
-                found.add(int(value))
+        for term in counter.terms:
+            if term.text.isdigit():
+                found.add(int(term.text))
+        if counter.chip is not None:
+            found.add(int(counter.chip.value))
     return sorted(found)

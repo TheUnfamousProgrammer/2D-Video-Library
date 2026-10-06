@@ -665,7 +665,7 @@ Before you upload:
 
 ## Coinspin
 
-A 30.4 s vertical Short. A gold coin rolls once around a coin of the same size and the counter counts its spins: 2, not 1. A coin twice as wide gives 3. Then the 1982 SAT question: a coin one third the size of the other, with the printed choices 3/2, 3, 6, 9/2 and 9. The counter reaches 3 (the test's answer) with a quarter lap still to go, the beat drops out, and the drop lands on 4. Rim ticks split it into 3 from rolling and 1 from the trip around. The big coin doubles on every beat and the +1 stays. The coins become the Sun and Earth: 365 days, 366 spins against the stars, one every 23 h 56 m 4 s. The last beat snaps back to two coins so frame 1823 matches frame 0. There is no voiceover.
+A 30.4 s vertical Short. A gold coin with a face rolls once around a grey coin of the same size, and the counter counts how many times the face comes back upright: 2, not 1. Halfway round the coin freezes, already upright, with exactly half the grey edge painted. Then the 2 becomes `? + ? = 2`. The painted edge peels off into a flat road of the same length and the coin rolls along it: 1 spin, the one everyone expected. Then the coin is bolted to a rod and carried around without rolling, and its face still turns once: the trip around. `1 + 1 = 2`. The tail is the 1982 SAT question (grey coin 3x wider, the test's answer 3): the count hits 3 with a quarter of the trip still to go, and 4 lands on the impact as `3 + 1 = 4`. The last beat snaps back so frame 1823 matches frame 0. There is no voiceover.
 
 ```bash
 python make_coinspin.py doctor
@@ -680,28 +680,28 @@ python make_coinspin.py verify --out out/coinspin.mp4
 python make_coinspin.py full --approved --hook A --out out/coinspin.mp4
 ```
 
-`full` is refused without `--approved`. The master is 1080x1920 at 60 fps, 1824 frames; preview and hook clips are 540x960 at 30 fps. Outputs use a `coinspin_` prefix so other films' `out/` files are not overwritten. The music engine is the polycircle score with this film's events and seed 13: every quarter turn of the arrow is a pluck and every finished spin is a bell. The mix keeps the circlesquare AAC trim of 0.55 dB.
+`full` is refused without `--approved`. The master is 1080x1920 at 60 fps, 1824 frames; preview and hook clips are 540x960 at 30 fps. Outputs use a `coinspin_` prefix so other films' `out/` files are not overwritten. The music engine is the polycircle score with this film's events and seed 13: every sideways or upside-down face before the SAT act is a pluck, every upright face is a bell, the bolts click, and the trip-around spin gets the chime. The mix keeps the circlesquare AAC trim of 0.55 dB.
 
-### Rolling
+### Motion
 
-Angles run clockwise from straight up. In one lap the rolling coin's center goes once around the fixed coin, and with no slipping its arrow turns `(R + r) / r` times as far, so a coin `k` times wider gives `k + 1` spins. The stage is radius 400 px at (540, 915), and the pair is scaled by `400 / (k + 2)` so it always fits. Laps: frames 0-192 at 1x (spins on 96 and 192), 216-360 at 2x, 384-768 at 3x (spins on 480, 576, 672, 768), then an uncounted 3x lap to 960. Between laps the coin sits on top for one beat while the big coin grows. Every spin lands on the sixteenth-note grid. From 960 the big coin doubles on each beat, 6x to 196,608x, easing over 8 frames. A rolling coin under 20 px gets a gold ring and is never drawn smaller than 7 px. Earth's year runs 1392-1488 with a sine ease so it never moves more than about 34 px a frame.
+Angles run clockwise from straight up, and `theta` is the gold coin's total turn since frame 0; the face is upright exactly when it is a multiple of 2 pi. Both coins are radius 120 with the grey coin centered at (540, 915). The first half-lap is a smoothstep from frame 12 to 288, so the quarter turns land on 102, 150, 198 and the upright on 288. The second half runs at 0.5 deg a frame after a 12-frame ramp (quarter turns on 480, 570, 660), stops 3 degrees short on the silent beat, and snaps home on the drop at 768. The road is the grey rim unrolled like tape from a spool, 754 px long on y = 1035; the coin rolls it in 96 frames with quarter turns on 960, 984, 1008. The bolted carry turns the rod once in 96 frames from 1128. In the SAT act the grey coin is 210 and the gold coin 70; after a ramp from 1384 the orbit runs at exactly 1.5 deg a frame from 1392, so the face is upright on 1452, 1512, 1572, 1632. Every upright is on the sixteenth-note grid.
 
 ### Claims
 
-`configs/coinspin_claims.yaml`. The spin counts are computed by walking a lap through `rolling_pose`, the function the renderer draws, and checking at every sample that the coins touch and that the arc swept on the fixed rim equals the arc swept on the rolling rim. The SAT year, ratio, choices, and intended answer are cited (Scientific American, 2023). The tropical year (365.24219 days) is cited; the spins against the stars and the 23 h 56 m 4 s day are computed from it. `screen_counts` is every integer any counter shows; regenerate it from `fc_sat.coinspin_schedule.screen_counts()` if the schedule changes, or `facts` fails.
+`configs/coinspin_claims.yaml`. The film's spin counts (2, 1, 1, 4, and the 1 at halfway) are read from `gold_pose`, the function the renderer draws: on the rim each step checks that the coins touch and that the arc swept on the grey rim equals the arc swept on the gold rim; on the road it checks distance against radius; on the rod it checks that the coin turns only with the rod. The SAT year, ratio and intended answer are cited (Scientific American, 2023). The counter never shows 0; before a count it shows `?`. Every number the counter area shows is in `screen_counts`.
 
 ### Verify
 
-`verify` checks the claims, the style law, that every spin bell lands on a frame where the arrow points straight up and the counter steps by one, that the coins touch on every rolling frame and stay inside the stage, that the rolling coin never jumps, the safe zone, overlaps, the six-element text limit, that every digit on screen names a claim, the loop seam SSIM, the frame 0 coin radius in pixels, luminance flashes, and with `--out` the file's size, rate, frame count, loudness, true peak, kick onset, spin onsets, and silent tail. The report is `out/coinspin_verify_report.md`.
+`verify` checks the claims, the style law, the physics of each segment, that every count changes on a frame where the face is exactly upright and that frame rings a bell, that the gold coin never jumps outside the designed glides and the snap, the safe zone, overlaps, the six-element text limit, that every digit on screen names a claim, that no coin or mark slides under the top card or the counter plate, the loop seam SSIM, the frame 0 coin radius in pixels, luminance flashes, and with `--out` the file's size, rate, frame count, loudness, true peak, kick onset, upright onsets, and silent tail. The report is `out/coinspin_verify_report.md`.
 
 ### Posting
 
-`postkit` writes `out/coinspin_postkit.md` and stills in `out/coinspin_thumbs/`. Upload with #Shorts, audience not made for kids. The music is original and the drawing is made with code. The Sun and Earth are not drawn to scale. Pin comment A (a coin 10x wider gives 11 spins), keep the reply, and post comment B (inside a ring 3x wider it spins 2 times) under the first wrong answer. Read Viewed vs Swiped away against `out/coinspin_retention_map.md`. If swipe-away is high, post hook D ("THE SAT GOT / THIS WRONG.") as its own upload at least a day later.
+`postkit` writes `out/coinspin_postkit.md` and stills in `out/coinspin_thumbs/`. Upload with #Shorts, audience not made for kids. The music is original and the drawing is made with code. Pin comment A (a coin 10x wider gives 11 spins) and keep the reply; post comment B (inside a ring 3x wider it spins 2 times) under the first wrong answer and comment C (Earth turns 366.24 times a year against the stars) when someone asks for more. Read Viewed vs Swiped away against `out/coinspin_retention_map.md`. If swipe-away is high, post hook D ("EVEN THE SAT / GOT THIS WRONG.") as its own upload at least a day later.
 
 ### Phone checklist
 
-- The question is readable with the sound off, and the coin is already rolling on frame 0.
-- The counter reads 1 while the coin is only halfway around.
-- At frame 672 the coin is visibly not home yet while the counter says 3.
-- The three gold ticks and the gold orbit read as 3 + 1.
+- The question and the counting rule (`1 SPIN = FACE UPRIGHT AGAIN`) are readable with the sound off.
+- At the halfway freeze, half the edge is painted and the face is upright.
+- The flat road is plainly the grey edge laid out, and the bolted coin plainly cannot roll.
+- `1 + 1 = 2` and `3 + 1 = 4` read in their colors: cyan for rolling, pink for the trip around.
 - The loop feels seamless.

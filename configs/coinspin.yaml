@@ -1,15 +1,19 @@
 # Coinspin short. 30.4 s, 150 bpm, 1080x1920.
-# A coin rolls once around another coin and the counter counts its spins.
-# Trace hues are equalized to one OKLab lightness at load time.
+# A gold coin with a face rolls once around a grey coin of the same size and spins 2 times.
+# Then the 2 is split: rolling along the grey edge laid flat gives 1, and being carried
+# around without rolling gives the other 1. The 1982 SAT tail applies the rule: 3 + 1 = 4.
 bpm: 150
 fps: 60
 width: 1080
 height: 1920
 frames: 1824
 sample_rate: 48000
-# The coin stage fits inside this radius around the stage center at every frame.
-stage_radius: 400
+# The grey coin's center. Both coins are radius 120 in the first act.
 center: [540, 915]
+coin_radius: 120
+# SAT act: the grey coin is 3x wider than the gold one.
+sat_grey_radius: 210
+sat_gold_radius: 70
 hook: A
 seed: 13
 background: "#0E1117"
@@ -17,20 +21,11 @@ text: "#F2F4F8"
 muted: "#8A93A6"
 gold: "#FFD166"
 plate: "#1B2030"
-strike: "#FF6B6B"
-fixed_coin: "#B8C1CF"
-fixed_rim: "#7F8A9E"
-rolling_coin: "#F2B84B"
-rolling_rim: "#B9852A"
-sun: "#FFB347"
-earth: "#4D9DE0"
-night: "#1E3A5F"
-trace_colors:
-  - "#FF6B6B"
-  - "#FF9F43"
-  - "#FECA57"
-  - "#1DD1A1"
-  - "#48DBFB"
-  - "#5F7CFF"
-  - "#A55EEA"
-  - "#FF6BCB"
+strike: "#FF5A5F"
+grey_coin: "#B8C1CF"
+grey_rim: "#7F8A9E"
+gold_coin: "#F2B84B"
+gold_rim: "#B9852A"
+face: "#0E1117"
+rolling: "#48DBFB"
+trip: "#FF6BCB"

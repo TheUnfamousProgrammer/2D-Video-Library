@@ -1,57 +1,74 @@
-"""One frame of the coinspin short. Flat coins, one arrow, flat type."""
+"""One frame of the coinspin short. Flat coins, a face to watch, flat type.
+
+Draw order: path circles, grey coin, rim paint or road, stamps and ghosts, the gold coin,
+the rod, marks (arrows, chevrons, strokes), then the text plates and text.
+"""
 
 from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from fc_sat.circlesquare_draw import bgr, make_canvas, mix_hex
 from fc_sat.coinspin_claims import ClaimBook, load_claims
 from fc_sat.coinspin_math import (
+    BOLTS,
+    CARRY,
     CX,
     CY,
-    DOUBLING_FRAMES,
-    LAPS,
-    MIN_COIN_PX,
-    ORBIT_PX,
-    TRAIL,
+    DROP,
+    GLIDE_OUT,
+    HALF,
+    R1,
+    R_BIG,
+    R_SMALL,
+    RECOLOR,
+    RESIZE,
+    RETURN,
+    RESUME,
+    ROAD_X0,
+    ROAD_X1,
+    ROAD_Y,
+    ROD_GROW,
+    SAT_END,
+    SNAP,
     TAU,
-    Lap,
-    Scene,
+    UNROLL,
+    Pose,
     direction,
-    landed_ratio,
-    scene_at,
-    trace_points,
+    gold_pose,
+    grey_radius,
+    paint_arc,
+    rod_angle,
+    stage_scale,
+    unroll_points,
+    unroll_progress,
+    upright_frames,
 )
-from fc_sat.coinspin_schedule import Counter, counter_at, spin_frames, uncounted_spin_frames
-from fc_sat.coinspin_text import Script, card_at, load_script, sub_text, top_lines
+from fc_sat.coinspin_schedule import Chip, Counter, Term, counter_at
+from fc_sat.coinspin_text import Script, card_at, load_script, top_lines
 from fc_sat.coinspin_timeline import Timeline, build_timeline
 from fc_sat.easing import ease_in_out_cubic, ease_out_cubic
 from fc_sat.polycircle_draw import advance_width, measure
-from fc_sat.polycircle_format import format_count
 
 SAFE = (130.0, 950.0, 200.0, 1536.0)
-# Each counted lap keeps its own trace color index so a trace never recolors mid-lap.
-TRACE_INDEX = {0: 4, 1: 3, 2: 7, 3: 7}
-CHIPS = ("3/2", "3", "6", "9/2", "9")
-CHIP_TEST_ANSWER = 1
-CHIP_IN = 384
-CHIP_PICK = 672
-CHIP_STRIKE = 768
-CHIP_OUT = (868, 876)
-CHIP_Y = 420.0
-CHIP_H = 72.0
-FLASH_FRAMES = 12
-# Rim ticks: one per rolling-coin circumference along the big coin's rim, so they count
-# the spins that come from rolling. They light up during 3 FROM ROLLING, then the orbit
-# path flashes for +1 FROM THE TRIP.
-TICKS = (768, 1344)
-TICK_LIGHTS = (876, 888, 900)
-TRIP_FLASH = (912, 960)
-TICK_MIN_SPACING = 6.0
+COUNTER_TOP = 1332.0
+GHOST = (144, DROP)
+LAP_STAMP = (RESUME, 900)
+SAT_STAMPS = (1452, 1512, 1572)
+ARROWS = ((292, 322, 384, 396), (780, 810, 876, 888))
+STROKES = (DROP, SAT_END)
+OUTLINES = ((1368, 400.0), (1376, 540.0), (1384, 680.0))
+OUTLINE_OUT = (1400, 1412)
+CARRY_PATH_OUT = (1344, 1356)
+SAT_PATH = (1704, 1740)
+RIM_FLASHES = (1272, 1680)
+TRIP_FLASHES = (1296, 1740)
+QUARTER_PULSES = (1580, 1604)
+POP_FRAMES = 10
 
 
 @dataclass
@@ -66,6 +83,7 @@ class TextBox:
     color: str
     alpha: float
     gold: str = ""
+    spans: list = field(default_factory=list)
 
     def right(self) -> float:
         return self.x + self.w
@@ -88,96 +106,6 @@ def inside_safe(box: TextBox, scale: float) -> bool:
     return box.x >= x0 - 1.0 and box.right() <= x1 + 1.0 and box.y >= y0 - 1.0 and box.bottom() <= y1 + 1.0
 
 
-def hook_alpha(frame: int) -> float:
-    if frame <= 179:
-        return 1.0
-    if frame <= 191:
-        return (192 - frame) / 12.0
-    if frame < 1800:
-        return 0.0
-    return min(1.0, (frame - 1800) / 23.0)
-
-
-def chip_alpha(frame: int, index: int) -> float:
-    start = CHIP_IN + 12 * index
-    if frame < start or frame >= CHIP_OUT[1]:
-        return 0.0
-    alpha = min(1.0, (frame - start + 1) / 4.0)
-    if frame >= CHIP_OUT[0]:
-        alpha *= 1.0 - (frame - CHIP_OUT[0]) / float(CHIP_OUT[1] - CHIP_OUT[0])
-    return alpha
-
-
-def chip_scale(frame: int, index: int) -> float:
-    start = CHIP_IN + 12 * index
-    if frame < start or frame > start + 8:
-        return 1.0
-    return 0.7 + 0.3 * ease_out_cubic((frame - start) / 8.0)
-
-
-def trace_alpha(frame: int, lap_index: int) -> float:
-    """How strongly a lap's trace shows. It draws during its lap, then holds or fades."""
-    lap = LAPS[lap_index]
-    if lap_index == 0:
-        if frame < 192:
-            return 1.0
-        return max(0.0, 1.0 - (frame - 192) / 24.0) if frame < 216 else 0.0
-    if lap_index == 1:
-        if 216 <= frame < 360:
-            return 1.0
-        return max(0.0, 1.0 - (frame - 360) / 24.0) if 360 <= frame < 384 else 0.0
-    if lap_index == 2:
-        if lap.start <= frame < 948:
-            return 1.0
-        return max(0.0, 1.0 - (frame - 948) / 12.0) if 948 <= frame < 960 else 0.0
-    return 0.0
-
-
-def tick_count(frame: int) -> int:
-    if not TICKS[0] <= frame < TICKS[1]:
-        return 0
-    if frame < DOUBLING_FRAMES[0]:
-        return LAPS[2].ratio
-    return landed_ratio(frame)
-
-
-def tick_lit(frame: int, index: int) -> bool:
-    return frame < DOUBLING_FRAMES[0] and index < len(TICK_LIGHTS) and frame >= TICK_LIGHTS[index]
-
-
-def trip_alpha(frame: int) -> float:
-    if not TRIP_FLASH[0] <= frame < TRIP_FLASH[1]:
-        return 0.0
-    rise = min(1.0, (frame - TRIP_FLASH[0] + 1) / 6.0)
-    fall = min(1.0, (TRIP_FLASH[1] - frame) / 8.0)
-    return min(rise, fall)
-
-
-def mark_lap(frame: int) -> int:
-    """The lap whose trace the rim dot is drawing, so the dot and its line share a color."""
-    if frame < 216:
-        return 0
-    if frame < 384:
-        return 1
-    return 2
-
-
-def sky_trail(frame: int) -> float:
-    """Fraction of the orbit traced in gold during IT'S THE TRIP AROUND."""
-    if frame < TRAIL[0]:
-        return 0.0
-    if frame >= TRAIL[1]:
-        return 1.0
-    return ease_in_out_cubic((frame - TRAIL[0]) / float(TRAIL[1] - TRAIL[0] - 12))
-
-
-def _flash(frame: int, events: list[int]) -> float:
-    for event in events:
-        if event <= frame < event + FLASH_FRAMES:
-            return 1.0 - (frame - event) / float(FLASH_FRAMES)
-    return 0.0
-
-
 def _fit(kind: str, text: str, max_size: float, min_size: float, max_width: float) -> float:
     size = max_size
     while size > min_size + 0.5:
@@ -185,6 +113,47 @@ def _fit(kind: str, text: str, max_size: float, min_size: float, max_width: floa
             return size
         size -= 2.0
     return min_size
+
+
+def _fade(frame: int, start: int, end: int) -> float:
+    """1 before ``start``, 0 from ``end``, linear between."""
+    if frame < start:
+        return 1.0
+    if frame >= end:
+        return 0.0
+    return 1.0 - (frame - start) / float(end - start)
+
+
+def _rise(frame: int, start: int, end: int) -> float:
+    """0 before ``start``, 1 from ``end``, linear between."""
+    return 1.0 - _fade(frame, start, end)
+
+
+def _since(frame: int, events, span: int) -> float:
+    """1 on an event frame, fading to 0 over ``span`` frames."""
+    for event in events:
+        if event <= frame < event + span:
+            return 1.0 - (frame - event) / float(span)
+    return 0.0
+
+
+def grey_alpha(frame: int) -> float:
+    if frame < GLIDE_OUT[0] or frame >= RETURN[1]:
+        return 1.0
+    if frame < GLIDE_OUT[1]:
+        return 1.0 - 0.8 * ease_in_out_cubic((frame - GLIDE_OUT[0]) / float(GLIDE_OUT[1] - GLIDE_OUT[0]))
+    if frame < RETURN[0]:
+        return 0.2
+    return 0.2 + 0.8 * ease_in_out_cubic((frame - RETURN[0]) / float(RETURN[1] - RETURN[0]))
+
+
+def arrow_progress(frame: int) -> tuple[float, float]:
+    """(how much of the circular arrow is drawn, its opacity)."""
+    for start, done, fade, gone in ARROWS:
+        if start <= frame < gone:
+            drawn = ease_out_cubic(min(1.0, (frame - start) / float(done - start)))
+            return drawn, _fade(frame, fade, gone)
+    return 0.0, 0.0
 
 
 class CoinRenderer:
@@ -205,141 +174,119 @@ class CoinRenderer:
         self.hook = hook
         self.scale = self.width / 1080.0
         self.cfg = self.timeline.config
-        self._spins = spin_frames() + [frame for frame in uncounted_spin_frames() if frame < DOUBLING_FRAMES[0]]
-        self._pops = sorted(set(spin_frames() + list(DOUBLING_FRAMES) + [768, 876, 1488, 1632]))
-        self._traces: dict[int, np.ndarray] = {}
+        self.ticks = upright_frames()
+        self.pops = sorted(set(self.ticks))
+
+    # ----- coordinates -----
 
     def px(self, design: float) -> float:
         return float(design) * self.scale
 
-    def stroke_px(self, design: float) -> float:
-        """Output pixels. A stroke specified at 6 or more never lands thinner than 3."""
-        width = float(design) * self.scale
-        if design >= 6.0:
-            return max(3.0, width)
-        return width
+    def _stage(self, frame: int, x: float, y: float) -> tuple[float, float]:
+        """Stage point to output pixels, with the punch and snap scale around the grey center."""
+        s = stage_scale(frame)
+        return self.px(CX + s * (x - CX)), self.px(CY + s * (y - CY))
 
-    def _pt(self, x: float, y: float) -> tuple[float, float]:
-        return float(x) * self.scale, float(y) * self.scale
+    def _len(self, frame: int, design: float) -> float:
+        return self.px(design * stage_scale(frame))
 
-    # ----- text -----
+    def color(self, key: str) -> str:
+        return getattr(self.cfg, key)
+
+    # ----- text plan -----
 
     def _pop(self, frame: int) -> float:
-        for event in self._pops:
-            if event <= frame <= event + 5:
-                return 1.0 + 0.08 * math.sin(math.pi * (frame - event) / 5.0)
+        for event in self.pops:
+            if event <= frame < event + POP_FRAMES:
+                return 1.0 + 0.18 * (1.0 - ease_out_cubic((frame - event) / float(POP_FRAMES)))
         return 1.0
 
     def _top_boxes(self, frame: int) -> list[TextBox]:
-        cfg = self.cfg
         lines = top_lines(self.script, frame, self.hook)
-        if frame <= 191 or frame >= 1800:
-            alpha = hook_alpha(frame)
-            gold_bits: tuple[str, ...] = ()
-        else:
-            alpha = 1.0 if lines else 0.0
-            card = card_at(self.script, frame)
-            gold_bits = card.gold if card is not None else ()
-        if not lines or alpha <= 0.01:
-            return []
+        card = card_at(self.script, frame)
+        gold_bits = card.gold if card is not None else ()
         limit = (SAFE[1] - SAFE[0]) * self.scale
-        size = min(_fit("word", line, self.px(96), self.px(72), limit) for line in lines)
-        step = size * 1.02
+        size = min(_fit("word", line, self.px(92), self.px(64), limit) for line in lines)
+        step = size * 1.06
         top = self.px(200)
         boxes = []
         for index, line in enumerate(lines):
             ink = measure("word", size, line)
             gold = next((bit for bit in gold_bits if bit and bit in line), "")
             boxes.append(
-                TextBox(line, (self.width - ink.width) / 2.0, top + index * step, ink.width, ink.height, size, "word", cfg.text, alpha, gold)
+                TextBox(line, (self.width - ink.width) / 2.0, top + index * step, ink.width, ink.height, size, "word", self.cfg.text, 1.0, gold)
             )
         return boxes
 
-    def _chip_layout(self, frame: int) -> tuple[list[tuple[float, float, float]], float, float]:
-        """Pill rectangles (x, width, alpha), the text size, and the row's top edge."""
-        size = self.px(46)
-        pad = self.px(26)
-        gap = self.px(18)
-        widths = [measure("mono", size, chip).width + 2 * pad for chip in CHIPS]
-        total = sum(widths) + gap * (len(CHIPS) - 1)
-        x = (self.width - total) / 2.0
-        pills = []
-        for index, width in enumerate(widths):
-            pills.append((x, width, chip_alpha(frame, index)))
-            x += width + gap
-        return pills, size, self.px(CHIP_Y)
-
-    def chip_box(self, frame: int) -> TextBox | None:
-        pills, size, top = self._chip_layout(frame)
-        alpha = max(alpha for _x, _w, alpha in pills)
-        if alpha <= 0.01:
-            return None
-        left = pills[0][0]
-        right = pills[-1][0] + pills[-1][1]
-        return TextBox("  ".join(CHIPS), left, top, right - left, self.px(CHIP_H), size, "chips", self.cfg.text, alpha)
+    def _row(self, pieces: list[tuple[str, str]], size: float, y: float, alpha: float) -> TextBox:
+        """One line of mono text made of colored pieces, centered."""
+        text = "".join(piece for piece, _ in pieces)
+        ink = measure("mono", size, text)
+        box = TextBox(text, (self.width - ink.width) / 2.0, y, ink.width, ink.height, size, "row", self.cfg.text, alpha)
+        box.spans = pieces
+        return box
 
     def _counter_boxes(self, frame: int, counter: Counter) -> list[TextBox]:
         cfg = self.cfg
-        limit = (SAFE[1] - SAFE[0]) * self.scale
         boxes: list[TextBox] = []
-        sub = sub_text(self.script, frame)
-        sub_size = _fit("word", sub, self.px(34), self.px(22), limit) if sub else 0.0
-        gap_y = self.px(10)
-        if counter.mode == "sky":
-            row_size = self.px(84)
-            days = f"DAYS  {counter.days}"
-            spins = f"SPINS {counter.spins}"
-            rows = [(days, cfg.text), (spins, cfg.gold if counter.gold else cfg.text)]
-            inks = [measure("mono", row_size, text) for text, _ in rows]
-            width = max(ink.width for ink in inks)
-            cursor = self.px(1340)
-            x = (self.width - width) / 2.0
-            for (text, color), ink in zip(rows, inks):
-                boxes.append(TextBox(text, x, cursor, ink.width, ink.height, row_size, "mono", color, 1.0))
-                cursor += ink.height + self.px(18)
-            if sub:
-                ink = measure("word", sub_size, sub)
-                boxes.append(TextBox(sub, (self.width - ink.width) / 2.0, cursor, ink.width, ink.height, sub_size, "word", cfg.muted, 1.0))
-            return boxes
-        label = "SPINS"
-        label_size = self.px(36)
-        label_ink = measure("word", label_size, label)
-        if counter.mode == "formula":
-            pieces = [(f"{format_count(int(counter.value))}", cfg.text), (f"+ {counter.plus}", cfg.gold)]
+        limit = (SAFE[1] - SAFE[0]) * self.scale
+        cursor = self.px(COUNTER_TOP)
+        gap = self.px(10)
+        if counter.mode == "single":
+            if counter.label:
+                size = self.px(40)
+                ink = measure("word", size, counter.label)
+                boxes.append(TextBox(counter.label, (self.width - ink.width) / 2.0, cursor, ink.width, ink.height, size, "word", cfg.muted, 1.0))
+            cursor += measure("word", self.px(40), "SPINS").height + self.px(16)
+            term = counter.terms[0]
+            rest = self.px(140)
+            rest_ink = measure("mono", rest, "8")
+            size = rest * self._pop(frame)
+            ink = measure("mono", size, term.text)
+            y = cursor + (rest_ink.height - ink.height) / 2.0
+            boxes.append(TextBox(term.text, (self.width - ink.width) / 2.0, y, ink.width, ink.height, size, "mono", self.color(term.color), 1.0))
+            cursor += rest_ink.height + self.px(14)
+            if counter.sub:
+                sub_size = _fit("word", counter.sub, self.px(36), self.px(24), limit)
+                ink = measure("word", sub_size, counter.sub)
+                boxes.append(TextBox(counter.sub, (self.width - ink.width) / 2.0, cursor, ink.width, ink.height, sub_size, "word", cfg.muted, 1.0))
         else:
-            pieces = [(format_count(int(counter.value)), cfg.gold if counter.gold else cfg.text)]
-        joined = "  ".join(text for text, _ in pieces) if len(pieces) > 1 else pieces[0][0]
-        # Lay the block out at rest size. The pop scales the number around its own center,
-        # so the label and the sub-line never move.
-        rest = _fit("mono", joined, self.px(130), self.px(72), limit)
-        rest_height = max(measure("mono", rest, text).height for text, _ in pieces)
-        size = rest * self._pop(frame)
-        inks = [measure("mono", size, text) for text, _ in pieces]
-        space = advance_width("mono", size, " ")
-        width = sum(ink.width for ink in inks) + space * (len(pieces) - 1)
-        height = max(ink.height for ink in inks)
-        cursor = self.px(1340)
-        boxes.append(TextBox(label, (self.width - label_ink.width) / 2.0, cursor, label_ink.width, label_ink.height, label_size, "word", cfg.muted, 1.0))
-        cursor += label_ink.height + gap_y
-        x = (self.width - width) / 2.0
-        y = cursor + (rest_height - height) / 2.0
-        for (text, color), ink in zip(pieces, inks):
-            boxes.append(TextBox(text, x, y, ink.width, height, size, "mono", color, 1.0))
-            x += ink.width + space
-        cursor += rest_height + gap_y
-        if sub:
-            ink = measure("word", sub_size, sub)
-            boxes.append(TextBox(sub, (self.width - ink.width) / 2.0, cursor, ink.width, ink.height, sub_size, "word", cfg.muted, 1.0))
+            a, b, result = counter.terms
+            pieces = [(a.text, a.color), (" + ", "muted"), (b.text, b.color), (" = ", "muted"), (result.text, result.color)]
+            size = _fit("mono", "".join(p for p, _ in pieces), self.px(124), self.px(80), limit)
+            row = self._row(pieces, size, cursor, 1.0)
+            boxes.append(row)
+            label_y = row.bottom() + self.px(16)
+            for index, term in ((0, a), (2, b)):
+                if not term.label:
+                    continue
+                center = self._span_center(row, index)
+                label_size = self.px(38)
+                ink = measure("word", label_size, term.label)
+                left = min(max(center - ink.width / 2.0, self.px(SAFE[0])), self.px(SAFE[1]) - ink.width)
+                boxes.append(TextBox(term.label, left, label_y, ink.width, ink.height, label_size, "word", self.color(term.color), 1.0))
+        if counter.chip is not None and counter.chip.alpha > 0.0:
+            boxes.append(self._chip_box(counter.chip))
         return boxes
+
+    def _span_center(self, row: TextBox, index: int) -> float:
+        pen = row.x - measure("mono", row.size, row.text).left
+        for position, (piece, _color) in enumerate(row.spans):
+            width = advance_width("mono", row.size, piece)
+            if position == index:
+                return pen + width / 2.0
+            pen += width
+        return row.x + row.w / 2.0
+
+    def _chip_box(self, chip: Chip) -> TextBox:
+        width = self.px(210)
+        height = self.px(150)
+        x = self.px(150) - self.px(20) * (1.0 - chip.slide)
+        return TextBox(f"{chip.label} {chip.value}", x, self.px(COUNTER_TOP), width, height, self.px(30), "chip", self.cfg.text, chip.alpha)
 
     def plan(self, frame: int) -> list[TextBox]:
         frame = int(frame) % self.timeline.n_frames
-        boxes = self._top_boxes(frame)
-        chips = self.chip_box(frame)
-        if chips is not None:
-            boxes.append(chips)
-        boxes.extend(self._counter_boxes(frame, counter_at(frame)))
-        return boxes
+        return self._top_boxes(frame) + self._counter_boxes(frame, counter_at(frame))
 
     def design_text_size(self, frame: int) -> float:
         boxes = self._top_boxes(frame)
@@ -349,236 +296,274 @@ class CoinRenderer:
 
     def render(self, frame: int) -> np.ndarray:
         frame = int(frame) % self.timeline.n_frames
-        cfg = self.cfg
         canvas = make_canvas(self.width, self.height)
-        canvas.fill(cfg.background)
-        scene = scene_at(frame)
-        if scene.sky > 0.0:
-            self._orbit(canvas, frame, scene)
-        self._traces_draw(canvas, frame)
-        self._fixed(canvas, frame, scene)
-        self._rolling(canvas, frame, scene)
-        self._chips(canvas, frame)
+        canvas.fill(self.cfg.background)
+        pose = gold_pose(frame)
+        self._paths(canvas, frame)
+        self._grey(canvas, frame, pose)
+        self._paint(canvas, frame, pose)
+        self._ghosts(canvas, frame)
+        self._outlines(canvas, frame)
+        self._coin(canvas, frame, pose.center, pose.radius, pose.theta, 1.0)
+        self._rod(canvas, frame, pose)
+        self._marks(canvas, frame, pose)
         self._text(canvas, frame)
         return bgr(canvas)
 
-    def _trace(self, lap_index: int) -> np.ndarray:
-        if lap_index not in self._traces:
-            lap = LAPS[lap_index]
-            self._traces[lap_index] = trace_points(lap, lap.end) * self.scale
-        return self._traces[lap_index]
-
-    def _traces_draw(self, canvas, frame: int) -> None:
-        for lap_index in range(3):
-            alpha = trace_alpha(frame, lap_index)
-            if alpha <= 0.01:
-                continue
-            lap: Lap = LAPS[lap_index]
-            full = self._trace(lap_index)
-            if frame < lap.end:
-                fraction = (frame - lap.start) / float(lap.end - lap.start)
-                count = max(2, int(round(fraction * (len(full) - 1))) + 1)
-                points = full[:count]
-            else:
-                points = full
-            if len(points) < 2:
-                continue
-            color = self.cfg.trace_colors[TRACE_INDEX[lap_index]]
-            canvas.stroke([(float(x), float(y)) for x, y in points], color, self.stroke_px(6), 0.9 * alpha)
-
-    def _fixed(self, canvas, frame: int, scene: Scene) -> None:
-        cfg = self.cfg
-        x, y = self._pt(*scene.fixed_center)
-        radius = self.px(scene.fixed_px)
-        body = mix_hex(cfg.fixed_coin, cfg.sun, scene.sky)
-        rim = mix_hex(cfg.fixed_rim, cfg.sun, scene.sky)
-        canvas.dot(x, y, radius, body, 1.0)
-        rim_width = min(self.px(10), max(self.px(4), radius * 0.06))
-        canvas.circle_stroke(x, y, radius - rim_width / 2.0, rim, rim_width, 1.0 - scene.sky)
-        canvas.circle_stroke(x, y, radius * 0.84, rim, max(self.px(2), rim_width * 0.4), 0.5 * (1.0 - scene.sky))
-        pulse = _flash(frame, list(DOUBLING_FRAMES)) * (1.0 - scene.sky)
-        if pulse > 0:
-            canvas.circle_stroke(x, y, radius + self.px(10), cfg.gold, self.stroke_px(4), 0.6 * pulse)
-        self._ticks(canvas, frame, x, y, radius, rim_width, scene)
-        trip = trip_alpha(frame)
-        if trip > 0.0:
-            path = self.px(scene.fixed_px + scene.rolling_px)
-            self._dashed_circle(canvas, x, y, path, cfg.gold, self.stroke_px(6), trip, 72)
-        if scene.sky > 0.0:
-            beat = (frame % 24) / 24.0
-            ring = 1.0 - beat
-            canvas.circle_stroke(x, y, radius + self.px(14) + self.px(10) * beat, cfg.sun, self.stroke_px(4), 0.35 * ring * scene.sky)
-
-    def _ticks(self, canvas, frame: int, x: float, y: float, radius: float, rim_width: float, scene: Scene) -> None:
-        count = tick_count(frame)
-        if count <= 0 or scene.sky > 0.0:
+    def _dashed_arc(self, canvas, frame: int, radius: float, sweep: float, color: str, width: float, alpha: float) -> None:
+        if sweep <= 0 or alpha <= 0.01:
             return
-        cfg = self.cfg
-        outer = radius - rim_width
-        length = min(self.px(26), 0.16 * radius)
-        if TAU * outer / count < self.px(TICK_MIN_SPACING):
-            canvas.circle_stroke(x, y, outer - length / 2.0, cfg.fixed_rim, length, 0.55)
-            return
-        width = max(self.px(3), min(self.px(7), 0.35 * TAU * outer / count))
+        dash = TAU / 96.0
+        count = int(math.ceil(sweep / dash))
         for index in range(count):
-            d = direction(TAU * index / count)
-            start = (x + outer * d[0], y + outer * d[1])
-            end = (x + (outer - length) * d[0], y + (outer - length) * d[1])
-            if tick_lit(frame, index):
-                deep = (x + (outer - 1.4 * length) * d[0], y + (outer - 1.4 * length) * d[1])
-                canvas.stroke([start, deep], cfg.gold, max(width, self.px(11)), 1.0)
-            else:
-                canvas.stroke([start, end], cfg.fixed_rim, width, 1.0)
-
-    def _dashed_circle(self, canvas, x: float, y: float, radius: float, color: str, width: float, alpha: float, dashes: int) -> None:
-        step = TAU / (2 * dashes)
-        for index in range(dashes):
-            a0 = 2 * index * step
-            pts = [(x + radius * math.sin(a0 + step * k / 4.0), y - radius * math.cos(a0 + step * k / 4.0)) for k in range(5)]
-            canvas.stroke(pts, color, width, alpha)
-
-    def _rolling(self, canvas, frame: int, scene: Scene) -> None:
-        cfg = self.cfg
-        x, y = self._pt(*scene.rolling_center)
-        design_radius = scene.rolling_px
-        tiny = design_radius < MIN_COIN_PX and scene.sky < 0.5
-        radius = self.px(max(design_radius, MIN_COIN_PX))
-        body = mix_hex(cfg.rolling_coin, cfg.earth, scene.sky)
-        rim = mix_hex(cfg.rolling_rim, cfg.earth, scene.sky)
-        canvas.dot(x, y, radius, body, 1.0)
-        if scene.sky < 1.0 and design_radius >= 14.0:
-            rim_width = min(self.px(8), max(self.px(3), radius * 0.07))
-            canvas.circle_stroke(x, y, radius - rim_width / 2.0, rim, rim_width, 1.0 - scene.sky)
-        if tiny or (design_radius < 20.0 and scene.sky < 0.5):
-            canvas.circle_stroke(x, y, radius + self.px(12), cfg.gold, self.stroke_px(4), 0.85 * (1.0 - scene.sky))
-        if scene.sky > 0.0:
-            self._night(canvas, scene, x, y, radius)
-        if design_radius >= 20.0 and scene.sky < 0.5:
-            color = self.cfg.trace_colors[TRACE_INDEX[mark_lap(frame)]]
-            self._arrow(canvas, x, y, radius, scene.arrow, color, 1.0 - 2.0 * scene.sky)
-        flash = _flash(frame, self._spins)
-        if flash > 0 and scene.sky < 0.5:
-            grow = 1.0 + 0.35 * (1.0 - flash)
-            canvas.circle_stroke(x, y, radius * grow, cfg.gold, self.stroke_px(6), flash)
-
-    def _arrow(self, canvas, x: float, y: float, radius: float, theta: float, mark: str, alpha: float) -> None:
-        if alpha <= 0.01:
-            return
-        ink = self.cfg.background
-        d = direction(theta)
-        side = np.array([-d[1], d[0]])
-        center = np.array([x, y])
-        tail = center - 0.30 * radius * d
-        neck = center + 0.42 * radius * d
-        tip = center + 0.80 * radius * d
-        width = max(self.px(3), 0.15 * radius)
-        canvas.stroke([(float(tail[0]), float(tail[1])), (float(neck[0]), float(neck[1]))], ink, width, alpha)
-        head = [tip, neck + 0.26 * radius * side, neck - 0.26 * radius * side]
-        canvas.polygon([(float(p[0]), float(p[1])) for p in head], ink, alpha)
-        canvas.dot(float(center[0]), float(center[1]), max(self.px(3), 0.09 * radius), ink, alpha)
-        pen = center + radius * d
-        canvas.dot(float(pen[0]), float(pen[1]), max(self.px(4), 0.1 * radius), mark, alpha)
-
-    def _night(self, canvas, scene: Scene, x: float, y: float, radius: float) -> None:
-        sun = np.array(self._pt(*scene.fixed_center))
-        earth = np.array([x, y])
-        toward = sun - earth
-        length = float(np.hypot(*toward)) or 1.0
-        u = toward / length
-        v = np.array([-u[1], u[0]])
-        points = []
-        for step in range(49):
-            t = -math.pi / 2.0 + math.pi * step / 48.0
-            p = earth + radius * (math.cos(t) * (-u) + math.sin(t) * v)
-            points.append((float(p[0]), float(p[1])))
-        canvas.polygon(points, self.cfg.night, scene.sky)
-
-    def _orbit(self, canvas, frame: int, scene: Scene) -> None:
-        cfg = self.cfg
-        cx, cy = self._pt(CX, CY)
-        radius = self.px(ORBIT_PX)
-        dash = TAU / 120.0
-        for index in range(120):
             if index % 2:
                 continue
             a0 = index * dash
-            pts = []
-            for k in range(5):
-                a = a0 + dash * k / 4.0
-                pts.append((cx + radius * math.sin(a), cy - radius * math.cos(a)))
-            canvas.stroke(pts, cfg.muted, self.stroke_px(3), 0.45 * scene.sky)
-        trail = sky_trail(frame)
-        if trail > 0.0:
-            count = max(2, int(240 * trail) + 1)
-            pts = [
-                (cx + radius * math.sin(TAU * trail * k / (count - 1)), cy - radius * math.cos(TAU * trail * k / (count - 1)))
-                for k in range(count)
-            ]
-            canvas.stroke(pts, cfg.gold, self.stroke_px(8), scene.sky)
-            if trail < 1.0:
-                head = pts[-1]
-                canvas.dot(head[0], head[1], self.px(12), cfg.gold, scene.sky)
+            a1 = min(sweep, a0 + dash)
+            pts = [self._stage(frame, CX + radius * math.sin(a), CY - radius * math.cos(a)) for a in np.linspace(a0, a1, 4)]
+            canvas.stroke(pts, color, width, alpha)
 
-    def _chips(self, canvas, frame: int) -> None:
+    def _paths(self, canvas, frame: int) -> None:
         cfg = self.cfg
-        pills, size, top = self._chip_layout(frame)
-        height = self.px(CHIP_H)
-        struck = frame >= CHIP_STRIKE
-        for index, ((x, width, alpha), chip) in enumerate(zip(pills, CHIPS)):
-            if alpha <= 0.01:
+        width = self._len(frame, 6)
+        if CARRY[0] <= frame < CARRY_PATH_OUT[1]:
+            sweep = rod_angle(frame)
+            boost = _since(frame, TRIP_FLASHES, 12)
+            alpha = _fade(frame, *CARRY_PATH_OUT)
+            self._dashed_arc(canvas, frame, 2.0 * R1, sweep, cfg.trip, width * (1.0 + 1.2 * boost), alpha)
+        if SAT_PATH[0] <= frame < SNAP[0]:
+            sweep = TAU * ease_out_cubic(min(1.0, (frame - SAT_PATH[0]) / float(SAT_PATH[1] - SAT_PATH[0])))
+            boost = _since(frame, TRIP_FLASHES, 12)
+            self._dashed_arc(canvas, frame, R_BIG + R_SMALL, sweep, cfg.trip, width * (1.0 + 1.2 * boost), 1.0)
+
+    def _grey(self, canvas, frame: int, pose: Pose) -> None:
+        cfg = self.cfg
+        x, y = self._stage(frame, CX, CY)
+        radius = self._len(frame, grey_radius(frame))
+        alpha = grey_alpha(frame)
+        body = mix_hex(cfg.background, cfg.grey_coin, alpha)
+        rim = mix_hex(cfg.background, cfg.grey_rim, alpha)
+        canvas.dot(x, y, radius, body, 1.0)
+        rim_width = self._len(frame, 10)
+        canvas.circle_stroke(x, y, radius - rim_width / 2.0, rim, rim_width, 1.0)
+        canvas.circle_stroke(x, y, radius * 0.84, rim, self._len(frame, 3), 0.6)
+        screw = self._len(frame, 14)
+        canvas.dot(x, y, screw, mix_hex(cfg.background, "#3A4152", alpha), 1.0)
+        canvas.stroke([(x - screw * 0.6, y), (x + screw * 0.6, y)], mix_hex(cfg.background, cfg.grey_coin, alpha), self._len(frame, 4), 1.0)
+
+    def _paint(self, canvas, frame: int, pose: Pose) -> None:
+        cfg = self.cfg
+        progress = unroll_progress(frame)
+        width = self._len(frame, 10)
+        if progress > 0.0:
+            right, left = unroll_points(progress)
+            for half in (right, left):
+                canvas.stroke([self._stage(frame, px, py) for px, py in half], cfg.rolling, width, 1.0)
+            if progress >= 1.0:
+                for x in (ROAD_X0, ROAD_X1):
+                    canvas.stroke([self._stage(frame, x, ROAD_Y - 16), self._stage(frame, x, ROAD_Y + 16)], cfg.rolling, self._len(frame, 6), 1.0)
+            return
+        radius = grey_radius(frame) - 5.0
+        sweep = paint_arc(frame)
+        alpha = 1.0
+        if RECOLOR[0] <= frame < RECOLOR[1]:
+            sweep = TAU
+            alpha = _fade(frame, *RECOLOR)
+        flash = _since(frame, RIM_FLASHES, 12)
+        if flash > 0.0:
+            sweep = TAU
+            alpha = max(alpha if RESIZE[0] <= frame else 0.0, flash)
+            width = width * (1.0 + 0.6 * flash)
+        if sweep > 0.0 and alpha > 0.01:
+            count = max(2, int(180 * sweep / TAU) + 2)
+            pts = [self._stage(frame, CX + radius * math.sin(a), CY - radius * math.cos(a)) for a in np.linspace(0.0, sweep, count)]
+            canvas.stroke(pts, cfg.rolling, width, alpha)
+        pulse = _since(frame, QUARTER_PULSES, 12)
+        if pulse > 0.0:
+            pts = [self._stage(frame, CX + radius * math.sin(a), CY - radius * math.cos(a)) for a in np.linspace(sweep, TAU, 40)]
+            canvas.stroke(pts, cfg.text, width, pulse)
+
+    def _ghosts(self, canvas, frame: int) -> None:
+        if GHOST[0] <= frame < GHOST[1]:
+            alpha = 0.3 * _rise(frame, GHOST[0], GHOST[0] + 24)
+            self._coin(canvas, frame, (CX, CY - 2 * R1), R1, 0.0, alpha)
+        if LAP_STAMP[0] <= frame < LAP_STAMP[1]:
+            alpha = 0.3 * _fade(frame, 876, LAP_STAMP[1])
+            self._coin(canvas, frame, (CX, CY + 2 * R1), R1, 0.0, alpha)
+        for tick in SAT_STAMPS:
+            if tick + 6 <= frame < SNAP[0]:
+                phi = TAU * (SAT_STAMPS.index(tick) + 1) / 4.0
+                center = np.array([CX, CY]) + (R_BIG + R_SMALL) * direction(phi)
+                alpha = 0.3 * _rise(frame, tick + 6, tick + 14)
+                self._coin(canvas, frame, (float(center[0]), float(center[1])), R_SMALL, 0.0, alpha)
+
+    def _outlines(self, canvas, frame: int) -> None:
+        cfg = self.cfg
+        for start, x in OUTLINES:
+            if not start <= frame < OUTLINE_OUT[1]:
                 continue
-            scale = chip_scale(frame, index)
-            w = width * scale
-            h = height * scale
-            px = x + (width - w) / 2.0
-            py = top + (height - h) / 2.0
-            picked = index == CHIP_TEST_ANSWER and frame >= CHIP_PICK
-            fade = 0.4 if struck else 1.0
-            fill = cfg.gold if picked else cfg.plate
-            canvas.round_rect(px, py, w, h, h / 2.0, fill, alpha * (1.0 if not struck else 0.55))
-            ink = measure("mono", size * scale, chip)
-            color = cfg.background if picked else cfg.text
-            canvas.text(chip, px + (w - ink.width) / 2.0, py + (h - ink.height) / 2.0, "mono", size * scale, color, alpha * fade)
-        if struck and frame < CHIP_OUT[1]:
-            u = min(1.0, (frame - CHIP_STRIKE) / 8.0)
-            left = pills[0][0] - self.px(12)
-            right = pills[-1][0] + pills[-1][1] + self.px(12)
-            mid = top + height / 2.0
-            end = left + (right - left) * ease_out_cubic(u)
-            alpha = max(alpha for _x, _w, alpha in pills)
-            canvas.stroke([(left, mid), (end, mid)], cfg.strike, self.stroke_px(8), alpha)
+            pop = 0.6 + 0.4 * ease_out_cubic(min(1.0, (frame - start) / 8.0))
+            alpha = _fade(frame, *OUTLINE_OUT)
+            sx, sy = self._stage(frame, x, CY)
+            canvas.circle_stroke(sx, sy, self._len(frame, R_SMALL * pop), cfg.gold_coin, self._len(frame, 6), alpha)
+
+    def _coin(self, canvas, frame: int, center, radius: float, theta: float, alpha: float) -> None:
+        """The gold coin with its face. Theta turns the face clockwise; 0 is upright."""
+        if alpha <= 0.01:
+            return
+        cfg = self.cfg
+        x, y = self._stage(frame, *center)
+        r = self._len(frame, radius)
+        canvas.dot(x, y, r, cfg.gold_coin, alpha)
+        canvas.circle_stroke(x, y, r - r * 0.035, cfg.gold_rim, r * 0.07, alpha)
+        ex = np.array([math.cos(theta), math.sin(theta)])
+        ey = np.array([-math.sin(theta), math.cos(theta)])
+        origin = np.array([x, y])
+
+        def at(lx: float, ly: float) -> tuple[float, float]:
+            p = origin + r * (lx * ex + ly * ey)
+            return float(p[0]), float(p[1])
+
+        face = cfg.face
+        for side in (-1.0, 1.0):
+            canvas.dot(*at(0.30 * side, -0.16), r * 0.10, face, alpha)
+        smile = [at(0.40 * math.cos(a), -0.06 + 0.40 * math.sin(a)) for a in np.linspace(math.radians(25), math.radians(155), 24)]
+        canvas.stroke(smile, face, r * 0.09, alpha)
+        canvas.polygon([at(-0.16, -0.64), at(0.16, -0.64), at(0.0, -0.93)], face, alpha)
+
+    def _rod(self, canvas, frame: int, pose: Pose) -> None:
+        if not ROD_GROW[0] <= frame < CARRY_PATH_OUT[1]:
+            return
+        cfg = self.cfg
+        alpha = _fade(frame, *CARRY_PATH_OUT)
+        beta = rod_angle(frame)
+        d = direction(beta)
+        full = 2.0 * R1 - 0.55 * R1
+        grow = ease_out_cubic(min(1.0, (frame - ROD_GROW[0]) / float(ROD_GROW[1] - ROD_GROW[0])))
+        end = np.array([CX, CY]) + full * grow * d
+        canvas.stroke([self._stage(frame, CX, CY), self._stage(frame, float(end[0]), float(end[1]))], cfg.trip, self._len(frame, 18), alpha)
+        for bolt, distance in zip(BOLTS, (2.0 * R1 - 0.88 * R1, 2.0 * R1 - 0.70 * R1)):
+            if frame < bolt:
+                continue
+            pop = 0.6 + 0.4 * ease_out_cubic(min(1.0, (frame - bolt) / 6.0))
+            p = np.array([CX, CY]) + distance * d
+            canvas.dot(*self._stage(frame, float(p[0]), float(p[1])), self._len(frame, 10 * pop), cfg.text, alpha)
+
+    def _outer(self, pose: Pose) -> np.ndarray:
+        if pose.rolling_on == "road" or abs(pose.center[1] - (ROAD_Y - R1)) < 1e-6 and pose.center[0] in (ROAD_X0, ROAD_X1):
+            return np.array([0.0, -1.0])
+        offset = np.array([pose.center[0] - CX, pose.center[1] - CY])
+        length = float(np.hypot(*offset))
+        outer = offset / length if length > 1e-6 else np.array([0.0, -1.0])
+        # Below the stage the counter plate sits; put the mark beside the coin instead.
+        return np.array([1.0, 0.0]) if outer[1] > 0.5 else outer
+
+    def _marks(self, canvas, frame: int, pose: Pose) -> None:
+        cfg = self.cfg
+        x, y = self._stage(frame, *pose.center)
+        r = self._len(frame, pose.radius)
+        flash = _since(frame, self.ticks, 8)
+        if flash > 0.0:
+            canvas.circle_stroke(x, y, r + self.px(3), cfg.text, self.px(8), flash)
+        chevron = _since(frame, self.ticks, 18)
+        if chevron > 0.0:
+            outer = self._outer(pose)
+            cx, cy = x + (r + self.px(40)) * outer[0], y + (r + self.px(40)) * outer[1]
+            size = self.px(18)
+            canvas.stroke([(cx - size, cy + size * 0.6), (cx, cy - size * 0.6), (cx + size, cy + size * 0.6)], cfg.text, self.px(7), chevron)
+        drawn, alpha = arrow_progress(frame)
+        if drawn > 0.0 and alpha > 0.01:
+            radius = r + self.px(24)
+            start = math.radians(-60.0)
+            sweep = math.radians(300.0) * drawn
+            pts = [(x + radius * math.sin(start + t), y - radius * math.cos(start + t)) for t in np.linspace(0.0, sweep, 60)]
+            canvas.stroke(pts, cfg.text, self.px(7), alpha)
+            tip_angle = start + sweep
+            tip = np.array([x + radius * math.sin(tip_angle), y - radius * math.cos(tip_angle)])
+            forward = np.array([math.cos(tip_angle), math.sin(tip_angle)])
+            outward = np.array([math.sin(tip_angle), -math.cos(tip_angle)])
+            head = self.px(20)
+            wing_a = tip - head * forward + head * 0.7 * outward
+            wing_b = tip - head * forward - head * 0.7 * outward
+            canvas.polygon([(float(tip[0]), float(tip[1])), (float(wing_a[0]), float(wing_a[1])), (float(wing_b[0]), float(wing_b[1]))], cfg.text, alpha)
+        burst = _since(frame, STROKES, 12)
+        if burst > 0.0:
+            grow = 1.0 - burst
+            for index in range(8):
+                d = direction(TAU * index / 8.0 + TAU / 16.0)
+                inner = r + self.px(30) + self.px(20) * grow
+                outer_r = inner + self.px(28)
+                canvas.stroke([(x + inner * d[0], y + inner * d[1]), (x + outer_r * d[0], y + outer_r * d[1])], cfg.text, self.px(7), burst)
 
     def _text(self, canvas, frame: int) -> None:
-        boxes = [box for box in self.plan(frame) if box.kind != "chips"]
-        if not boxes:
-            return
-        tops = [box for box in boxes if box.y < self.px(600)]
-        bottoms = [box for box in boxes if box.y >= self.px(600)]
+        boxes = self.plan(frame)
+        tops = [box for box in boxes if box.y < self.px(700)]
+        bottoms = [box for box in boxes if box.y >= self.px(700) and box.kind != "chip"]
         self._plate(canvas, tops, 0.92)
         self._plate(canvas, bottoms, 1.0)
+        counter = counter_at(frame)
         for box in boxes:
-            self._draw_box(canvas, box)
+            if box.kind == "chip":
+                self._draw_chip(canvas, box, counter.chip)
+            elif box.kind == "row":
+                self._draw_row(canvas, box, counter)
+            else:
+                self._draw_box(canvas, box)
 
     def _draw_box(self, canvas, box: TextBox) -> None:
         if box.gold and box.gold in box.text:
-            full = measure(box.kind, box.size, box.text)
-            baseline = box.y - full.top
-            pen = box.x - full.left
             before, _, after = box.text.partition(box.gold)
-            for piece, color in ((before, box.color), (box.gold, self.cfg.gold), (after, box.color)):
-                if not piece:
-                    continue
-                ink = measure(box.kind, box.size, piece)
-                if piece.strip():
-                    canvas.text(piece, pen + ink.left, baseline + ink.top, box.kind, box.size, color, box.alpha)
-                pen += advance_width(box.kind, box.size, piece)
+            self._draw_spans(canvas, box, [(before, box.color), (box.gold, self.cfg.gold), (after, box.color)])
             return
         canvas.text(box.text, box.x, box.y, box.kind, box.size, box.color, box.alpha)
+
+    def _draw_spans(self, canvas, box: TextBox, spans: list[tuple[str, str]]) -> None:
+        kind = "mono" if box.kind == "row" else box.kind
+        full = measure(kind, box.size, box.text)
+        baseline = box.y - full.top
+        pen = box.x - full.left
+        for piece, color in spans:
+            if piece.strip():
+                ink = measure(kind, box.size, piece)
+                canvas.text(piece, pen + ink.left, baseline + ink.top, kind, box.size, color, box.alpha)
+            pen += advance_width(kind, box.size, piece)
+
+    def _draw_row(self, canvas, box: TextBox, counter: Counter) -> None:
+        terms = {0: counter.terms[0], 2: counter.terms[1], 4: counter.terms[2]}
+        for index, term in terms.items():
+            if term.pulse <= 0.0:
+                continue
+            center = self._span_center(box, index)
+            half = advance_width("mono", box.size, term.text) / 2.0 + self.px(14)
+            canvas.round_rect(center - half, box.y - self.px(12), 2 * half, box.h + self.px(24), self.px(14), self.color(term.color), 0.35 * term.pulse)
+        self._draw_spans(canvas, box, [(piece, self.color(color)) for piece, color in box.spans])
+
+    def _draw_chip(self, canvas, box: TextBox, chip: Chip | None) -> None:
+        if chip is None:
+            return
+        cfg = self.cfg
+        lift = 1.0 + 0.08 * chip.pulse
+        canvas.round_rect(box.x, box.y, box.w, box.h, self.px(18), cfg.plate, box.alpha)
+        if chip.pulse > 0.0:
+            canvas.round_rect(box.x, box.y, box.w, box.h, self.px(18), cfg.text, 0.18 * chip.pulse * box.alpha)
+        label_size = self.px(30)
+        ink = measure("word", label_size, chip.label)
+        canvas.text(chip.label, box.x + (box.w - ink.width) / 2.0, box.y + self.px(18), "word", label_size, cfg.muted, box.alpha)
+        value_size = self.px(92) * lift
+        ink = measure("mono", value_size, chip.value)
+        vx = box.x + (box.w - ink.width) / 2.0
+        vy = box.y + self.px(18) + self.px(30) + self.px(14)
+        canvas.text(chip.value, vx, vy, "mono", value_size, cfg.text, box.alpha)
+        if chip.struck > 0.0:
+            x0, y0 = vx - self.px(16), vy + ink.height + self.px(8)
+            x1, y1 = vx + ink.width + self.px(16), vy - self.px(8)
+            u = ease_out_cubic(chip.struck)
+            canvas.stroke([(x0, y0), (x0 + (x1 - x0) * u, y0 + (y1 - y0) * u)], cfg.strike, self.px(10), box.alpha)
 
     def _plate(self, canvas, boxes: list[TextBox], alpha: float) -> None:
         if not boxes or all(box.alpha <= 0.01 for box in boxes):
             return
-        pad = self.px(24 if boxes[0].y < self.px(600) else 16)
+        pad = self.px(24 if boxes[0].y < self.px(700) else 16)
         left = min(box.x for box in boxes) - pad
         right = max(box.right() for box in boxes) + pad
         top = min(box.y for box in boxes) - pad
@@ -589,14 +574,11 @@ class CoinRenderer:
     # ----- probes for hooks and verify -----
 
     def stage_fraction(self, frame: int) -> float:
-        scene = scene_at(frame)
-        extent = max(
-            scene.fixed_px,
-            float(np.hypot(scene.rolling_center[0] - CX, scene.rolling_center[1] - CY)) + scene.rolling_px,
-        )
+        pose = gold_pose(frame)
+        extent = max(grey_radius(frame), math.hypot(pose.center[0] - CX, pose.center[1] - CY) + pose.radius)
         return (math.pi * extent * extent) / float(1080 * 1920)
 
     def profile_ms(self) -> float:
         started = time.perf_counter()
-        self.render(700)
+        self.render(1200)
         return (time.perf_counter() - started) * 1000.0

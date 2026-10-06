@@ -1,111 +1,76 @@
-# On-screen copy for the coinspin short. Top lines are at most 16 characters.
+# On-screen copy for the coinspin short. Top lines are at most 16 characters, at most 3 lines.
 # Digits survive only when the card names the claim that computed or cited them.
-# A slot is {claim} or {claim:fmt}; fmt is 2f (two decimals) or hms (23H 56M 4S).
+# Every card changes on the frame its scene changes. The hook shows on 0-143 and 1800-1823.
 hooks:
   A:
-    - "HOW MANY TIMES"
-    - "DOES IT SPIN?"
+    - "ROLL THE GOLD"
+    - "COIN AROUND."
+    - "HOW MANY SPINS?"
   B:
+    - "SAME SIZE COINS."
     - "ONE LAP AROUND."
     - "HOW MANY SPINS?"
   D:
-    - "THE SAT GOT"
-    - "THIS WRONG."
+    - "EVEN THE SAT"
+    - "GOT THIS WRONG."
+    - "HOW MANY SPINS?"
 cards:
-  - id: twice
-    start: 192
+  - id: guess
+    start: 144
     end: 288
-    lines: ["NOT ONCE.", "TWICE."]
-  - id: bigger
+    lines: ["SAME SIZE COINS.", "SO JUST {unit} SPIN?"]
+    claims: [unit]
+  - id: halfway
     start: 288
     end: 384
-    lines: ["BIGGER COIN?"]
-  - id: sat_ask
+    lines: ["HALFWAY THERE...", "ALREADY {halfway_spins} SPIN!"]
+    gold: ["{halfway_spins} SPIN"]
+    claims: [halfway_spins]
+  - id: other_half
     start: 384
-    end: 672
-    lines: ["{sat_year} SAT:", "HOW MANY SPINS?"]
-    claims: [sat_year]
-  - id: sat_said
-    start: 672
+    end: 576
+    lines: ["OTHER HALF:", "WATCH THE FACE."]
+  - id: wait
+    start: 576
     end: 768
-    lines: ["THEY SAID {sat_intended}."]
-    claims: [sat_intended]
-  - id: sat_wrong
+    lines: ["WAIT FOR IT..."]
+  - id: two
     start: 768
     end: 876
-    lines: ["{sat_spins}. NOT EVEN", "AN OPTION."]
-    gold: ["{sat_spins}"]
-    claims: [sat_spins]
-  - id: split
+    lines: ["NOT {unit} SPIN.", "{equal_spins} SPINS!"]
+    gold: ["{equal_spins} SPINS!"]
+    claims: [unit, equal_spins]
+  - id: why
     start: 876
-    end: 960
-    lines: ["{sat_rolling} FROM ROLLING", "+{plus_one} FROM THE TRIP"]
-    gold: ["+{plus_one}"]
-    claims: [sat_rolling, plus_one]
-  - id: still
-    start: 960
-    end: 1152
-    lines: ["BIGGER COIN?", "STILL +{plus_one}."]
-    gold: ["+{plus_one}"]
-    claims: [plus_one]
-  - id: any
-    start: 1152
-    end: 1344
-    lines: ["ANY SIZE.", "STILL +{plus_one}."]
-    gold: ["+{plus_one}"]
-    claims: [plus_one]
-  - id: earth_ask
-    start: 1344
-    end: 1488
-    lines: ["NOW: EARTH", "AROUND THE SUN"]
-  - id: earth
-    start: 1488
-    end: 1632
-    lines: ["EARTH SPINS", "{sidereal_whole} TIMES A YEAR"]
-    gold: ["{sidereal_whole}"]
-    claims: [sidereal_whole]
-  - id: never
-    start: 1632
-    end: 1728
-    lines: ["THE +{plus_one} NEVER", "GOES AWAY."]
-    gold: ["+{plus_one}"]
-    claims: [plus_one]
+    end: 1032
+    lines: ["WHY {equal_spins}?", "LAY THE GREY", "EDGE OUT FLAT:"]
+    claims: [equal_spins]
+  - id: rolled
+    start: 1032
+    end: 1104
+    lines: ["{road_spins} SPIN. THE ONE", "YOU EXPECTED."]
+    claims: [road_spins]
+  - id: bolted
+    start: 1104
+    end: 1224
+    lines: ["NO ROLLING NOW.", "IT'S BOLTED ON.", "JUST GO AROUND:"]
   - id: trip
-    start: 1728
-    end: 1800
-    lines: ["IT'S THE TRIP", "AROUND."]
-subs:
-  - id: same
-    start: 0
-    end: 192
-    template: "SAME SIZE COINS"
-  - id: ratio_two
-    start: 192
-    end: 360
-    template: "BIG COIN {ratio_two}X WIDER"
-    claims: [ratio_two]
-  - id: ratio_sat
-    start: 360
-    end: 960
-    template: "BIG COIN {sat_ratio}X WIDER"
-    claims: [sat_ratio]
-  - id: ratio_doubling
-    start: 960
+    start: 1224
     end: 1344
-    template: "BIG COIN {ratio}X WIDER"
-    dynamic: doubling_ratio
-    claims: [doubling_ratios]
-  - id: sidereal_day
-    start: 1488
+    lines: ["IT STILL SPUN", "ONCE, JUST FROM", "THE TRIP AROUND!"]
+  - id: sat_ask
+    start: 1344
+    end: 1572
+    lines: ["{sat_year} SAT ASKED:", "GREY {sat_ratio}X WIDER."]
+    claims: [sat_year, sat_ratio]
+  - id: sat_said
+    start: 1572
     end: 1632
-    template: "{plus_one} SPIN = {sidereal_day_s:hms}"
-    claims: [plus_one, sidereal_day_s]
-  - id: year_split
+    lines: ["THE SAT SAID {sat_intended}.", "NOT BACK YET!"]
+    claims: [sat_intended]
+  - id: four
     start: 1632
     end: 1800
-    template: "{tropical_year:2f} DAYS, {sidereal_year:2f} SPINS"
-    claims: [tropical_year, sidereal_year]
-  - id: same_again
-    start: 1800
-    end: 1824
-    template: "SAME SIZE COINS"
+    lines: ["IT'S {sat_spins}.", "EACH TRIP AROUND", "ADDS {trip_spins} SPIN."]
+    gold: ["{sat_spins}"]
+    claims: [sat_spins, trip_spins]
