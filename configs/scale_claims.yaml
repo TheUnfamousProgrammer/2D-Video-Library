@@ -1,0 +1,34 @@
+# Sizes the scale short is allowed to show. One cited claim per object, keyed by object id.
+# value is metres; display is the friendly line under the counter; digits sets how many
+# significant digits the plain-metres counter keeps.
+# PROVISIONAL: replaced by the sourced, adversarially checked values before the final render.
+whitelist: []
+claims:
+  s01_proton: {type: cited, value: 1.7e-15, digits: 2, display: "1.7 FEMTOMETRES", text: "proton charge diameter", source: "provisional", surfaces: []}
+  s02_hydrogen_atom: {type: cited, value: 1.06e-10, digits: 2, display: "0.1 NANOMETRES", text: "hydrogen atom diameter, twice the Bohr radius", source: "provisional", surfaces: []}
+  s03_dna: {type: cited, value: 2.0e-9, digits: 1, display: "2 NANOMETRES", text: "DNA double helix width", source: "provisional", surfaces: []}
+  s04_virus: {type: cited, value: 1.0e-7, digits: 1, display: "100 NANOMETRES", text: "coronavirus particle diameter", source: "provisional", surfaces: []}
+  s05_bacterium: {type: cited, value: 2.0e-6, digits: 1, display: "2 MICROMETRES", text: "E. coli length", source: "provisional", surfaces: []}
+  s06_red_blood_cell: {type: cited, value: 7.5e-6, digits: 2, display: "7.5 MICROMETRES", text: "red blood cell diameter", source: "provisional", surfaces: []}
+  s07_human_hair: {type: cited, value: 7.0e-5, digits: 1, display: "70 MICROMETRES", text: "human hair width", source: "provisional", surfaces: []}
+  s08_sand_grain: {type: cited, value: 5.0e-4, digits: 1, display: "HALF A MILLIMETRE", text: "medium sand grain", source: "provisional", surfaces: []}
+  s09_ant: {type: cited, value: 5.0e-3, digits: 1, display: "5 MILLIMETRES", text: "black garden ant worker length", source: "provisional", surfaces: []}
+  s10_smartphone: {type: cited, value: 0.15, digits: 2, display: "15 CENTIMETRES", text: "smartphone height", source: "provisional", surfaces: []}
+  s11_cat: {type: cited, value: 0.46, digits: 2, display: "46 CENTIMETRES", text: "house cat body length", source: "provisional", surfaces: []}
+  s12_person: {type: cited, value: 1.7, digits: 2, display: "1.7 METRES", text: "adult height", source: "provisional", surfaces: []}
+  s13_giraffe: {type: cited, value: 5.5, digits: 2, display: "5.5 METRES", text: "tall giraffe height", source: "provisional", surfaces: []}
+  s14_blue_whale: {type: cited, value: 30.0, digits: 2, display: "30 METRES", text: "large blue whale length", source: "provisional", surfaces: []}
+  s15_statue_of_liberty: {type: cited, value: 93.0, digits: 2, display: "93 METRES", text: "ground to torch", source: "provisional", surfaces: []}
+  s16_iss: {type: cited, value: 109.0, digits: 3, display: "109 METRES", text: "ISS truss span", source: "provisional", surfaces: []}
+  s17_eiffel_tower: {type: cited, value: 330.0, digits: 3, display: "330 METRES", text: "Eiffel Tower height", source: "provisional", surfaces: []}
+  s18_burj_khalifa: {type: cited, value: 828.0, digits: 3, display: "828 METRES", text: "Burj Khalifa height", source: "provisional", surfaces: []}
+  s19_everest: {type: cited, value: 8849.0, digits: 4, display: "8,849 METRES", text: "Everest height above sea level", source: "provisional", surfaces: []}
+  s20_moon: {type: cited, value: 3474800.0, digits: 4, display: "3,475 KM", text: "Moon diameter", source: "provisional", surfaces: []}
+  s21_earth: {type: cited, value: 12742000.0, digits: 5, display: "12,742 KM", text: "Earth diameter", source: "provisional", surfaces: []}
+  s22_jupiter: {type: cited, value: 139820000.0, digits: 5, display: "139,820 KM", text: "Jupiter equatorial diameter", source: "provisional", surfaces: []}
+  s23_sun: {type: cited, value: 1.3927e9, digits: 3, display: "1.39 MILLION KM", text: "Sun diameter", source: "provisional", surfaces: []}
+  s24_biggest_star: {type: cited, value: 2.4e12, digits: 2, display: "ABOUT 1,700 SUNS WIDE", text: "UY Scuti estimated diameter", source: "provisional", surfaces: []}
+  s25_solar_system: {type: cited, value: 9.0e12, digits: 1, display: "NEPTUNE'S ORBIT: 9 BILLION KM", text: "diameter of Neptune's orbit", source: "provisional", surfaces: []}
+  s26_milky_way: {type: cited, value: 9.5e20, digits: 2, display: "100,000 LIGHT-YEARS", text: "Milky Way disk diameter", source: "provisional", surfaces: []}
+  s27_andromeda: {type: cited, value: 2.1e21, digits: 2, display: "220,000 LIGHT-YEARS", text: "Andromeda diameter", source: "provisional", surfaces: []}
+  s28_observable_universe: {type: cited, value: 8.8e26, digits: 2, display: "93 BILLION LIGHT-YEARS", text: "observable universe diameter", source: "provisional", surfaces: []}

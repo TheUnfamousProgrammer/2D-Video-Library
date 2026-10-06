@@ -1,0 +1,28 @@
+# On-screen copy for the scale short. Top lines are at most 16 characters, at most 3 lines.
+# Outside the cards below, the top card is the name of the object the camera last landed on.
+hooks:
+  A:
+    - "SMALLEST THING"
+    - "TO THE BIGGEST"
+    - "IN THE UNIVERSE"
+  B:
+    - "HOW SMALL"
+    - "AND HOW BIG"
+    - "DOES IT GET?"
+  D:
+    - "THE SMALLEST"
+    - "VS THE BIGGEST"
+    - "THING THERE IS"
+cards:
+  - id: wait
+    start: 696
+    end: 768
+    lines: ["WAIT FOR IT..."]
+  - id: you
+    start: 768
+    end: 864
+    lines: ["YOU ARE HERE."]
+  - id: edge
+    start: 1700
+    end: 1800
+    lines: ["AND THAT'S ONLY", "THE PART WE", "CAN SEE."]
