@@ -1,0 +1,36 @@
+# Coinspin short. 30.4 s, 150 bpm, 1080x1920.
+# A coin rolls once around another coin and the counter counts its spins.
+# Trace hues are equalized to one OKLab lightness at load time.
+bpm: 150
+fps: 60
+width: 1080
+height: 1920
+frames: 1824
+sample_rate: 48000
+# The coin stage fits inside this radius around the stage center at every frame.
+stage_radius: 400
+center: [540, 915]
+hook: A
+seed: 13
+background: "#0E1117"
+text: "#F2F4F8"
+muted: "#8A93A6"
+gold: "#FFD166"
+plate: "#1B2030"
+strike: "#FF6B6B"
+fixed_coin: "#B8C1CF"
+fixed_rim: "#7F8A9E"
+rolling_coin: "#F2B84B"
+rolling_rim: "#B9852A"
+sun: "#FFB347"
+earth: "#4D9DE0"
+night: "#1E3A5F"
+trace_colors:
+  - "#FF6B6B"
+  - "#FF9F43"
+  - "#FECA57"
+  - "#1DD1A1"
+  - "#48DBFB"
+  - "#5F7CFF"
+  - "#A55EEA"
+  - "#FF6BCB"

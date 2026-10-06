@@ -1,0 +1,194 @@
+# Numbers the coinspin short is allowed to say.
+# Computed values are recomputed on every facts run. The spin counts come from
+# the same rolling function the renderer draws, so a wrong picture fails here.
+whitelist: []
+claims:
+  equal_spins:
+    type: computed
+    text: "a coin rolled once around a coin of the same size spins 2 times"
+    value: 2
+    source: "count_spins(1): arrow passes straight up over one lap"
+    surfaces: ["2"]
+    used_in: [counter, description, titles]
+    fn: count_spins
+    args: [1]
+  ratio_two:
+    type: computed
+    text: "the second big coin is 2 times wider than the rolling coin"
+    value: 2
+    source: "lap 2 radius ratio"
+    surfaces: ["2"]
+    used_in: [sub]
+    fn: lap_ratio
+    args: [1]
+  ratio_two_spins:
+    type: computed
+    text: "around a coin 2 times wider it spins 3 times"
+    value: 3
+    source: "count_spins(2)"
+    surfaces: ["3"]
+    used_in: [counter]
+    fn: count_spins
+    args: [2]
+  sat_year:
+    type: cited
+    text: "the question appeared on the SAT given in May 1982"
+    value: 1982
+    source: "Scientific American, The SAT Problem That Everybody Got Wrong (2023); Wikipedia, Coin rotation paradox"
+    surfaces: ["1982"]
+    used_in: [card, description]
+  sat_ratio:
+    type: cited
+    text: "in the SAT question the radius of circle A is one third the radius of circle B"
+    value: 3
+    source: "1982 SAT question 17, as quoted by Scientific American (2023)"
+    surfaces: ["3"]
+    used_in: [sub, description]
+  sat_choices:
+    type: cited
+    text: "the printed answer choices were 3/2, 3, 6, 9/2 and 9"
+    value: ["3/2", "3", "6", "9/2", "9"]
+    source: "1982 SAT question 17 answer choices, as quoted by Scientific American (2023)"
+    surfaces: ["3", "2", "6", "9"]
+    used_in: [chips]
+  sat_intended:
+    type: cited
+    text: "the test makers' intended answer was 3"
+    value: 3
+    source: "Scientific American (2023): the writers also thought the answer was three"
+    surfaces: ["3"]
+    used_in: [card]
+  sat_spins:
+    type: computed
+    text: "around a coin 3 times wider the rolling coin spins 4 times, which was not a printed choice"
+    value: 4
+    source: "count_spins(3)"
+    surfaces: ["4"]
+    used_in: [counter, card, description]
+    fn: count_spins
+    args: [3]
+  sat_rolling:
+    type: computed
+    text: "rolling along a rim 3 times as long as its own gives 3 spins against the rim"
+    value: 3
+    source: "rolling_part(3): rim length over rolling circumference"
+    surfaces: ["3"]
+    used_in: [card, counter]
+    fn: rolling_part
+    args: [3]
+  plus_one:
+    type: computed
+    text: "the trip around adds exactly 1 spin, for every size tested"
+    value: 1
+    source: "count_spins(k) - k for k = 1, 2, 3, 10 and every doubling ratio"
+    surfaces: ["1", "+1"]
+    used_in: [card, counter, sub, description]
+    fn: trip_bonus
+  doubling_ratios:
+    type: computed
+    text: "the big coin doubles 16 times from 3x wider, one doubling per beat"
+    value: [6, 12, 24, 48, 96, 192, 384, 768, 1536, 3072, 6144, 12288, 24576, 49152, 98304, 196608]
+    source: "3 * 2^(j+1) for j = 0..15"
+    surfaces: ["16"]
+    used_in: [sub, counter]
+    fn: doubling_ratios
+  doubling_spins:
+    type: computed
+    text: "spins per lap at each doubling ratio, which is the ratio plus 1"
+    value: [7, 13, 25, 49, 97, 193, 385, 769, 1537, 3073, 6145, 12289, 24577, 49153, 98305, 196609]
+    source: "count_spins at each doubling ratio"
+    surfaces: []
+    used_in: [facts]
+    fn: doubling_spins
+  screen_counts:
+    type: computed
+    text: "every integer a counter shows"
+    value: [0, 1, 2, 3, 4, 6, 7, 9, 11, 12, 13, 16, 18, 21, 24, 27, 30, 34, 37, 41, 45, 48, 49, 53, 57, 62, 66, 71, 76, 81, 86, 91, 96, 101, 102, 107, 112, 113, 118, 123, 124, 129, 135, 141, 146, 147, 152, 153, 158, 159, 164, 165, 170, 171, 176, 177, 182, 183, 188, 189, 192, 194, 195, 200, 201, 206, 207, 212, 218, 224, 229, 230, 235, 236, 241, 246, 247, 252, 253, 257, 258, 263, 264, 268, 269, 273, 274, 279, 284, 288, 289, 293, 294, 298, 299, 303, 307, 308, 311, 312, 315, 316, 319, 320, 323, 324, 327, 328, 331, 334, 335, 337, 338, 340, 341, 343, 344, 346, 347, 348, 349, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 384, 768, 1536, 3072, 6144, 12288, 24576, 49152, 98304, 196608]
+    source: "scan of the counter schedule over all 1824 frames"
+    surfaces: []
+    used_in: [counter]
+    fn: screen_counts
+  tropical_year:
+    type: cited
+    text: "a mean tropical year is about 365.24219 mean solar days"
+    value: 365.24219
+    source: "Explanatory Supplement to the Astronomical Almanac; Wikipedia, Tropical year"
+    surfaces: ["365", "365.24"]
+    used_in: [counter, sub, description]
+  sidereal_year:
+    type: computed
+    text: "counted against the stars, Earth turns about 366.24219 times in that year"
+    value: 366.24219
+    source: "solar days + 1 trip around the Sun, from rotations_per_year(365.24219)"
+    surfaces: ["366", "366.24"]
+    used_in: [counter, sub, description]
+    fn: rotations_per_year
+    args: [365.24219]
+  sidereal_whole:
+    type: computed
+    text: "whole spins against the stars in a year"
+    value: 366
+    source: "floor(rotations_per_year(365.24219))"
+    surfaces: ["366"]
+    used_in: [card, counter, titles]
+    fn: whole_rotations
+    args: [365.24219]
+  sidereal_day_s:
+    type: computed
+    text: "one spin against the stars takes 86164.09 seconds, which is 23 h 56 m 4 s"
+    value: 86164.0905325517
+    source: "86400 * 365.24219 / 366.24219"
+    surfaces: ["23", "56", "4", "86164.09"]
+    used_in: [sub, description]
+    fn: sidereal_day
+    args: [365.24219]
+  ten_ratio:
+    type: computed
+    text: "the pinned-comment coin is 10 times wider"
+    value: 10
+    source: "question ratio"
+    surfaces: ["10"]
+    used_in: [comment]
+    fn: identity
+    args: [10]
+  ten_spins:
+    type: computed
+    text: "around a coin 10 times wider it spins 11 times"
+    value: 11
+    source: "count_spins(10)"
+    surfaces: ["11"]
+    used_in: [reply]
+    fn: count_spins
+    args: [10]
+  inside_spins:
+    type: computed
+    text: "rolled once around the inside of a ring 3 times wider, it spins 2 times"
+    value: 2
+    source: "count_spins_inside(3)"
+    surfaces: ["2"]
+    used_in: [comment_b]
+    fn: count_spins_inside
+    args: [3]
+  stage_radius:
+    type: computed
+    text: "the coins stay inside this radius on the 1080-wide frame"
+    value: 400
+    source: "config stage_radius"
+    surfaces: ["400"]
+    used_in: [facts]
+    fn: config_number
+    args: ["stage_radius"]
+  trip_rule:
+    type: definitional
+    text: "A coin rolled once around a coin k times wider spins k + 1 times: k from rolling along the rim, and 1 from the trip around."
+    value: null
+    source: "rolling without slipping on a circle"
+    surfaces: []
+    used_in: [comment_c, description]
+  not_to_scale:
+    type: definitional
+    text: "The Sun and Earth are not drawn to scale."
+    value: null
+    source: "drawing choice"
+    surfaces: []
+    used_in: [description]

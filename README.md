@@ -662,3 +662,46 @@ Before you upload:
 - Pin "{kept} lines kept out of {thrown} thrown."
 - After it posts, compare Viewed vs Swiped away and the retention graph with `out/retention_map.md`. The silent beat is at 12.4 s and the drop is at 12.8 s.
 
+
+## Coinspin
+
+A 30.4 s vertical Short. A gold coin rolls once around a coin of the same size and the counter counts its spins: 2, not 1. A coin twice as wide gives 3. Then the 1982 SAT question: a coin one third the size of the other, with the printed choices 3/2, 3, 6, 9/2 and 9. The counter reaches 3 (the test's answer) with a quarter lap still to go, the beat drops out, and the drop lands on 4. Rim ticks split it into 3 from rolling and 1 from the trip around. The big coin doubles on every beat and the +1 stays. The coins become the Sun and Earth: 365 days, 366 spins against the stars, one every 23 h 56 m 4 s. The last beat snaps back to two coins so frame 1823 matches frame 0. There is no voiceover.
+
+```bash
+python make_coinspin.py doctor
+python make_coinspin.py facts
+python make_coinspin.py timeline
+python make_coinspin.py stills
+python make_coinspin.py hooks
+python make_coinspin.py audio
+python make_coinspin.py preview --hook A --out out/coinspin_preview.mp4
+python make_coinspin.py postkit
+python make_coinspin.py verify --out out/coinspin.mp4
+python make_coinspin.py full --approved --hook A --out out/coinspin.mp4
+```
+
+`full` is refused without `--approved`. The master is 1080x1920 at 60 fps, 1824 frames; preview and hook clips are 540x960 at 30 fps. Outputs use a `coinspin_` prefix so other films' `out/` files are not overwritten. The music engine is the polycircle score with this film's events and seed 13: every quarter turn of the arrow is a pluck and every finished spin is a bell. The mix keeps the circlesquare AAC trim of 0.55 dB.
+
+### Rolling
+
+Angles run clockwise from straight up. In one lap the rolling coin's center goes once around the fixed coin, and with no slipping its arrow turns `(R + r) / r` times as far, so a coin `k` times wider gives `k + 1` spins. The stage is radius 400 px at (540, 915), and the pair is scaled by `400 / (k + 2)` so it always fits. Laps: frames 0-192 at 1x (spins on 96 and 192), 216-360 at 2x, 384-768 at 3x (spins on 480, 576, 672, 768), then an uncounted 3x lap to 960. Between laps the coin sits on top for one beat while the big coin grows. Every spin lands on the sixteenth-note grid. From 960 the big coin doubles on each beat, 6x to 196,608x, easing over 8 frames. A rolling coin under 20 px gets a gold ring and is never drawn smaller than 7 px. Earth's year runs 1392-1488 with a sine ease so it never moves more than about 34 px a frame.
+
+### Claims
+
+`configs/coinspin_claims.yaml`. The spin counts are computed by walking a lap through `rolling_pose`, the function the renderer draws, and checking at every sample that the coins touch and that the arc swept on the fixed rim equals the arc swept on the rolling rim. The SAT year, ratio, choices, and intended answer are cited (Scientific American, 2023). The tropical year (365.24219 days) is cited; the spins against the stars and the 23 h 56 m 4 s day are computed from it. `screen_counts` is every integer any counter shows; regenerate it from `fc_sat.coinspin_schedule.screen_counts()` if the schedule changes, or `facts` fails.
+
+### Verify
+
+`verify` checks the claims, the style law, that every spin bell lands on a frame where the arrow points straight up and the counter steps by one, that the coins touch on every rolling frame and stay inside the stage, that the rolling coin never jumps, the safe zone, overlaps, the six-element text limit, that every digit on screen names a claim, the loop seam SSIM, the frame 0 coin radius in pixels, luminance flashes, and with `--out` the file's size, rate, frame count, loudness, true peak, kick onset, spin onsets, and silent tail. The report is `out/coinspin_verify_report.md`.
+
+### Posting
+
+`postkit` writes `out/coinspin_postkit.md` and stills in `out/coinspin_thumbs/`. Upload with #Shorts, audience not made for kids. The music is original and the drawing is made with code. The Sun and Earth are not drawn to scale. Pin comment A (a coin 10x wider gives 11 spins), keep the reply, and post comment B (inside a ring 3x wider it spins 2 times) under the first wrong answer. Read Viewed vs Swiped away against `out/coinspin_retention_map.md`. If swipe-away is high, post hook D ("THE SAT GOT / THIS WRONG.") as its own upload at least a day later.
+
+### Phone checklist
+
+- The question is readable with the sound off, and the coin is already rolling on frame 0.
+- The counter reads 1 while the coin is only halfway around.
+- At frame 672 the coin is visibly not home yet while the counter says 3.
+- The three gold ticks and the gold orbit read as 3 + 1.
+- The loop feels seamless.

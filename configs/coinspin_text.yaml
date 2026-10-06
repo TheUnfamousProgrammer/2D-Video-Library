@@ -1,0 +1,111 @@
+# On-screen copy for the coinspin short. Top lines are at most 16 characters.
+# Digits survive only when the card names the claim that computed or cited them.
+# A slot is {claim} or {claim:fmt}; fmt is 2f (two decimals) or hms (23H 56M 4S).
+hooks:
+  A:
+    - "HOW MANY TIMES"
+    - "DOES IT SPIN?"
+  B:
+    - "ONE LAP AROUND."
+    - "HOW MANY SPINS?"
+  D:
+    - "THE SAT GOT"
+    - "THIS WRONG."
+cards:
+  - id: twice
+    start: 192
+    end: 288
+    lines: ["NOT ONCE.", "TWICE."]
+  - id: bigger
+    start: 288
+    end: 384
+    lines: ["BIGGER COIN?"]
+  - id: sat_ask
+    start: 384
+    end: 672
+    lines: ["{sat_year} SAT:", "HOW MANY SPINS?"]
+    claims: [sat_year]
+  - id: sat_said
+    start: 672
+    end: 768
+    lines: ["THEY SAID {sat_intended}."]
+    claims: [sat_intended]
+  - id: sat_wrong
+    start: 768
+    end: 876
+    lines: ["{sat_spins}. NOT EVEN", "AN OPTION."]
+    gold: ["{sat_spins}"]
+    claims: [sat_spins]
+  - id: split
+    start: 876
+    end: 960
+    lines: ["{sat_rolling} FROM ROLLING", "+{plus_one} FROM THE TRIP"]
+    gold: ["+{plus_one}"]
+    claims: [sat_rolling, plus_one]
+  - id: still
+    start: 960
+    end: 1152
+    lines: ["BIGGER COIN?", "STILL +{plus_one}."]
+    gold: ["+{plus_one}"]
+    claims: [plus_one]
+  - id: any
+    start: 1152
+    end: 1344
+    lines: ["ANY SIZE.", "STILL +{plus_one}."]
+    gold: ["+{plus_one}"]
+    claims: [plus_one]
+  - id: earth_ask
+    start: 1344
+    end: 1488
+    lines: ["NOW: EARTH", "AROUND THE SUN"]
+  - id: earth
+    start: 1488
+    end: 1632
+    lines: ["EARTH SPINS", "{sidereal_whole} TIMES A YEAR"]
+    gold: ["{sidereal_whole}"]
+    claims: [sidereal_whole]
+  - id: never
+    start: 1632
+    end: 1728
+    lines: ["THE +{plus_one} NEVER", "GOES AWAY."]
+    gold: ["+{plus_one}"]
+    claims: [plus_one]
+  - id: trip
+    start: 1728
+    end: 1800
+    lines: ["IT'S THE TRIP", "AROUND."]
+subs:
+  - id: same
+    start: 0
+    end: 192
+    template: "SAME SIZE COINS"
+  - id: ratio_two
+    start: 192
+    end: 360
+    template: "BIG COIN {ratio_two}X WIDER"
+    claims: [ratio_two]
+  - id: ratio_sat
+    start: 360
+    end: 960
+    template: "BIG COIN {sat_ratio}X WIDER"
+    claims: [sat_ratio]
+  - id: ratio_doubling
+    start: 960
+    end: 1344
+    template: "BIG COIN {ratio}X WIDER"
+    dynamic: doubling_ratio
+    claims: [doubling_ratios]
+  - id: sidereal_day
+    start: 1488
+    end: 1632
+    template: "{plus_one} SPIN = {sidereal_day_s:hms}"
+    claims: [plus_one, sidereal_day_s]
+  - id: year_split
+    start: 1632
+    end: 1800
+    template: "{tropical_year:2f} DAYS, {sidereal_year:2f} SPINS"
+    claims: [tropical_year, sidereal_year]
+  - id: same_again
+    start: 1800
+    end: 1824
+    template: "SAME SIZE COINS"
