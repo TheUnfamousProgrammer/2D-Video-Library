@@ -737,3 +737,19 @@ Each object is a paper-cut cutout on flat #FF00FF, one object centered, no groun
 ### Verify
 
 `verify` checks the claims and friendly lines, that no size is provisional, that every object is bigger than the last, the art, the style law, that every landing is on the sixteenth-note grid and rings a bell, that the camera is framed exactly on each object on its landing frame and only ever zooms out, the safe zone, overlaps, that every digit on screen names the focused object's claim (a counter wrapped onto two rows is linted as one number), that the held object never slides under the top card or the counter plate, the loop seam SSIM, luminance flashes, and with `--out` the file's size, rate, frame count, loudness, true peak, kick onset, landing onsets, and silent tail. The report is `out/scale_verify_report.md`.
+
+## Dive
+
+A 30.4 s vertical Short: the deepest and highest we've ever reached. The first half dives from the sea surface past the free-diving and scuba records, an emperor penguin, the midnight zone, the deepest-diving whale, the Titanic, the deepest shipwreck, the deepest fish ever filmed and Challenger Deep, to the bottom of the Kola Superdeep Borehole (12.3 km into rock). The drop cuts to sea level, `YOU ARE HERE.`, and the second half climbs: Burj Khalifa, Everest, airliners, the SR-71's horizontal-flight record, the highest skydive, the Karman line, the ISS, GPS and geostationary orbits, the Moon, Webb, Mars at its closest, the Sun, Neptune, New Horizons, and Voyager 1 on the impact. The counter is plain metres, negative on the way down. The last beat snaps back to the surface so frame 1823 matches frame 0.
+
+```bash
+python make_dive.py doctor
+python make_dive.py ingest
+python make_dive.py facts
+python make_dive.py stills
+python make_dive.py preview --out out/dive_preview.mp4
+python make_dive.py verify --out out/dive.mp4
+python make_dive.py full --approved --out out/dive.mp4
+```
+
+The camera (`fc_sat/dive_world.py`) puts sea level near the top for the dive and near the bottom for the climb. On each landing the view spans exactly that stop's depth or height; between stops it grows on a log scale, so everything passed sinks toward sea level and shrinks. You, the Burj and Everest stand side by side on sea level at true scale; every other stop is an icon pinned at its real depth or height, and a gauge on the left keeps a tick for each one. Values are in `configs/dive_claims.yaml`, fact-checked on 2026-10-06; the New Horizons and Voyager 1 distances are estimates for that date from NASA's anchors (Voyager 1 is one light-day from Earth on 18 Nov 2026). The art shares the scale short's ingest (`assets/art/objects` to `assets/art/scale`) and reuses its person, Burj, Everest, ISS, Moon and Sun. The score is the scale short's, seed 31; the bells fall with depth and rise with height.

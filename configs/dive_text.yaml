@@ -1,0 +1,9 @@
+# On-screen copy for the deepest-to-highest short. Top lines at most 16 characters, at most 3 lines.
+hooks:
+  A: ["THE DEEPEST AND", "HIGHEST WE'VE", "EVER REACHED"]
+  B: ["HOW FAR DOWN", "AND HOW FAR UP", "HAVE WE GONE?"]
+  D: ["FROM THE BOTTOM", "OF THE OCEAN TO", "THE EDGE OF IT"]
+cards:
+  - {id: wait, start: 696, end: 768, lines: ["NOW GO UP..."]}
+  - {id: you, start: 768, end: 864, lines: ["YOU ARE HERE."]}
+  - {id: edge, start: 1700, end: 1800, lines: ["IN NOVEMBER IT", "HITS A FULL", "LIGHT-DAY AWAY."]}

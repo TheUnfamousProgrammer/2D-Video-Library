@@ -1,0 +1,34 @@
+# Depths and heights the deepest-to-highest short may show, keyed by stop id. value is metres
+# from sea level (depths positive; the act says which way) or, from the Moon on, distance from
+# Earth; display is the friendly line, read back and checked against value. Fact-checked
+# 2026-10-06; the two spacecraft distances are estimates for that date from NASA anchors.
+whitelist: []
+claims:
+  d01_surface: {type: definitional, value: 0.0, digits: 1, display: "SEA LEVEL", text: "sea level", surfaces: ["0"]}
+  d02_freedive: {type: cited, value: 214.0, digits: 3, display: "214 METRES DOWN", text: "AIDA no-limits apnea world record, Herbert Nitsch, Spetses, 9 June 2007", source: "AIDA via Wikipedia, No-limits apnea", surfaces: []}
+  d03_scuba: {type: cited, value: 332.35, digits: 3, display: "332 METRES DOWN", text: "deepest open-circuit scuba dive, Ahmed Gabr, Red Sea, 2014", source: "Guinness World Records", surfaces: []}
+  d04_penguin: {type: cited, value: 564.0, digits: 3, display: "564 METRES DOWN", text: "deepest measured bird dive, an emperor penguin (Wienecke et al., Polar Biology, 2006)", source: "Guinness World Records; Australian Antarctic Division", surfaces: []}
+  d05_midnight: {type: cited, value: 1000.0, digits: 1, display: "1 KM DOWN", text: "top of the midnight (bathypelagic) zone; no sunlight below", source: "NOAA Ocean Explorer; WHOI", surfaces: []}
+  d06_whale: {type: cited, value: 2992.0, digits: 4, display: "3 KM DOWN", text: "deepest recorded mammal dive, a Cuvier's beaked whale (Schorr et al., PLOS ONE, 2014)", source: "Schorr et al. 2014, PLOS ONE 9(3) e92633", surfaces: []}
+  d07_titanic: {type: cited, value: 3800.0, digits: 2, display: "3.8 KM DOWN", text: "Titanic wreck site depth, about 12,500 ft", source: "NOAA Ocean Explorer; WHOI", surfaces: []}
+  d08_shipwreck: {type: cited, value: 6865.0, digits: 4, display: "6.9 KM DOWN", text: "USS Samuel B. Roberts, deepest shipwreck found, 22 June 2022", source: "Guinness World Records (revised from 6,895 m)", surfaces: []}
+  d09_fish: {type: cited, value: 8336.0, digits: 4, display: "8.3 KM DOWN", text: "deepest fish ever filmed, a snailfish, Izu-Ogasawara Trench, 2022", source: "Natural History Museum London; UWA, April 2023", surfaces: []}
+  d10_challenger: {type: cited, value: 10935.0, digits: 5, display: "10.9 KM DOWN", text: "Challenger Deep maximum depth, plus or minus 6 m (Greenaway et al. 2021)", source: "Int. J. Hydrography 2021; Guinness", surfaces: []}
+  d11_kola: {type: cited, value: 12262.0, digits: 5, display: "12.3 KM INTO ROCK", text: "Kola Superdeep Borehole SG-3, true vertical depth below the wellhead, 1989", source: "Guinness; Scientific American", surfaces: []}
+  u12_you: {type: cited, value: 1.71, digits: 2, display: "1.7 METRES", text: "global mean height of adult men, 1996 birth cohort", source: "NCD-RisC via Our World in Data", surfaces: []}
+  u13_burj: {type: cited, value: 828.0, digits: 3, display: "828 METRES UP", text: "Burj Khalifa architectural height", source: "Council on Tall Buildings and Urban Habitat", surfaces: []}
+  u14_everest: {type: cited, value: 8848.86, digits: 4, display: "8,849 METRES UP", text: "Everest summit above sea level, 2020 survey", source: "2020 joint China-Nepal survey", surfaces: []}
+  u15_airliner: {type: cited, value: 10668.0, digits: 3, display: "ABOUT 10.7 KM UP", text: "typical airliner cruise, 35,000 ft", source: "Stanford WideScope; FAA", surfaces: []}
+  u16_sr71: {type: cited, value: 25929.0, digits: 5, display: "25.9 KM UP", text: "FAI record for altitude in horizontal flight, SR-71A, 28 July 1976, 85,069 ft", source: "FAI records database", surfaces: []}
+  u17_jump: {type: cited, value: 41422.0, digits: 5, display: "41.4 KM UP", text: "highest freefall parachute jump, Alan Eustace, 24 Oct 2014, 135,890 ft", source: "Guinness World Records; FAI", surfaces: []}
+  u18_karman: {type: cited, value: 100000.0, digits: 1, display: "100 KM UP", text: "Karman line, the FAI boundary of space (the US uses 50 miles)", source: "FAI; McDowell, Acta Astronautica 2018", surfaces: []}
+  u19_iss: {type: cited, value: 415000.0, digits: 3, display: "ABOUT 415 KM UP", text: "ISS typical mean altitude, varies about 410 to 420 km", source: "NASA ISS facts", surfaces: []}
+  u20_gps: {type: cited, value: 20200000.0, digits: 3, display: "20,200 KM UP", text: "GPS nominal orbit altitude", source: "gps.gov Space Segment", surfaces: []}
+  u21_geo: {type: cited, value: 35786000.0, digits: 5, display: "35,786 KM UP", text: "geostationary orbit altitude above the equator", source: "NASA; ESA", surfaces: []}
+  u22_moon: {type: cited, value: 384400000.0, digits: 4, display: "384,400 KM AWAY", text: "Moon mean distance, centre to centre", source: "NASA NSSDC Moon fact sheet", surfaces: []}
+  u23_webb: {type: cited, value: 1.5e+9, digits: 2, display: "ABOUT 1.5 MILLION KM AWAY", text: "JWST halo orbit around Sun-Earth L2", source: "STScI JWST User Documentation", surfaces: []}
+  u24_mars: {type: cited, value: 5.576e+10, digits: 3, display: "55.8 MILLION KM AWAY", text: "Mars at its closest approach in about 60,000 years, 27 Aug 2003", source: "NASA/JPL 2003 releases", surfaces: []}
+  u25_sun: {type: cited, value: 1.495978707e+11, digits: 3, display: "150 MILLION KM AWAY", text: "1 astronomical unit, IAU 2012", source: "IAU 2012 Resolution B2", surfaces: []}
+  u26_neptune: {type: cited, value: 4.5e+12, digits: 2, display: "ABOUT 4.5 BILLION KM AWAY", text: "Neptune average distance, 30.07 AU; ranges 4.3 to 4.7 billion km", source: "NASA NSSDC Neptune fact sheet", surfaces: []}
+  u27_new_horizons: {type: cited, value: 9.82e+12, digits: 2, display: "ABOUT 9.8 BILLION KM AWAY", text: "New Horizons distance from Earth on 6 Oct 2026, estimated from NASA's 23 June 2026 figure", source: "NASA New Horizons blog, June 2026; JHUAPL", surfaces: []}
+  u28_voyager: {type: cited, value: 2.578e+13, digits: 3, display: "ABOUT 25.8 BILLION KM AWAY", text: "Voyager 1 distance from Earth on 6 Oct 2026, estimated from NASA's one light-day date of 18 Nov 2026", source: "NASA, Where are Voyager 1 and 2 now", surfaces: []}

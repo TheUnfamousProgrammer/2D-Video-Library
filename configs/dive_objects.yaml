@@ -1,0 +1,34 @@
+# Stops in the deepest-to-highest short, in order. Values come from configs/dive_claims.yaml by id.
+#   act: down (depth below sea level) or up (height above sea level, then distance from Earth)
+#   kind: structure (drawn to true scale, standing on sea level) or icon (fixed size at its depth or height)
+#   label: the small word above the counter
+#   art: cutout id in assets/art/scale (keyed from assets/art/objects, or reused from the scale short)
+stops:
+  - {id: d01_surface, name: "SEA LEVEL", art: d01_swimmer, act: down, kind: icon, land: 0, realm: shallow, label: DEPTH}
+  - {id: d02_freedive, name: "DEEPEST DIVE ON ONE BREATH", art: d02_freediver, act: down, kind: icon, land: 96, realm: shallow, label: DEPTH}
+  - {id: d03_scuba, name: "DEEPEST SCUBA DIVE", art: d03_scuba_diver, act: down, kind: icon, land: 192, realm: shallow, label: DEPTH}
+  - {id: d04_penguin, name: "EMPEROR PENGUIN", art: d04_emperor_penguin, act: down, kind: icon, land: 288, realm: twilight, label: DEPTH}
+  - {id: d05_midnight, name: "SUNLIGHT ENDS", art: d05_anglerfish, act: down, kind: icon, land: 384, realm: midnight, label: DEPTH}
+  - {id: d06_whale, name: "DEEPEST DIVING WHALE", art: d06_beaked_whale, act: down, kind: icon, land: 432, realm: midnight, label: DEPTH}
+  - {id: d07_titanic, name: "TITANIC", art: d07_titanic_bow, act: down, kind: icon, land: 480, realm: abyss, label: DEPTH}
+  - {id: d08_shipwreck, name: "DEEPEST SHIPWRECK", art: d08_shipwreck, act: down, kind: icon, land: 528, realm: abyss, label: DEPTH}
+  - {id: d09_fish, name: "DEEPEST FISH EVER FILMED", art: d09_snailfish, act: down, kind: icon, land: 576, realm: abyss, label: DEPTH}
+  - {id: d10_challenger, name: "BOTTOM OF THE OCEAN", art: d10_deep_submersible, act: down, kind: icon, land: 624, realm: trench, label: DEPTH}
+  - {id: d11_kola, name: "DEEPEST HOLE EVER DUG", art: d11_drill_rig, act: down, kind: icon, land: 672, realm: rock, label: DEPTH}
+  - {id: u12_you, name: "YOU", art: o01_person, act: up, kind: structure, land: 768, realm: ground, label: HEIGHT}
+  - {id: u13_burj, name: "BURJ KHALIFA", art: o04_burj_khalifa, act: up, kind: structure, land: 864, realm: ground, label: HEIGHT}
+  - {id: u14_everest, name: "MOUNT EVEREST", art: s19_everest, act: up, kind: structure, land: 912, realm: sky, label: HEIGHT}
+  - {id: u15_airliner, name: "PLANES FLY HERE", art: d14_airliner, act: up, kind: icon, land: 960, realm: sky, label: HEIGHT}
+  - {id: u16_sr71, name: "HIGHEST STEADY JET FLIGHT", art: d15_sr71, act: up, kind: icon, land: 1008, realm: high, label: HEIGHT}
+  - {id: u17_jump, name: "HIGHEST SKYDIVE EVER", art: d16_skydiver_capsule, act: up, kind: icon, land: 1056, realm: high, label: HEIGHT}
+  - {id: u18_karman, name: "SPACE STARTS HERE", art: d17_rocket, act: up, kind: icon, land: 1104, realm: space, label: HEIGHT}
+  - {id: u19_iss, name: "SPACE STATION", art: o05_iss, act: up, kind: icon, land: 1152, realm: space, label: HEIGHT}
+  - {id: u20_gps, name: "GPS SATELLITES", art: d19_gps_satellite, act: up, kind: icon, land: 1200, realm: space, label: HEIGHT}
+  - {id: u21_geo, name: "TV SATELLITES", art: d20_geo_satellite, act: up, kind: icon, land: 1248, realm: space, label: HEIGHT}
+  - {id: u22_moon, name: "MOON", art: o06_moon, act: up, kind: icon, land: 1296, realm: space, label: DISTANCE}
+  - {id: u23_webb, name: "WEBB TELESCOPE", art: d22_webb_telescope, act: up, kind: icon, land: 1344, realm: space, label: DISTANCE}
+  - {id: u24_mars, name: "MARS AT ITS CLOSEST", art: d23_mars, act: up, kind: icon, land: 1392, realm: deep, label: DISTANCE}
+  - {id: u25_sun, name: "SUN", art: s23_sun, act: up, kind: icon, land: 1440, realm: deep, label: DISTANCE}
+  - {id: u26_neptune, name: "NEPTUNE", art: d24_neptune, act: up, kind: icon, land: 1500, realm: deep, label: DISTANCE}
+  - {id: u27_new_horizons, name: "NEW HORIZONS", art: d25_new_horizons, act: up, kind: icon, land: 1560, realm: deep, label: DISTANCE}
+  - {id: u28_voyager, name: "VOYAGER 1", art: d26_voyager, act: up, kind: icon, land: 1632, realm: deep, label: DISTANCE}

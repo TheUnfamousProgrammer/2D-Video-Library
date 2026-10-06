@@ -71,6 +71,9 @@ def display_metres(display: str) -> float | None:
     for lead in ("ABOUT ", "UP TO "):
         if text.startswith(lead):
             text = text[len(lead):]
+    for tail in (" INTO ROCK", " DOWN", " UP", " AWAY", " HIGH", " DEEP"):
+        if text.endswith(tail):
+            text = text[: -len(tail)]
     match = _NUMBER.match(text)
     if match is None:
         return None
@@ -92,6 +95,8 @@ def display_metres(display: str) -> float | None:
 def display_errors(sizes: dict[str, dict]) -> list[str]:
     errors = []
     for object_id, body in sizes.items():
+        if body.get("type") == "definitional":
+            continue
         shown = display_metres(str(body.get("display", "")))
         if shown is None:
             errors.append(f"{object_id}: cannot read display {body.get('display')!r}")
