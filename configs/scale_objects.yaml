@@ -5,32 +5,34 @@
 #   land: the frame the camera arrives on it (on a beat)
 #   realm: picks the background tint
 #   shape/color: placeholder drawn until the art exists
+# Ids are stable art filenames, not positions: s16 (ISS, too close to the statue) and s27
+# (Andromeda, too close to the Milky Way) were dropped after the fact check; s29 and s30 were added.
 objects:
   - {id: s01_proton, name: "PROTON", art: s01_proton, measure: width, land: 0, realm: quantum, shape: circle, color: "#E07A5F"}
   - {id: s02_hydrogen_atom, name: "HYDROGEN ATOM", art: s02_hydrogen_atom, measure: width, land: 96, realm: quantum, shape: circle, color: "#81B29A"}
   - {id: s03_dna, name: "DNA", art: s03_dna, measure: width, land: 192, realm: micro, shape: tall, color: "#F2CC8F"}
-  - {id: s04_virus, name: "VIRUS", art: s04_virus, measure: width, land: 288, realm: micro, shape: circle, color: "#E07A5F"}
+  - {id: s04_virus, name: "CORONAVIRUS", art: s04_virus, measure: width, land: 288, realm: micro, shape: circle, color: "#E07A5F"}
   - {id: s05_bacterium, name: "BACTERIUM", art: s05_bacterium, measure: width, land: 384, realm: micro, shape: wide, color: "#81B29A"}
   - {id: s06_red_blood_cell, name: "RED BLOOD CELL", art: s06_red_blood_cell, measure: width, land: 432, realm: micro, shape: circle, color: "#D64545"}
   - {id: s07_human_hair, name: "HUMAN HAIR", art: s07_human_hair, measure: width, land: 480, realm: micro, shape: tall, color: "#6B4F3A"}
   - {id: s08_sand_grain, name: "GRAIN OF SAND", art: s08_sand_grain, measure: width, land: 528, realm: life, shape: circle, color: "#E9C46A"}
-  - {id: s09_ant, name: "ANT", art: s09_ant, measure: width, land: 576, realm: life, shape: wide, color: "#3D405B"}
+  - {id: s09_ant, name: "GARDEN ANT", art: s09_ant, measure: width, land: 576, realm: life, shape: wide, color: "#3D405B"}
   - {id: s10_smartphone, name: "SMARTPHONE", art: o03_smartphone, measure: height, land: 624, realm: life, shape: tall, color: "#3D5A80"}
   - {id: s11_cat, name: "CAT", art: s11_cat, measure: width, land: 672, realm: life, shape: square, color: "#F4A261"}
   - {id: s12_person, name: "YOU", art: o01_person, measure: height, land: 768, realm: human, shape: tall, color: "#F2F4F8"}
   - {id: s13_giraffe, name: "GIRAFFE", art: s13_giraffe, measure: height, land: 864, realm: human, shape: tall, color: "#E9C46A"}
   - {id: s14_blue_whale, name: "BLUE WHALE", art: s14_blue_whale, measure: width, land: 912, realm: human, shape: wide, color: "#3D5A80"}
   - {id: s15_statue_of_liberty, name: "STATUE OF LIBERTY", art: s15_statue_of_liberty, measure: height, land: 960, realm: city, shape: tall, color: "#7FB3A0"}
-  - {id: s16_iss, name: "SPACE STATION", art: o05_iss, measure: height, land: 1008, realm: city, shape: square, color: "#C9D1DC"}
-  - {id: s17_eiffel_tower, name: "EIFFEL TOWER", art: s17_eiffel_tower, measure: height, land: 1056, realm: city, shape: tall, color: "#8D6E63"}
-  - {id: s18_burj_khalifa, name: "BURJ KHALIFA", art: o04_burj_khalifa, measure: height, land: 1104, realm: city, shape: tall, color: "#E0E6EE"}
-  - {id: s19_everest, name: "MOUNT EVEREST", art: s19_everest, measure: height, land: 1152, realm: sky, shape: peak, color: "#E8EEF5"}
-  - {id: s20_moon, name: "MOON", art: o06_moon, measure: width, land: 1200, realm: space, shape: circle, color: "#C9C2B0"}
-  - {id: s21_earth, name: "EARTH", art: o07_earth, measure: width, land: 1248, realm: space, shape: circle, color: "#3D7AB8"}
-  - {id: s22_jupiter, name: "JUPITER", art: s22_jupiter, measure: width, land: 1296, realm: space, shape: circle, color: "#D9A066"}
-  - {id: s23_sun, name: "SUN", art: s23_sun, measure: width, land: 1344, realm: space, shape: circle, color: "#FFB347"}
-  - {id: s24_biggest_star, name: "BIGGEST KNOWN STAR", art: s24_biggest_star, measure: width, land: 1392, realm: space, shape: circle, color: "#E4572E"}
-  - {id: s25_solar_system, name: "SOLAR SYSTEM", art: s25_solar_system, measure: width, land: 1440, realm: deep, shape: circle, color: "#5F7CFF"}
+  - {id: s17_eiffel_tower, name: "EIFFEL TOWER", art: s17_eiffel_tower, measure: height, land: 1008, realm: city, shape: tall, color: "#8D6E63"}
+  - {id: s18_burj_khalifa, name: "BURJ KHALIFA", art: o04_burj_khalifa, measure: height, land: 1056, realm: city, shape: tall, color: "#E0E6EE"}
+  - {id: s19_everest, name: "MOUNT EVEREST", art: s19_everest, measure: height, land: 1104, realm: sky, shape: peak, color: "#E8EEF5"}
+  - {id: s20_moon, name: "MOON", art: o06_moon, measure: width, land: 1152, realm: space, shape: circle, color: "#C9C2B0"}
+  - {id: s21_earth, name: "EARTH", art: o07_earth, measure: width, land: 1200, realm: space, shape: circle, color: "#3D7AB8"}
+  - {id: s22_jupiter, name: "JUPITER", art: s22_jupiter, measure: width, land: 1248, realm: space, shape: circle, color: "#D9A066"}
+  - {id: s23_sun, name: "SUN", art: s23_sun, measure: width, land: 1296, realm: space, shape: circle, color: "#FFB347"}
+  - {id: s24_biggest_star, name: "UY SCUTI", art: s24_biggest_star, measure: width, land: 1344, realm: space, shape: circle, color: "#E4572E"}
+  - {id: s25_solar_system, name: "NEPTUNE'S ORBIT", art: s25_solar_system, measure: width, land: 1392, realm: deep, shape: circle, color: "#5F7CFF"}
+  - {id: s29_orion_nebula, name: "ORION NEBULA", art: s29_orion_nebula, measure: width, land: 1440, realm: deep, shape: circle, color: "#FF8FA3"}
   - {id: s26_milky_way, name: "MILKY WAY", art: s26_milky_way, measure: width, land: 1500, realm: deep, shape: galaxy, color: "#A55EEA"}
-  - {id: s27_andromeda, name: "ANDROMEDA", art: s27_andromeda, measure: width, land: 1560, realm: deep, shape: galaxy, color: "#FF6BCB"}
+  - {id: s30_laniakea, name: "LANIAKEA SUPERCLUSTER", art: s30_laniakea, measure: width, land: 1560, realm: deep, shape: galaxy, color: "#FF6BCB"}
   - {id: s28_observable_universe, name: "OBSERVABLE UNIVERSE", art: s28_observable_universe, measure: width, land: 1632, realm: deep, shape: circle, color: "#48DBFB"}

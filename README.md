@@ -705,3 +705,35 @@ Angles run clockwise from straight up, and `theta` is the gold coin's total turn
 - The flat road is plainly the grey edge laid out, and the bolted coin plainly cannot roll.
 - `1 + 1 = 2` and `3 + 1 = 4` read in their colors: cyan for rolling, pink for the trip around.
 - The loop feels seamless.
+
+## Scale
+
+A 30.4 s vertical Short. 28 things stand side by side on one baseline, at their true relative sizes, from a proton to the observable universe. The camera lands on one object per beat, then pans right and zooms out on a log scale to the next. The counter shows each size in plain metres, so the zeros fall away on the left and pile up on the right, with a friendly line under it (`12,756 KM`, `ABOUT 900 SUNS WIDE`). The drop at 12.8 s lands on a person, `YOU ARE HERE.`, and the impact at 27.2 s lands on the observable universe, 93 billion light-years across. The last beat snaps back to the proton so frame 1823 matches frame 0. There is no voiceover.
+
+```bash
+python make_scale.py doctor
+python make_scale.py ingest
+python make_scale.py facts
+python make_scale.py timeline
+python make_scale.py stills
+python make_scale.py hooks
+python make_scale.py audio
+python make_scale.py preview --hook A --out out/scale_preview.mp4
+python make_scale.py postkit
+python make_scale.py verify --out out/scale.mp4
+python make_scale.py full --approved --hook A --out out/scale.mp4
+```
+
+`full` is refused without `--approved`, and refused while any object is still a placeholder unless `--allow-placeholders` is passed (`verify` takes the same flag). The master is 1080x1920 at 60 fps, 1824 frames; preview and hook clips are 540x960 at 30 fps. Outputs use a `scale_` prefix. The score is the polycircle engine with the polycircle short's own accelerating arp into the silent beat, seed 29: every landing rings a bell whose pitch climbs with log size (proton lowest, universe highest), impacts on 768, 960 and 1632, and the chime on 1700.
+
+### Art
+
+Each object is a paper-cut cutout on flat #FF00FF, one object centered, no ground, no shadow, no text, about 768x1376, named with its id prefix (`s04_virus.png`, `s04_virus_png_1.jpg`). Drop them in `assets/art/objects/` and run `ingest`: it keys the magenta, trims to the alpha box and writes `assets/art/scale/<id>.png`, warning when the border is not flat magenta. The person, phone, Burj Khalifa, Moon and Earth reuse the paperfold cutouts in `assets/art/keyed/`. Until a cutout exists the renderer draws a flat placeholder shape, and `doctor` lists what is still missing. The cited size is the cutout's alpha-box width or height (`measure` in `configs/scale_objects.yaml`), so the art has to match what was measured: the Statue of Liberty includes its pedestal (93 m to the torch), the bacterium is a rod measured along its long axis, the cat's length excludes the tail.
+
+### Claims
+
+`configs/scale_claims.yaml`. Every size is cited, researched and adversarially checked; caveats live in `text` so the sources comment can quote them. The counter is `scale_format.metres(value, digits)`. The friendly line is parsed back to metres and must be within 8% of the cited size, so a typo in `display` cannot ship. Values must be YAML numbers: PyYAML reads `9.0e12` as a string, so exponents are written `9.0e+12`, and the loader refuses anything else. Labels follow the checks: `UY SCUTI` (one of the biggest known stars, not the biggest), `NEPTUNE'S ORBIT` (not the Solar System), `OBSERVABLE UNIVERSE` (not the universe), `UP TO 30 METRES` for the whale.
+
+### Verify
+
+`verify` checks the claims and friendly lines, that no size is provisional, that every object is bigger than the last, the art, the style law, that every landing is on the sixteenth-note grid and rings a bell, that the camera is framed exactly on each object on its landing frame and only ever zooms out, the safe zone, overlaps, that every digit on screen names the focused object's claim (a counter wrapped onto two rows is linted as one number), that the held object never slides under the top card or the counter plate, the loop seam SSIM, luminance flashes, and with `--out` the file's size, rate, frame count, loudness, true peak, kick onset, landing onsets, and silent tail. The report is `out/scale_verify_report.md`.

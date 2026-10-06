@@ -1,34 +1,35 @@
 # Sizes the scale short is allowed to show. One cited claim per object, keyed by object id.
-# value is metres; display is the friendly line under the counter; digits sets how many
-# significant digits the plain-metres counter keeps.
-# PROVISIONAL: replaced by the sourced, adversarially checked values before the final render.
+# value is metres; display is the friendly line under the counter (read back and checked
+# against value by scale_claims.display_errors); digits sets how many significant digits the
+# plain-metres counter keeps. Values were researched and adversarially verified on 2026-10-06;
+# caveats are kept in text so the pinned sources comment can quote them.
 whitelist: []
 claims:
-  s01_proton: {type: cited, value: 1.7e-15, digits: 2, display: "1.7 FEMTOMETRES", text: "proton charge diameter", source: "provisional", surfaces: []}
-  s02_hydrogen_atom: {type: cited, value: 1.06e-10, digits: 2, display: "0.1 NANOMETRES", text: "hydrogen atom diameter, twice the Bohr radius", source: "provisional", surfaces: []}
-  s03_dna: {type: cited, value: 2.0e-9, digits: 1, display: "2 NANOMETRES", text: "DNA double helix width", source: "provisional", surfaces: []}
-  s04_virus: {type: cited, value: 1.0e-7, digits: 1, display: "100 NANOMETRES", text: "coronavirus particle diameter", source: "provisional", surfaces: []}
-  s05_bacterium: {type: cited, value: 2.0e-6, digits: 1, display: "2 MICROMETRES", text: "E. coli length", source: "provisional", surfaces: []}
-  s06_red_blood_cell: {type: cited, value: 7.5e-6, digits: 2, display: "7.5 MICROMETRES", text: "red blood cell diameter", source: "provisional", surfaces: []}
-  s07_human_hair: {type: cited, value: 7.0e-5, digits: 1, display: "70 MICROMETRES", text: "human hair width", source: "provisional", surfaces: []}
-  s08_sand_grain: {type: cited, value: 5.0e-4, digits: 1, display: "HALF A MILLIMETRE", text: "medium sand grain", source: "provisional", surfaces: []}
-  s09_ant: {type: cited, value: 5.0e-3, digits: 1, display: "5 MILLIMETRES", text: "black garden ant worker length", source: "provisional", surfaces: []}
-  s10_smartphone: {type: cited, value: 0.15, digits: 2, display: "15 CENTIMETRES", text: "smartphone height", source: "provisional", surfaces: []}
-  s11_cat: {type: cited, value: 0.46, digits: 2, display: "46 CENTIMETRES", text: "house cat body length", source: "provisional", surfaces: []}
-  s12_person: {type: cited, value: 1.7, digits: 2, display: "1.7 METRES", text: "adult height", source: "provisional", surfaces: []}
-  s13_giraffe: {type: cited, value: 5.5, digits: 2, display: "5.5 METRES", text: "tall giraffe height", source: "provisional", surfaces: []}
-  s14_blue_whale: {type: cited, value: 30.0, digits: 2, display: "30 METRES", text: "large blue whale length", source: "provisional", surfaces: []}
-  s15_statue_of_liberty: {type: cited, value: 93.0, digits: 2, display: "93 METRES", text: "ground to torch", source: "provisional", surfaces: []}
-  s16_iss: {type: cited, value: 109.0, digits: 3, display: "109 METRES", text: "ISS truss span", source: "provisional", surfaces: []}
-  s17_eiffel_tower: {type: cited, value: 330.0, digits: 3, display: "330 METRES", text: "Eiffel Tower height", source: "provisional", surfaces: []}
-  s18_burj_khalifa: {type: cited, value: 828.0, digits: 3, display: "828 METRES", text: "Burj Khalifa height", source: "provisional", surfaces: []}
-  s19_everest: {type: cited, value: 8849.0, digits: 4, display: "8,849 METRES", text: "Everest height above sea level", source: "provisional", surfaces: []}
-  s20_moon: {type: cited, value: 3474800.0, digits: 4, display: "3,475 KM", text: "Moon diameter", source: "provisional", surfaces: []}
-  s21_earth: {type: cited, value: 12742000.0, digits: 5, display: "12,742 KM", text: "Earth diameter", source: "provisional", surfaces: []}
-  s22_jupiter: {type: cited, value: 139820000.0, digits: 5, display: "139,820 KM", text: "Jupiter equatorial diameter", source: "provisional", surfaces: []}
-  s23_sun: {type: cited, value: 1.3927e9, digits: 3, display: "1.39 MILLION KM", text: "Sun diameter", source: "provisional", surfaces: []}
-  s24_biggest_star: {type: cited, value: 2.4e12, digits: 2, display: "ABOUT 1,700 SUNS WIDE", text: "UY Scuti estimated diameter", source: "provisional", surfaces: []}
-  s25_solar_system: {type: cited, value: 9.0e12, digits: 1, display: "NEPTUNE'S ORBIT: 9 BILLION KM", text: "diameter of Neptune's orbit", source: "provisional", surfaces: []}
-  s26_milky_way: {type: cited, value: 9.5e20, digits: 2, display: "100,000 LIGHT-YEARS", text: "Milky Way disk diameter", source: "provisional", surfaces: []}
-  s27_andromeda: {type: cited, value: 2.1e21, digits: 2, display: "220,000 LIGHT-YEARS", text: "Andromeda diameter", source: "provisional", surfaces: []}
-  s28_observable_universe: {type: cited, value: 8.8e26, digits: 2, display: "93 BILLION LIGHT-YEARS", text: "observable universe diameter", source: "provisional", surfaces: []}
+  s01_proton: {type: cited, value: 1.68e-15, digits: 2, display: "1.7 FEMTOMETRES", text: "proton charge diameter, twice the CODATA 2022 rms charge radius of 0.84075 fm; a proton has no hard edge", source: "CODATA 2022 via NIST CUU, physics.nist.gov/cgi-bin/cuu/Value?rp; PDG 0.8409 fm", surfaces: []}
+  s02_hydrogen_atom: {type: cited, value: 1.06e-10, digits: 1, display: "0.1 NANOMETRES", text: "hydrogen atom diameter as twice the Bohr radius; definitions of atomic size spread about 4x", source: "CODATA Bohr radius via NIST CUU, physics.nist.gov/cgi-bin/cuu/Value?bohrrada0", surfaces: []}
+  s03_dna: {type: cited, value: 2.0e-9, digits: 1, display: "2 NANOMETRES", text: "width of the B-form DNA double helix", source: "CUHK Biochemistry, forms of DNA (B-DNA about 2.0 nm wide)", surfaces: []}
+  s04_virus: {type: cited, value: 1.0e-7, digits: 1, display: "100 NANOMETRES", text: "SARS-CoV-2 virion, rounded overall diameter; envelope alone about 85 to 91 nm", source: "Bar-On, Flamholz, Phillips and Milo, SARS-CoV-2 by the numbers, eLife 2020", surfaces: []}
+  s05_bacterium: {type: cited, value: 2.0e-6, digits: 1, display: "2 MICROMETRES", text: "E. coli cell length along its long axis; width about 0.8 um", source: "BioNumbers BNID 102065", surfaces: []}
+  s06_red_blood_cell: {type: cited, value: 7.5e-6, digits: 2, display: "7.5 MICROMETRES", text: "human red blood cell, face-on diameter of the disc", source: "BioNumbers BNID 112779", surfaces: []}
+  s07_human_hair: {type: cited, value: 7.0e-5, digits: 1, display: "70 MICROMETRES", text: "width of a typical strand of scalp hair; range about 17 to 181 um", source: "BioNumbers BNID 114258 (scalp hair 60 to 80 um)", surfaces: []}
+  s08_sand_grain: {type: cited, value: 3.5e-4, digits: 2, display: "0.35 MILLIMETRES", text: "medium sand grain, midpoint of the Udden-Wentworth medium sand class", source: "Udden-Wentworth grain size scale (medium sand 0.25 to 0.5 mm)", surfaces: []}
+  s09_ant: {type: cited, value: 4.0e-3, digits: 1, display: "4 MILLIMETRES", text: "black garden ant (Lasius niger) worker body length", source: "Lasius niger worker length 3 to 5 mm", surfaces: []}
+  s10_smartphone: {type: cited, value: 0.147, digits: 2, display: "15 CENTIMETRES", text: "height of a typical modern smartphone", source: "manufacturer spec sheets, typical 6.1 inch phones about 147 mm tall", surfaces: []}
+  s11_cat: {type: cited, value: 0.46, digits: 2, display: "46 CENTIMETRES", text: "house cat body length without the tail", source: "typical domestic cat head and body length about 46 cm", surfaces: []}
+  s12_person: {type: cited, value: 1.71, digits: 2, display: "1.7 METRES", text: "global mean height of adult men, 1996 birth cohort", source: "NCD-RisC via Our World in Data, ourworldindata.org/human-height", surfaces: []}
+  s13_giraffe: {type: cited, value: 5.5, digits: 2, display: "5.5 METRES", text: "height of a tall adult male giraffe", source: "adult male giraffes reach about 5.5 m", surfaces: []}
+  s14_blue_whale: {type: cited, value: 30.0, digits: 2, display: "UP TO 30 METRES", text: "largest blue whales, about the maximum reliably measured length (29.5 to 29.9 m)", source: "Britannica, blue whale", surfaces: []}
+  s15_statue_of_liberty: {type: cited, value: 93.0, digits: 2, display: "93 METRES", text: "ground to torch, pedestal and foundation included (305 ft 1 in)", source: "National Park Service, Statue of Liberty statistics", surfaces: []}
+  s17_eiffel_tower: {type: cited, value: 330.0, digits: 3, display: "330 METRES", text: "Eiffel Tower height including antennas", source: "Société d'Exploitation de la Tour Eiffel, toureiffel.paris", surfaces: []}
+  s18_burj_khalifa: {type: cited, value: 828.0, digits: 3, display: "828 METRES", text: "Burj Khalifa architectural height", source: "Council on Tall Buildings and Urban Habitat", surfaces: []}
+  s19_everest: {type: cited, value: 8848.86, digits: 4, display: "8,849 METRES", text: "Everest summit above sea level, 2020 China-Nepal survey 8,848.86 m", source: "2020 joint China-Nepal survey", surfaces: []}
+  s20_moon: {type: cited, value: 3476200.0, digits: 4, display: "3,476 KM", text: "Moon equatorial diameter", source: "NASA NSSDC Moon fact sheet", surfaces: []}
+  s21_earth: {type: cited, value: 12756274.0, digits: 5, display: "12,756 KM", text: "Earth equatorial diameter", source: "NASA NSSDC Earth fact sheet", surfaces: []}
+  s22_jupiter: {type: cited, value: 142984000.0, digits: 3, display: "143,000 KM", text: "Jupiter equatorial diameter at 1 bar", source: "NASA NSSDC Jupiter fact sheet", surfaces: []}
+  s23_sun: {type: cited, value: 1391400000.0, digits: 3, display: "1.39 MILLION KM", text: "twice the IAU 2015 nominal solar radius of 695,700 km", source: "IAU 2015 Resolution B3", surfaces: []}
+  s24_biggest_star: {type: cited, value: 1.2648e+12, digits: 2, display: "ABOUT 900 SUNS WIDE", text: "UY Scuti, one of the biggest known stars, 909 solar radii (2023 estimate on the Gaia DR3 distance); published radii span more than 2x and it is not the single biggest", source: "UY Scuti 2023 radius estimate as summarized by en.wikipedia.org/wiki/UY_Scuti", surfaces: []}
+  s25_solar_system: {type: cited, value: 9.0e+12, digits: 1, display: "9 BILLION KM", text: "diameter of Neptune's orbit, twice its 30.07 AU semi-major axis; the Solar System reaches far beyond it", source: "NASA NSSDC Neptune fact sheet", surfaces: []}
+  s29_orion_nebula: {type: cited, value: 2.2706e+17, digits: 2, display: "24 LIGHT-YEARS", text: "Orion Nebula (M42), about 24 light-years across; a nebula has no hard edge", source: "Orion Nebula, about 24 light-years across, 1,344 light-years away (en.wikipedia.org/wiki/Orion_Nebula)", surfaces: []}
+  s26_milky_way: {type: cited, value: 9.4607e+20, digits: 2, display: "100,000 LIGHT-YEARS", text: "Milky Way stellar disk, the rounded NASA and ESA figure; a galaxy has no hard edge", source: "ESA Gaia, anatomy of the Milky Way", surfaces: []}
+  s30_laniakea: {type: cited, value: 4.937e+24, digits: 2, display: "520 MILLION LIGHT-YEARS", text: "Laniakea Supercluster, about 160 megaparsecs across, home of the Milky Way", source: "Tully, Courtois, Hoffman and Pomarede, Nature 513, 71 (2014)", surfaces: []}
+  s28_observable_universe: {type: cited, value: 8.7985e+26, digits: 2, display: "93 BILLION LIGHT-YEARS", text: "observable universe, comoving diameter in standard Lambda-CDM with Planck parameters; the whole universe may be far larger", source: "en.wikipedia.org/wiki/Observable_universe; Britannica", surfaces: []}

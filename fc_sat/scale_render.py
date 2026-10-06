@@ -24,7 +24,11 @@ except ImportError:  # pragma: no cover
 ROOT = Path(__file__).resolve().parents[1]
 TEXT_PATH = ROOT / "configs" / "scale_text.yaml"
 SAFE = (130.0, 950.0, 200.0, 1536.0)
-COUNTER_TOP = 1340.0
+COUNTER_TOP = 1296.0
+# Below this size a counter wraps onto two lines at a comma.
+WRAP_BELOW = 64.0
+# Two rows must still leave the friendly line inside the safe zone.
+TWO_ROW_MAX = 72.0
 REALMS = {
     "quantum": "#150F26",
     "micro": "#0C1C1E",
@@ -129,8 +133,7 @@ class ScaleRenderer:
         step = size * 1.06
         for index, line in enumerate(lines):
             ink = measure("word", size, line)
-            color = GOLD if is_name and False else TEXT
-            boxes.append(TextBox(line, (self.width - ink.width) / 2.0, self.px(200) + index * step, ink.width, ink.height, size, "word", color, 1.0))
+            boxes.append(TextBox(line, (self.width - ink.width) / 2.0, self.px(200) + index * step, ink.width, ink.height, size, "word", TEXT, 1.0))
         index = focus_index(self.placed, frame)
         label = "SIZE" if is_name or frame >= SNAP[0] or frame < self.placed[1].item.land - 24 else self.placed[index].item.name
         label_size = _fit("word", label, self.px(40), self.px(28), limit)
@@ -138,12 +141,18 @@ class ScaleRenderer:
         cursor = self.px(COUNTER_TOP)
         boxes.append(TextBox(label, (self.width - ink.width) / 2.0, cursor, ink.width, ink.height, label_size, "word", MUTED, 1.0))
         cursor += measure("word", self.px(40), "SIZE").height + self.px(16)
-        value = self.scene.counters[index]
-        value_size = _fit("mono", value, self.px(110), self.px(30), limit)
-        ink = measure("mono", value_size, value)
-        rest = measure("mono", self.px(110), "8").height
-        boxes.append(TextBox(value, (self.width - ink.width) / 2.0, cursor + (rest - ink.height), ink.width, ink.height, value_size, "mono", TEXT, 1.0))
-        cursor += rest + self.px(16)
+        rows = counter_rows(self.scene.counters[index], limit, self.px(110), self.px(WRAP_BELOW), self.px(30))
+        top_size = self.px(110 if len(rows) == 1 else TWO_ROW_MAX)
+        value_size = min(_fit("mono", row, top_size, self.px(30), limit) for row in rows)
+        # Rows share a baseline grid; a comma's tail hangs below it, so each row reserves room for one.
+        digit = measure("mono", value_size, "8")
+        row_height = measure("mono", value_size, "8,").height
+        for row in rows:
+            ink = measure("mono", value_size, row)
+            baseline = cursor - digit.top
+            boxes.append(TextBox(row, (self.width - ink.width) / 2.0, baseline + ink.top, ink.width, ink.height, value_size, "mono", TEXT, 1.0))
+            cursor += row_height + self.px(8)
+        cursor += self.px(4)
         sub = self.scene.displays[index]
         sub_size = _fit("word", sub, self.px(40), self.px(26), limit)
         ink = measure("word", sub_size, sub)
@@ -252,6 +261,16 @@ class ScaleRenderer:
         started = time.perf_counter()
         self.render(1000)
         return (time.perf_counter() - started) * 1000.0
+
+
+def counter_rows(value: str, limit: float, top: float, wrap_below: float, floor: float) -> tuple[str, ...]:
+    """One line if it fits big enough, else two lines split at the comma nearest the middle."""
+    if _fit("mono", value, top, floor, limit) >= wrap_below or value.count(",") < 2:
+        return (value,)
+    commas = [index for index, char in enumerate(value) if char == ","]
+    middle = len(value) / 2.0
+    cut = min(commas, key=lambda index: abs(index + 1 - middle))
+    return value[: cut + 1], value[cut + 1 :]
 
 
 def _wrap(name: str, limit: int = 16) -> tuple[str, ...]:
