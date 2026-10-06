@@ -115,7 +115,8 @@ class SkiaCanvas:
         self.canvas.drawTextBlob(blob, float(x) - ink.left, float(y) - ink.top, self._paint(hex_color, alpha))
 
     def rgb(self) -> np.ndarray:
-        image = self.surface.makeImageSnapshot().toarray()
+        # A default surface is BGRA on some builds (Linux skia-python 144). Ask for RGBA by name.
+        image = self.surface.makeImageSnapshot().toarray(colorType=skia.kRGBA_8888_ColorType)
         return np.ascontiguousarray(image[:, :, :3])
 
 
