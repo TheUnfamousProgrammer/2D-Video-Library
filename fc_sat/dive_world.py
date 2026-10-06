@@ -26,7 +26,7 @@ HEIGHT = 1920
 N_FRAMES = 1824
 SNAP = (1800, 1806)
 SEA = {"down": 640.0, "up": 1250.0}
-ANCHOR = {"down": 1130.0, "up": 660.0}
+ANCHOR = {"down": 1100.0, "up": 680.0}
 # The surface stop has no depth; the dive opens on this many metres of water.
 SURFACE_SPAN = 12.0
 DRIFT = 0.04

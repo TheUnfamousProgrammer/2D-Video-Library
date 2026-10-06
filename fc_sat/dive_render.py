@@ -53,8 +53,8 @@ AIR = "#101826"
 WATER = "#0E3346"
 SEA_LINE = "#7FB3C8"
 SPACE = {"space": 1.0, "deep": 1.0, "high": 0.35}
-ICON = 250.0
-SURFACE_ICON = 190.0
+ICON = 320.0
+SURFACE_ICON = 220.0
 GAUGE_X = 70.0
 # Frames the icon just passed takes to fade out after the next landing.
 FADE = 14
