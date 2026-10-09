@@ -33,7 +33,11 @@ class Token:
     brk: bool  # chunk ends after this token
 
 
-def tokens(words: list[dict]) -> list[Token]:
+def tokens(words: list[dict], numbers: dict[str, str] | None = None,
+           keep: dict[str, set[str]] | None = None) -> list[Token]:
+    """``numbers`` swaps spoken words for digits; ``keep`` leaves a word alone when the next word is listed."""
+    numbers = NUMBERS if numbers is None else numbers
+    keep = keep or {}
     out: list[Token] = []
     i = 0
     while i < len(words):
@@ -42,11 +46,11 @@ def tokens(words: list[dict]) -> list[Token]:
         core = re.sub(r"[^A-Za-z0-9'-]", "", raw).lower()
         tail = re.sub(r"^[A-Za-z0-9'-]+", "", raw)
         brk = bool(re.search(r"[.,?!]|\.\.\.", tail))
-        text = NUMBERS.get(core, core).upper()
         t0, t1 = w["t0"], w["t1"]
         nxt = words[i + 1]["text"].lower().strip(".,?") if i + 1 < len(words) else ""
-        if core == "thirty-seven" and nxt == "percent":
-            text = "37%"
+        text = (core if nxt in keep.get(core, ()) else numbers.get(core, core)).upper()
+        if core in numbers and nxt == "percent":
+            text = numbers[core] + "%"
             t1 = words[i + 1]["t1"]
             brk = bool(re.search(r"[.,?!]", words[i + 1]["text"]))
             i += 1
@@ -85,8 +89,10 @@ def chunks(toks: list[Token]) -> list[list[Token]]:
 
 
 class Captions:
-    def __init__(self, words_path: Path, end: float) -> None:
-        self.groups = chunks(tokens(json.loads(words_path.read_text())))
+    def __init__(self, words_path: Path, end: float, numbers: dict[str, str] | None = None,
+                 accent: set[str] | None = None, keep: dict[str, set[str]] | None = None) -> None:
+        self.groups = chunks(tokens(json.loads(words_path.read_text()), numbers, keep))
+        self.accent = ACCENT if accent is None else accent
         self.end = end
         self.face = skia.Typeface.MakeFromFile(str(ROOT / "assets" / "fonts" / "Montserrat-ExtraBold.ttf"))
 
@@ -125,7 +131,7 @@ class Captions:
         for tok, w in zip(g, widths):
             live = tok.t0 - 0.03 <= t
             now = tok.t0 - 0.03 <= t < tok.t1 + 0.05
-            accent = any(ch.isdigit() for ch in tok.text) or tok.text.strip("?") in ACCENT
+            accent = any(ch.isdigit() for ch in tok.text) or tok.text.strip("?") in self.accent
             color = WHITE
             if now:
                 color = GOLD if accent else PINK
