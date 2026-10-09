@@ -70,8 +70,9 @@ def glow(color, alpha: float, sigma: float) -> skia.Paint:
 
 
 class Painter:
-    def __init__(self, cues: Cues) -> None:
+    def __init__(self, cues: Cues, captions=None) -> None:
         self.cues = cues
+        self.captions = captions
         self.surface = skia.Surface(W, H)
         self.mono = skia.Typeface.MakeFromFile(str(ROOT / "assets" / "fonts" / "JetBrainsMono-ExtraBold.ttf"))
         self.bg = self._background()
@@ -295,6 +296,8 @@ class Painter:
                 fn(c, t)
         c.restore()
         self.counters(c, t)
+        if self.captions is not None:
+            self.captions.draw(c, t)
         img = self.surface.makeImageSnapshot().toarray(colorType=skia.kBGRA_8888_ColorType)
         return np.ascontiguousarray(img[:, :, :3])
 
